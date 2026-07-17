@@ -1,0 +1,22 @@
+[Unit]
+Description=Hi Jack Club Admin Helper
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/hi-jack-admin-helper
+EnvironmentFile=/opt/hi-jack-admin-helper/.env
+ExecStart=/opt/hi-jack-admin-helper/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8090 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/hi-jack-admin-helper/data
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ client.first_name or client.nickname or 'Клиент' }} — Hi Jack Club{% endblock %}
+{% block content %}
+<a class="back" href="/clients">← К поиску</a>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ {'insufficient_balance':'Недостаточно бонусов для списания','invalid_delta':'Некорректное количество','invalid_percent':'Некорректный процент'}.get(error, error) }}</div>{% endif %}
+<section class="profile card">
+  <div class="profile-title"><div class="avatar large-avatar">{{ (client.first_name or client.nickname or '?')[:1]|upper }}</div><div><h1>{{ client.first_name or 'Без имени' }}</h1><p>{{ client.nickname or '' }} {% if client.username %}· @{{ client.username.lstrip('@') }}{% endif %}</p><a class="phone" href="tel:+7{{ client.phone_local or '' }}">{{ display_phone(client.phone_local, client.phone_raw) }}</a></div></div>
+  {% if client.phone_local %}<button class="primary qr-open" type="button" data-qr-url="/api/clients/{{ client.id }}/qr" data-phone="{{ client.phone_local }}">Показать QR</button>{% else %}<span class="pill warning">QR недоступен: проверьте телефон</span>{% endif %}
+</section>
+
+<section class="section-head"><h2>Преференции</h2></section>
+<div class="preference-grid">
+{% for pref in preferences %}
+  <article class="preference card">
+    <div class="pref-top"><h3>{{ pref.title }}</h3><strong>{% if pref.kind == 'counter' %}{{ pref.balance_int }}{% else %}{{ pref.percent_value|int }}%{% endif %}</strong></div>
+    {% if pref.kind == 'counter' %}
+    <div class="quick-values" data-target="amount-{{ pref.code }}"><button type="button" data-value="1">1</button><button type="button" data-value="2">2</button><button type="button" data-value="3">3</button></div>
+    <form class="pref-form" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="client_id" value="{{ client.id }}"><input type="hidden" name="code" value="{{ pref.code }}">
+      <label>Количество<input id="amount-{{ pref.code }}" name="amount" type="number" min="1" max="1000" value="1" required></label>
+      <label>Причина<select name="reason" required><option value="бонус от клуба">Бонус от клуба</option><option value="привёл друга">Привёл друга</option><option value="компенсация">Компенсация</option><option value="использовал на турнире">Использовал на турнире</option><option value="ручная корректировка">Ручная корректировка</option><option value="другое">Другое</option></select></label>
+      <label>Комментарий<input name="comment" maxlength="300" placeholder="Необязательно"></label>
+      <div class="split-actions"><button class="plus-button" type="submit" formaction="/api/preferences/add">+ Начислить</button><button class="minus-button confirm-spend" type="submit" formaction="/api/preferences/spend" data-title="{{ pref.title }}" data-client="{{ client.first_name or client.nickname or 'клиента' }}">− Списать</button></div>
+    </form>
+    {% else %}
+    <form class="pref-form" action="/api/preferences/set-discount" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="client_id" value="{{ client.id }}"><input type="hidden" name="code" value="{{ pref.code }}">
+      <label>Процент<input name="percent" type="number" min="0" max="100" step="0.5" list="discount-values" value="{{ pref.percent_value }}" required></label>
+      <label>Причина<input name="reason" value="индивидуальная скидка" required></label><label>Комментарий<input name="comment" maxlength="300" placeholder="Например: VIP"></label>
+      <button class="primary" type="submit">Установить скидку</button>
+    </form>
+    {% endif %}
+  </article>
+{% endfor %}
+</div>
+<datalist id="discount-values"><option value="0"><option value="5"><option value="10"><option value="15"><option value="20"><option value="25"><option value="30"></datalist>
+
+<details class="card app-data"><summary>Данные из Hi Jack App</summary><dl><dt>App ID</dt><dd>{{ client.app_user_id or '—' }}</dd><dt>Telegram ID</dt><dd>{{ client.telegram_id or '—' }}</dd><dt>Referrer ID</dt><dd>{{ client.referrer_app_user_id or '—' }}</dd><dt>Источник</dt><dd>{{ client.source }}</dd></dl></details>
+<section class="card comment-box"><h3>Комментарий администратора</h3><form action="/api/clients/{{ client.id }}/comment" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><textarea name="comment" maxlength="1000" placeholder="Заметка о клиенте">{{ client.comment }}</textarea><button class="button" type="submit">Сохранить</button></form></section>
+
+<section class="section-head"><h2>История операций</h2></section>
+<div class="card table-wrap">{% if logs %}<table><thead><tr><th>Время</th><th>Операция</th><th>Причина</th><th>Админ</th></tr></thead><tbody>{% for item in logs %}<tr><td>{{ item.created_at[5:16] }}</td><td>{% if item.kind == 'counter' %}<span class="delta {{ 'plus' if item.delta_int > 0 else 'minus' }}">{{ '+' if item.delta_int > 0 else '' }}{{ item.delta_int }}</span> {{ item.title }}{% else %}{{ item.old_percent_value|int }}% → {{ item.new_percent_value|int }}%{% endif %}</td><td>{{ item.reason }}{% if item.comment %}<small>{{ item.comment }}</small>{% endif %}</td><td>{{ item.admin_name }}</td></tr>{% endfor %}</tbody></table>{% else %}<div class="empty">Операций пока нет</div>{% endif %}</div>
+
+<dialog id="qr-dialog"><button class="dialog-close" type="button" aria-label="Закрыть">×</button><h2>{{ client.first_name or client.nickname }}</h2><img alt="QR-код телефона"><strong></strong><p>QR содержит только 10 цифр номера</p></dialog>
+{% endblock %}

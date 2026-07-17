@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Вход — Hi Jack Club{% endblock %}
+{% block content %}
+<section class="login-card card">
+  <div class="logo-mark">HJ</div>
+  <h1>Admin Helper</h1>
+  <p class="muted">Доступ только для администраторов клуба</p>
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Логин<input name="username" autocomplete="username" placeholder="master" required></label>
+    <label>PIN<input name="pin" type="password" inputmode="numeric" autocomplete="current-password" required autofocus></label>
+    <button class="primary large" type="submit">Войти</button>
+  </form>
+</section>
+{% endblock %}

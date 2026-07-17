@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Импорт клиентов — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">База Hi Jack App</p><h1>Импорт клиентов</h1></div></div>
+{% if result %}<section class="card result-card"><h2>Импорт завершён</h2><div class="stat-grid"><div class="stat"><strong>{{ result.total }}</strong><span>строк</span></div><div class="stat"><strong>{{ result.inserted }}</strong><span>новых</span></div><div class="stat"><strong>{{ result.updated }}</strong><span>обновлено</span></div><div class="stat"><strong>{{ result.skipped }}</strong><span>пропущено</span></div><div class="stat"><strong>{{ result.phone_errors }}</strong><span>ошибок телефона</span></div><div class="stat"><strong>{{ result.duplicates }}</strong><span>дублей в файле</span></div></div><a class="primary button" href="/clients">Перейти к поиску</a></section>{% endif %}
+{% if not preview %}
+<form class="upload-card card" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label class="dropzone"><span>Выберите CSV или XLSX</span><small>CSV: UTF-8 или Windows-1251, разделитель ; или ,</small><input type="file" name="upload" accept=".csv,.xlsx" required></label>
+  <button class="primary large" type="submit">Показать предпросмотр</button>
+</form>
+{% else %}
+<section class="card"><h2>{{ preview.filename }}</h2><p class="muted">Всего строк: {{ preview.total }}. Проверьте сопоставление колонок перед сохранением.</p>
+<form action="/api/import/clients" method="post" class="mapping-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="token" value="{{ preview.token }}"><input type="hidden" name="filename" value="{{ preview.filename }}">
+  <div class="mapping-grid">{% for field, label in fields.items() %}<label>{{ label }}{% if field in ['app_user_id','phone_raw'] %}<small>ключ поиска дублей</small>{% endif %}<select name="map_{{ field }}"><option value="">Не импортировать</option>{% for header in preview.headers %}<option value="{{ header }}" {% if preview.mapping.get(field) == header %}selected{% endif %}>{{ header }}</option>{% endfor %}</select></label>{% endfor %}</div>
+  <div class="table-wrap preview-table"><table><thead><tr>{% for header in preview.headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in preview.rows %}<tr>{% for header in preview.headers %}<td>{{ row.get(header, '') }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+  <div class="form-actions"><a class="button" href="/clients/import">Отмена</a><button class="primary" type="submit">Подтвердить импорт</button></div>
+</form></section>
+{% endif %}
+{% endblock %}
+

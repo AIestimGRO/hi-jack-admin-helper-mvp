@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Клиенты — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">База клуба</p><h1>Клиенты</h1></div><a class="button" href="/clients/import">Импортировать</a></div>
+<form class="hero-search compact" action="/clients" method="get">
+  <input name="q" value="{{ q }}" placeholder="Телефон, имя, никнейм, username, ID" autocomplete="off" autofocus>
+  <button class="primary" type="submit">Найти</button>
+</form>
+{% if q %}<p class="muted">Найдено: {{ clients|length }}</p>{% endif %}
+<section class="client-list">
+  {% for client in clients %}
+  <a class="client-card card" href="/clients/{{ client.id }}">
+    <div class="avatar">{{ (client.first_name or client.nickname or '?')[:1]|upper }}</div>
+    <div class="client-main"><strong>{{ client.first_name or 'Без имени' }}</strong><span>{{ client.nickname or '' }} {% if client.username %}@{{ client.username.lstrip('@') }}{% endif %}</span><small>{{ display_phone(client.phone_local, client.phone_raw) }}</small></div>
+    <div class="badges"><span>Вход {{ client.free_entry }}</span><span>Re {{ client.free_reentry }}</span><span>Add {{ client.free_addon }}</span></div>
+    <span class="chevron">›</span>
+  </a>
+  {% else %}
+    {% if q %}<div class="empty card">Ничего не найдено. Проверьте запрос или импортируйте базу.</div>{% else %}<div class="empty card">Введите телефон, имя или никнейм для поиска.</div>{% endif %}
+  {% endfor %}
+</section>
+{% endblock %}
+
