@@ -35,7 +35,13 @@ def main() -> None:
     uploads = project / "data" / "uploads"
     if uploads.exists():
         shutil.copytree(uploads, destination / "uploads")
-    for relative in (".env", "deploy/hi-jack-admin-helper.service", "deploy/club.hijackpoker.ru.nginx"):
+    for relative in (
+        ".env",
+        "data/quiz_questions.json",
+        "deploy/hi-jack-admin-helper.service",
+        "deploy/club.hijackpoker.ru.nginx",
+        "deploy/quiz.hijackpoker.ru.nginx",
+    ):
         source = project / relative
         if source.exists():
             target = destination / relative
@@ -57,4 +63,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

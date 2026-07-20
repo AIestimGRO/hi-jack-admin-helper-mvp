@@ -4,7 +4,7 @@
 
 ## 1. DNS и каталог
 
-Создайте A-запись `club.hijackpoker.ru` на IP VPS. Затем:
+Создайте A-записи `club.hijackpoker.ru` и `quiz.hijackpoker.ru` на IP VPS. Затем:
 
 ```bash
 sudo mkdir -p /opt/hi-jack-admin-helper
@@ -23,7 +23,7 @@ openssl rand -hex 32
 nano .env
 ```
 
-Обязательно задайте `HJC_MASTER_LOGIN`, `HJC_ADMIN_PIN`, `HJC_SECRET_KEY`, `HJC_ADMIN_NAME`. `HJC_ADMIN_PIN` используется только для создания первого мастер-аккаунта. Затем:
+Обязательно задайте `HJC_MASTER_LOGIN`, `HJC_ADMIN_PIN`, `HJC_SECRET_KEY`, `HJC_ADMIN_NAME`, `HJC_PUBLIC_BASE_URL` и `HJC_QUIZ_PUBLIC_BASE_URL`. `HJC_ADMIN_PIN` используется только для создания первого мастер-аккаунта. Затем:
 
 ```bash
 sudo chown -R www-data:www-data /opt/hi-jack-admin-helper/data
@@ -52,17 +52,33 @@ sudo systemctl status hi-jack-admin-helper
 
 ## 4. Nginx и HTTPS
 
-Сначала получите сертификат без готового HTTPS-блока, например через Certbot:
+Сначала включите временный HTTP-конфиг и получите два сертификата через webroot. Nginx и таймер останавливать не нужно:
 
 ```bash
-sudo certbot certonly --nginx -d club.hijackpoker.ru
+sudo mkdir -p /var/www/certbot/.well-known/acme-challenge
+sudo cp deploy/hijack-tools-bootstrap.nginx /etc/nginx/sites-available/hijack-tools-bootstrap
+sudo ln -s /etc/nginx/sites-available/hijack-tools-bootstrap /etc/nginx/sites-enabled/hijack-tools-bootstrap
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot certonly --webroot -w /var/www/certbot -d club.hijackpoker.ru
+sudo certbot certonly --webroot -w /var/www/certbot -d quiz.hijackpoker.ru
 sudo cp deploy/club.hijackpoker.ru.nginx /etc/nginx/sites-available/club.hijackpoker.ru
+sudo cp deploy/quiz.hijackpoker.ru.nginx /etc/nginx/sites-available/quiz.hijackpoker.ru
 sudo ln -s /etc/nginx/sites-available/club.hijackpoker.ru /etc/nginx/sites-enabled/club.hijackpoker.ru
+sudo ln -s /etc/nginx/sites-available/quiz.hijackpoker.ru /etc/nginx/sites-enabled/quiz.hijackpoker.ru
+sudo rm /etc/nginx/sites-enabled/hijack-tools-bootstrap
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Не меняйте конфиг и unit таймера. Новый upstream использует только `127.0.0.1:8090`.
+Не меняйте конфиг и unit турнирного таймера. Admin Helper и Quiz используют общий upstream `127.0.0.1:8090`, поскольку работают с одной базой клиентов. На публичном поддомене Nginx разрешает только квиз, его API старта/ответов/завершения/отправки результата и статические файлы; админские маршруты там закрыты.
+
+Проверка после запуска:
+
+```bash
+curl -I https://club.hijackpoker.ru/login
+curl -I https://quiz.hijackpoker.ru/
+curl https://quiz.hijackpoker.ru/api/quiz/questions?campaign=default
+```
 
 ## 5. Ежедневный бэкап
 

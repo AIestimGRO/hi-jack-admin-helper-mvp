@@ -5,16 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <title>{% block title %}Hi Jack Club{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}?v={{ asset_version }}">
+  {% block head %}{% endblock %}
 </head>
 <body>
   {% if request.session.get('authenticated') %}
   <header class="topbar">
-    <a class="brand" href="/">Hi, Jack! <span>Helper</span></a>
+    <a class="brand" href="/"><img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt=""><span><strong>Hi, Jack!</strong><small>Club Helper</small></span></a>
     <nav>
       <a href="/clients">Клиенты</a>
       <a href="/clients/import">Импорт</a>
       <a href="/logs">Логи</a>
+      <a href="/admin/quiz-results">Квиз</a>
       {% if admin_role == 'master_admin' %}<a class="master-link" href="/master">Мастер</a>{% endif %}
     </nav>
     <form action="/logout" method="post">
@@ -24,6 +27,6 @@
   </header>
   {% endif %}
   <main class="container">{% block content %}{% endblock %}</main>
-  <script src="{{ url_for('static', path='/js/app.js') }}" defer></script>
+  <script src="{{ url_for('static', path='/js/app.js') }}?v={{ asset_version }}" defer></script>
 </body>
 </html>

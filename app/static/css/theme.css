@@ -1,0 +1,179 @@
+:root {
+  --bg: #050706;
+  --panel: #0a1211;
+  --panel2: #10201e;
+  --line: #193b38;
+  --text: #fff;
+  --muted: #91a6a2;
+  --accent: #006985;
+  --accent2: #00a0ae;
+  --green: #00a184;
+  --yellow: #d5a547;
+  --brown: #7c3504;
+  --radius: 18px;
+}
+
+html { background: var(--bg); }
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(2, 8, 7, .89), rgba(2, 8, 7, .96)),
+    url("/static/img/brand/hi-jack-pattern.webp") center top / 720px auto fixed,
+    #050706;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(0, 120, 142, .16), transparent 29%),
+    radial-gradient(circle at 5% 90%, rgba(0, 102, 86, .12), transparent 33%);
+}
+
+h1, h2, h3, .brand strong {
+  font-family: "Arial Black", Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.topbar {
+  min-height: 72px;
+  border-bottom-color: #17413d;
+  background: rgba(2, 6, 5, .94);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .25);
+}
+
+.brand {
+  display: grid;
+  grid-template-columns: 44px auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand > img {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #14736e;
+  border-radius: 13px;
+  object-fit: cover;
+}
+
+.brand > span { display: grid; color: #fff; line-height: 1.05; }
+.brand > span strong { font-size: 15px; letter-spacing: -.4px; }
+.brand > span small { margin-top: 4px; color: #70bdb8; font-size: 8px; letter-spacing: 1.3px; text-transform: uppercase; }
+.topbar nav a { position: relative; padding: 26px 0; color: #a9b9b6; font-weight: 700; }
+.topbar nav a:hover { color: #fff; }
+.topbar nav a:hover::after { content: ""; position: absolute; right: 0; bottom: 17px; left: 0; height: 2px; border-radius: 2px; background: #00a0ae; }
+.master-link { color: #e5b55b !important; }
+
+.container { width: min(1120px, calc(100% - 32px)); padding-top: 30px; }
+
+.page-head {
+  position: relative;
+  min-height: 154px;
+  align-items: center;
+  overflow: hidden;
+  padding: 26px 30px;
+  border: 1px solid #12605b;
+  border-radius: 24px;
+  background:
+    linear-gradient(105deg, rgba(0, 49, 47, .97), rgba(0, 91, 96, .82)),
+    url("/static/img/brand/hi-jack-pattern.webp") center 44% / cover;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .24);
+}
+
+.page-head::after {
+  content: "♠";
+  position: absolute;
+  right: 30px;
+  bottom: -70px;
+  color: rgba(255, 255, 255, .07);
+  font-size: 210px;
+  line-height: 1;
+  transform: rotate(-10deg);
+}
+
+.page-head > * { position: relative; z-index: 1; }
+.page-head h1 { margin: 0; }
+.eyebrow { color: #76d1cf; }
+
+.card {
+  border-color: #173b37;
+  background: linear-gradient(145deg, rgba(12, 24, 22, .98), rgba(6, 14, 13, .98));
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .16);
+}
+
+.primary {
+  border-color: #007e98;
+  background: linear-gradient(135deg, #00627d, #007b91);
+  box-shadow: 0 8px 22px rgba(0, 105, 133, .2);
+}
+
+.primary:hover { background: linear-gradient(135deg, #007891, #0095a3); }
+.button { border-color: #28504c; background: #10201e; }
+.button:hover { border-color: #3a6e69; background: #152a27; }
+input, select, textarea { border-color: #244743; background: #050b0a; }
+input:focus, select:focus, textarea:focus { border-color: #008ca0; box-shadow: 0 0 0 3px rgba(0, 140, 160, .16); }
+
+.hero-search { position: relative; z-index: 2; }
+.stat-grid .stat { position: relative; overflow: hidden; }
+.stat-grid .stat::before { content: ""; position: absolute; top: 0; right: 0; left: 0; height: 3px; background: linear-gradient(90deg, #006985, #00a184); }
+.stat strong { color: #fff; }
+.section-head a, .campaign-url, .quiz-result-meta a { color: #62d0ce; }
+.client-card:hover { border-color: #21756f; background: linear-gradient(145deg, #0f2824, #091715); }
+.avatar { border: 1px solid #2c5b56; background: #12332f; }
+.badges span, .pill, .type-pill { background: #132b28; color: #c7d8d5; }
+.warning { background: rgba(124, 53, 4, .38); color: #ffd28b; }
+.success-pill { background: rgba(0, 161, 132, .14); color: #7be4ce; }
+
+.preference { position: relative; overflow: hidden; }
+.preference::after { content: "♣"; position: absolute; right: 12px; top: -28px; color: rgba(255, 255, 255, .025); font-size: 112px; pointer-events: none; }
+.quick-values button { border-color: #28504c; background: #11231f; }
+.plus-button { background: #007d69; }
+.minus-button { background: #7c3504; }
+
+.alert.success { border: 1px solid rgba(0, 161, 132, .35); background: rgba(0, 161, 132, .13); color: #8de6d3; }
+.alert.error { border: 1px solid rgba(213, 80, 76, .35); background: rgba(124, 31, 28, .24); color: #ffaaa7; }
+.alert.warning { border: 1px solid rgba(213, 165, 71, .28); }
+th { color: #7fb2ad; }
+th, td { border-bottom-color: #18332f; }
+tbody tr:hover { background: rgba(0, 126, 123, .055); }
+.preview-table th { background: #10201e; }
+
+.master-tabs { padding: 6px; border: 1px solid #193b38; border-radius: 14px; background: rgba(5, 13, 12, .88); }
+.master-tabs button { border-color: transparent; background: transparent; }
+.master-tabs button.active { border-color: #087269; background: #0c3f3a; }
+.master-item code { color: #66bdb7; }
+.campaign-edit { padding-top: 2px; }
+.success-outline { border-color: #157b68; color: #81e3cf; }
+.danger-outline { border-color: #7c4228; color: #f2ad88; }
+
+.login-card {
+  position: relative;
+  overflow: hidden;
+  border-color: #17645e;
+  background:
+    linear-gradient(155deg, rgba(5, 23, 21, .94), rgba(3, 9, 8, .98)),
+    url("/static/img/brand/hi-jack-pattern.webp") center / cover;
+}
+
+.login-card::after { content: "♠"; position: absolute; right: -28px; top: -54px; color: rgba(255, 255, 255, .035); font-size: 190px; transform: rotate(12deg); }
+.login-card > * { position: relative; z-index: 1; }
+.logo-mark { display: block; width: 86px; height: 86px; margin-bottom: 20px; border: 1px solid #1b7972; border-radius: 24px; object-fit: cover; }
+.dropzone { border-color: #37645f; background: rgba(0, 75, 71, .07); }
+.error-page > strong { color: #e5b55b; }
+dialog { border-color: #285650; background: #081311; }
+
+@media(max-width:760px) {
+  .topbar { min-height: 64px; }
+  .brand { grid-template-columns: 38px; }
+  .brand > img { width: 38px; height: 38px; }
+  .brand > span { display: none; }
+  .topbar nav a { padding: 22px 0; }
+  .topbar nav a:hover::after { bottom: 13px; }
+  .page-head { min-height: 126px; padding: 22px 20px; border-radius: 20px; }
+  .page-head::after { right: 6px; font-size: 170px; }
+  .login-card { margin-top: 4vh; }
+}

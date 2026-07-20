@@ -6,12 +6,13 @@
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 
 <div class="master-tabs" role="tablist">
-  <button class="active" type="button" data-master-tab="preferences">Преференции</button>
-  <button type="button" data-master-tab="admins">Администраторы</button>
-  <button type="button" data-master-tab="audit">Аудит</button>
+  <button class="{{ 'active' if current_tab=='preferences' else '' }}" type="button" data-master-tab="preferences">Преференции</button>
+  <button class="{{ 'active' if current_tab=='admins' else '' }}" type="button" data-master-tab="admins">Администраторы</button>
+  <button class="{{ 'active' if current_tab=='campaigns' else '' }}" type="button" data-master-tab="campaigns">Кампании квиза</button>
+  <button class="{{ 'active' if current_tab=='audit' else '' }}" type="button" data-master-tab="audit">Аудит</button>
 </div>
 
-<section data-master-panel="preferences">
+<section data-master-panel="preferences" {% if current_tab!='preferences' %}hidden{% endif %}>
   <div class="section-head"><h2>Новая преференция</h2></div>
   <form class="card master-create" action="/api/master/preferences/create" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -43,7 +44,7 @@
   </div>
 </section>
 
-<section data-master-panel="admins" hidden>
+<section data-master-panel="admins" {% if current_tab!='admins' %}hidden{% endif %}>
   <div class="section-head"><h2>Новый администратор</h2></div>
   <form class="card master-create" action="/api/master/admins/create" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -68,7 +69,47 @@
   </div>
 </section>
 
-<section data-master-panel="audit" hidden>
+<section data-master-panel="campaigns" {% if current_tab!='campaigns' %}hidden{% endif %}>
+  <div class="section-head"><h2>Новая кампания</h2></div>
+  <form class="card master-create campaign-create" action="/api/master/quiz-campaigns/create" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Код кампании<input name="code" maxlength="50" pattern="[a-z0-9][a-z0-9_-]{0,49}" placeholder="summer_2026" required></label>
+    <label>Название<input name="title" maxlength="80" placeholder="Летний розыгрыш" required></label>
+    <label>Автобонус<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}">{{ pref.title }}</option>{% endfor %}</select></label>
+    <label>Количество<input name="bonus_amount" type="number" min="0" max="100" value="0"></label>
+    <label>Порог баллов <small>0 = за прохождение</small><input name="pass_score" type="number" min="0" max="10000" value="0"></label>
+    <label>Секунд на весь тест <small>0 = без таймера</small><input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="120"></label>
+    <label>Активен с <small>{{ campaign_timezone_name }}</small><input name="active_from" type="datetime-local"></label>
+    <label>Активен до <small>{{ campaign_timezone_name }}</small><input name="active_until" type="datetime-local"></label>
+    <button class="primary" type="submit">Создать кампанию</button>
+  </form>
+  <p class="muted master-hint">Пока у кампании нет собственных опубликованных вопросов, участникам показывается стартовый набор <code>default</code>.</p>
+  <div class="section-head"><h2>Кампании</h2><span class="muted">{{ quiz_campaigns|length }}</span></div>
+  <div class="master-list">
+  {% for campaign in quiz_campaigns %}
+    <article class="card master-item {{ '' if campaign.is_active else 'inactive' }}">
+      <div class="master-item-head"><div><h3>{{ campaign.title }}</h3><code>{{ campaign.code }}</code></div><span class="type-pill {{ campaign.schedule_state }}">{{ {'active':'Активна','upcoming':'Запланирована','ended':'Завершена','disabled':'Отключена'}[campaign.schedule_state] }}</span></div>
+      {% if campaign.active_from or campaign.active_until %}<p class="campaign-period">{% if campaign.active_from %}с {{ campaign.active_from|replace('T', ' ') }}{% else %}без даты начала{% endif %} · {% if campaign.active_until %}до {{ campaign.active_until|replace('T', ' ') }}{% else %}без даты окончания{% endif %}</p>{% endif %}
+      <a class="campaign-url" href="{{ quiz_public_base_url }}/quiz?campaign={{ campaign.code }}" target="hj-quiz-preview" rel="noopener noreferrer">{{ quiz_public_base_url }}/quiz?campaign={{ campaign.code }} ↗</a>
+      <a class="primary button" href="/master/quiz-builder/{{ campaign.id }}">Редактор вопросов</a>
+      <form class="campaign-edit" action="/api/master/quiz-campaigns/{{ campaign.id }}/update" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Название<input name="title" maxlength="80" value="{{ campaign.title }}" required></label>
+        <label>Автобонус<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if campaign.bonus_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
+        <label>Количество<input name="bonus_amount" type="number" min="0" max="100" value="{{ campaign.bonus_amount }}"></label>
+        <label>Порог баллов<input name="pass_score" type="number" min="0" max="10000" value="{{ campaign.pass_score }}"></label>
+        <label>Секунд на весь тест<input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="{{ campaign.quiz_time_limit_seconds }}"></label>
+        <label>Активен с <small>{{ campaign_timezone_name }}</small><input name="active_from" type="datetime-local" value="{{ campaign.active_from or '' }}"></label>
+        <label>Активен до <small>{{ campaign_timezone_name }}</small><input name="active_until" type="datetime-local" value="{{ campaign.active_until or '' }}"></label>
+        <button class="button" type="submit">Сохранить</button>
+      </form>
+      <form action="/api/master/quiz-campaigns/{{ campaign.id }}/toggle" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="{{ 'danger-outline' if campaign.is_active else 'success-outline' }}" type="submit">{{ 'Отключить' if campaign.is_active else 'Включить' }}</button></form>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+
+<section data-master-panel="audit" {% if current_tab!='audit' %}hidden{% endif %}>
   <div class="section-head"><h2>Административные изменения</h2></div>
   <div class="card table-wrap"><table><thead><tr><th>Время</th><th>Мастер</th><th>Действие</th><th>Объект</th><th>Детали</th></tr></thead><tbody>{% for item in admin_audit %}<tr><td>{{ item.created_at }}</td><td>{{ item.admin_name }}</td><td>{{ item.action }}</td><td>{{ item.entity_type }} #{{ item.entity_id or '—' }}</td><td><small class="audit-details">{{ item.details }}</small></td></tr>{% else %}<tr><td colspan="5" class="empty">Изменений пока нет</td></tr>{% endfor %}</tbody></table></div>
 </section>

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Результаты квиза — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">Опросы участников</p><h1>Результаты квиза</h1></div>
+  <a class="button" href="/api/quiz/results.csv{% if request.url.query %}?{{ request.url.query }}{% endif %}">Скачать CSV</a>
+</div>
+
+<details class="card results-filters" {% if filters.campaign or filters.phone or filters.username or filters.bonus or filters.date_from or filters.date_to %}open{% endif %}>
+  <summary>Фильтры</summary>
+  <form class="filters quiz-filters" method="get">
+    <select name="campaign"><option value="">Все кампании</option>{% for item in campaigns %}<option value="{{ item.code }}" {% if filters.campaign==item.code %}selected{% endif %}>{{ item.title }}</option>{% endfor %}</select>
+    <input name="phone" value="{{ filters.phone }}" placeholder="Телефон">
+    <input name="username" value="{{ filters.username }}" placeholder="Username">
+    <select name="bonus"><option value="">Любой бонус</option><option value="granted" {% if filters.bonus=='granted' %}selected{% endif %}>Начислен</option><option value="pending" {% if filters.bonus=='pending' %}selected{% endif %}>Ожидает</option><option value="none" {% if filters.bonus=='none' %}selected{% endif %}>Не начислен</option></select>
+    <input name="date_from" type="date" value="{{ filters.date_from }}">
+    <input name="date_to" type="date" value="{{ filters.date_to }}">
+    <button class="primary" type="submit">Применить</button>
+  </form>
+</details>
+
+<div class="card table-wrap">
+  <table class="quiz-results-table">
+    <thead><tr><th>Телефон</th><th>Username</th><th>Набрано баллов</th><th>Порог</th><th>Бонус</th><th>Дата прохождения</th><th>Наименование</th><th>Действие</th></tr></thead>
+    <tbody>
+    {% for row in results %}
+      <tr data-row-href="/admin/quiz-results/{{ row.id }}" tabindex="0" aria-label="Открыть результат #{{ row.id }}">
+        <td>{{ display_phone(row.phone_local, row.phone_raw) }}</td>
+        <td>{% if row.username %}@{{ row.username }}{% else %}—{% endif %}</td>
+        <td><strong>{{ row.score|int }}</strong></td>
+        <td><span class="{{ 'status-yes' if row.passed else 'status-no' }}">{{ 'Пройден' if row.passed else 'Не пройден' }}</span></td>
+        <td>{% if row.bonus_granted %}<span class="status-yes">Начислен</span>{% elif row.bonus_pending %}Ожидает{% else %}<span class="status-no">Нет</span>{% endif %}</td>
+        <td>{{ row.created_at[:16] }}</td>
+        <td class="result-name">{{ row.campaign_title or row.campaign_code }}</td>
+        <td><a class="result-action" href="/admin/quiz-results/{{ row.id }}">Открыть →</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="empty">Результатов не найдено</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,97 @@
+[
+  {
+    "id": "q1",
+    "campaign": "default",
+    "type": "single_choice",
+    "title": "Какой формат турнира тебе интереснее?",
+    "options": [
+      {"id": "classic", "text": "Классический Hold'em"},
+      {"id": "short_deck", "text": "Short Deck"},
+      {"id": "bounty", "text": "Bounty"},
+      {"id": "beginners", "text": "Турнир для новичков"}
+    ],
+    "required": true
+  },
+  {
+    "id": "q2",
+    "campaign": "default",
+    "type": "multi_choice",
+    "title": "Какие дни тебе удобнее для игры?",
+    "options": [
+      {"id": "mon", "text": "Понедельник"},
+      {"id": "tue", "text": "Вторник"},
+      {"id": "wed", "text": "Среда"},
+      {"id": "thu", "text": "Четверг"},
+      {"id": "fri", "text": "Пятница"},
+      {"id": "sat", "text": "Суббота"},
+      {"id": "sun", "text": "Воскресенье"}
+    ],
+    "required": true
+  },
+  {
+    "id": "q3",
+    "campaign": "default",
+    "type": "single_choice",
+    "title": "Во сколько тебе удобнее начинать турнир?",
+    "options": [
+      {"id": "1800", "text": "18:00"},
+      {"id": "1900", "text": "19:00"},
+      {"id": "2000", "text": "20:00"},
+      {"id": "later", "text": "Позже 20:00"}
+    ],
+    "required": true
+  },
+  {
+    "id": "q4",
+    "campaign": "default",
+    "type": "text",
+    "title": "Что бы ты хотел улучшить в клубе?",
+    "placeholder": "Можно оставить пустым",
+    "required": false
+  },
+  {
+    "id": "honor_q1",
+    "campaign": "honor_more",
+    "type": "single_choice",
+    "title": "Что тебе больше всего нравится в Honor & More?",
+    "options": [
+      {"id": "format", "text": "Формат турнира"},
+      {"id": "bounty", "text": "Bounty"},
+      {"id": "atmosphere", "text": "Атмосфера"},
+      {"id": "bar", "text": "Бар и кальян"}
+    ],
+    "required": true
+  },
+  {
+    "id": "honor_q2",
+    "campaign": "honor_more",
+    "type": "text",
+    "title": "Что добавить в следующий Honor & More?",
+    "required": false
+  },
+  {
+    "id": "ladies_q1",
+    "campaign": "ladies",
+    "type": "single_choice",
+    "title": "Какой формат Hi, Ladies! тебе интереснее?",
+    "options": [
+      {"id": "classic", "text": "Классический турнир"},
+      {"id": "training", "text": "Турнир с обучением"},
+      {"id": "teams", "text": "Командный формат"}
+    ],
+    "required": true
+  },
+  {
+    "id": "badbeat_q1",
+    "campaign": "badbeat",
+    "type": "single_choice",
+    "title": "Как часто ты сталкиваешься с bad beat?",
+    "options": [
+      {"id": "always", "text": "Каждый турнир 😅"},
+      {"id": "often", "text": "Довольно часто"},
+      {"id": "sometimes", "text": "Иногда"},
+      {"id": "never", "text": "Мне всегда доезжает"}
+    ],
+    "required": true
+  }
+]

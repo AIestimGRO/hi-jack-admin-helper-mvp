@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>{{ campaign_title }} — Hi, Jack!</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/quiz.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/quiz-theme.css') }}?v={{ asset_version }}">
+</head>
+<body>
+  <main class="quiz-shell" id="quiz-app" data-campaign="{{ campaign }}" data-referrer="{{ referrer_id }}" data-source="{{ source }}">
+    <header class="quiz-brand"><img class="quiz-logo" src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="Hi, Jack!"><strong>Hi, Jack!</strong><small>SPORT POKER CLUB</small></header>
+
+    <section class="quiz-screen active" data-screen="loading"><div class="quiz-loader"></div><p>Загружаем вопросы…</p></section>
+
+    <section class="quiz-screen" data-screen="welcome">
+      <p class="quiz-kicker">Короткий опрос клуба</p>
+      <h1>{{ campaign_title }}</h1>
+      <p class="quiz-lead">Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.</p>
+      <p class="quiz-welcome-meta"></p>
+      <button class="quiz-primary" type="button" data-action="start">Начать</button>
+    </section>
+
+    <section class="quiz-screen" data-screen="question">
+      <div class="quiz-progress"><span></span></div>
+      <div class="quiz-question-meta"><p class="quiz-step"></p><div class="quiz-timer" hidden><strong></strong><div><span></span></div></div></div>
+      <h2 class="quiz-question-title"></h2>
+      <div class="quiz-options"></div>
+      <p class="quiz-validation" role="alert"></p>
+      <div class="quiz-actions"><button class="quiz-secondary" type="button" data-action="back">Назад</button><button class="quiz-primary" type="button" data-action="next">Далее</button></div>
+    </section>
+
+    <section class="quiz-screen" data-screen="contact">
+      <div class="quiz-progress"><span class="complete"></span></div>
+      <p class="quiz-kicker">Последний шаг</p>
+      <h2>Как тебя записать?</h2>
+      <p class="quiz-lead small">Желательно указать контакт из Hi Jack APP. Телефон нужен, чтобы связать ответ с твоей клубной картой.</p>
+      <form class="quiz-contact" autocomplete="on">
+        <label>Имя<input name="name" autocomplete="name" maxlength="100" placeholder="Как к тебе обращаться"></label>
+        <label>Никнейм в Hi Jack APP<input name="nickname" maxlength="100" placeholder="Если есть"></label>
+        <label>Telegram username<input name="username" autocomplete="username" maxlength="100" placeholder="@username"></label>
+        <label>Номер телефона <span>*</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="+7 999 123-45-67" required></label>
+        <label class="quiz-honeypot" aria-hidden="true">Ваш сайт<input name="website" tabindex="-1" autocomplete="off"></label>
+        <p class="quiz-validation" role="alert"></p>
+        <div class="quiz-actions single-action"><button class="quiz-primary" type="submit">Отправить</button></div>
+      </form>
+    </section>
+
+    <section class="quiz-screen" data-screen="success">
+      <div class="quiz-success-mark">✓</div><p class="quiz-kicker">Готово</p><h2 class="quiz-success-title">Спасибо!</h2>
+      <p class="quiz-lead quiz-success-message">Твои ответы сохранены.</p><p class="quiz-score-message" hidden></p><p class="quiz-bonus-message"></p>
+    </section>
+
+    <section class="quiz-screen" data-screen="error"><div class="quiz-error-mark">!</div><h2>Что-то пошло не так</h2><p class="quiz-lead quiz-error-message"></p><button class="quiz-primary" type="button" data-action="retry">Попробовать снова</button></section>
+  </main>
+  <script src="{{ url_for('static', path='/js/quiz.js') }}?v={{ asset_version }}" defer></script>
+</body>
+</html>

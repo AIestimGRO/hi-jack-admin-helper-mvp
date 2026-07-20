@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Конструктор «{{ campaign.title }}» — Hi Jack Club{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/builder.css') }}?v={{ asset_version }}">{% endblock %}
+{% block content %}
+<div class="hj-builder" data-quiz-builder data-campaign-id="{{ campaign.id }}" data-csrf-token="{{ csrf_token }}">
+  <a class="back" href="/master?tab=campaigns">← Кампании квиза</a>
+
+  <section class="hj-builder-hero">
+    <div class="hj-builder-hero-copy">
+      <p class="eyebrow">Конструктор квиза</p>
+      <h1>{{ campaign.title }}</h1>
+      <div class="hj-quiz-summary">
+        <span><strong>{{ questions|length }}</strong> вопросов</span>
+        <span>Порог <strong>{{ campaign.pass_score }}</strong></span>
+        <span>Время <strong>{{ campaign.quiz_time_limit_seconds }} сек.</strong></span>
+        <span>Бонус <strong>{{ campaign.bonus_title or 'не назначен' }}</strong></span>
+      </div>
+      <div class="hj-hero-actions">
+        <a class="primary button" href="{{ request.app.state.settings.quiz_public_base_url.rstrip('/') }}/quiz?campaign={{ campaign.code }}" target="hj-quiz-preview" rel="noopener noreferrer">Посмотреть квиз ↗</a>
+        <a class="button" href="/master?tab=campaigns">Настройки</a>
+      </div>
+    </div>
+    <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="" aria-hidden="true">
+  </section>
+
+  {% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if campaign.pass_score > max_score and campaign.pass_score > 0 %}<div class="alert error">Порог выше доступного максимума: бонус сейчас невозможно получить.</div>{% endif %}
+  {% if hidden_count %}<div class="alert warning">Остались старые скрытые вопросы: {{ hidden_count }}. Откройте нужный вопрос и нажмите «Сохранить изменения» — он сразу появится в квизе.</div>{% endif %}
+
+  <section class="hj-create-section">
+    <div class="hj-section-heading"><div><p class="eyebrow">Новый вопрос</p><h2>Вопрос и ответы</h2></div><span>Сохраняется сразу в квиз</span></div>
+    <form class="hj-question-editor card" id="quick-question-form">
+      <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" placeholder="Например: Какая комбинация старше?" required></textarea></label>
+      <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice">Один правильный</option><option value="multi_choice">Несколько правильных</option><option value="text">Свободный текст</option></select></label>
+      <p class="correct-help">Выберите правильный вариант.</p>
+      <div class="quick-options hj-answer-list" aria-label="Варианты ответа"></div>
+      <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
+      <details class="hj-advanced">
+        <summary>Дополнительные настройки</summary>
+        <div>
+          <label>Баллы<input name="points" type="number" min="0" max="1000" value="1"></label>
+          <label class="check-label"><input name="required" type="checkbox" checked> Обязательный вопрос</label>
+          <label class="wide">Подсказка для текстового ответа<input name="placeholder" maxlength="200" placeholder="Необязательно"></label>
+        </div>
+      </details>
+      <p class="form-status" role="alert"></p>
+      <button class="primary hj-save-question" type="submit">Сохранить вопрос</button>
+    </form>
+
+    <details class="hj-bulk card">
+      <summary>Добавить несколько вопросов текстом</summary>
+      <form id="bulk-question-form">
+        <p class="muted">Первая строка — вопрос, <code>*</code> — правильный ответ, <code>-</code> — неправильный. Между вопросами оставьте пустую строку.</p>
+        <textarea name="bulk_text" rows="11" maxlength="50000" placeholder="Какая комбинация старше?&#10;- Стрит&#10;* Флеш&#10;- Тройка&#10;&#10;Сколько карт во флопе?&#10;- Две&#10;* Три&#10;- Четыре" required></textarea>
+        <p class="form-status" role="alert"></p>
+        <button class="primary" type="submit">Добавить вопросы</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="hj-question-section">
+    <div class="hj-section-heading"><div><p class="eyebrow">Содержание</p><h2>Вопросы квиза</h2></div><span>{{ questions|length }}</span></div>
+    <div class="hj-question-list">
+    {% for question in questions %}
+      <details class="hj-question-card card {{ 'legacy-hidden' if not question.is_active else '' }}" data-question-card data-question-id="{{ question.db_id }}">
+        <summary>
+          <span class="hj-question-number">{{ loop.index }}</span>
+          <span class="hj-question-summary"><strong>{{ question.title }}</strong><small>{% if question.type == 'text' %}Свободный ответ{% else %}{{ question.options|length }} вариантов{% endif %}{% if question.points != 1 %} · {{ question.points }} балл.{% endif %}{% if not question.is_active %} · скрыт{% endif %}</small></span>
+          <span class="hj-chevron">⌄</span>
+        </summary>
+        <div class="hj-question-edit-body">
+          <form class="hj-question-editor hj-existing-editor" data-existing-question-form data-question-id="{{ question.db_id }}">
+            <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" required>{{ question.title }}</textarea></label>
+            <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice" {% if question.type=='single_choice' %}selected{% endif %}>Один правильный</option><option value="multi_choice" {% if question.type=='multi_choice' %}selected{% endif %}>Несколько правильных</option><option value="text" {% if question.type=='text' %}selected{% endif %}>Свободный текст</option></select></label>
+            <p class="correct-help">Выберите правильный вариант.</p>
+            <div class="hj-answer-list" data-existing-options>
+            {% for option in question.options %}
+              <div class="hj-option-seed" data-text="{{ option.text }}" data-correct="{{ 'true' if option.correct else 'false' }}"></div>
+            {% endfor %}
+            </div>
+            <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
+            <details class="hj-advanced">
+              <summary>Дополнительные настройки</summary>
+              <div>
+                <label>Баллы<input name="points" type="number" min="0" max="1000" value="{{ question.points }}"></label>
+                <label class="check-label"><input name="required" type="checkbox" {% if question.required %}checked{% endif %}> Обязательный вопрос</label>
+                <label class="wide">Подсказка<input name="placeholder" maxlength="200" value="{{ question.placeholder or '' }}"></label>
+              </div>
+            </details>
+            <p class="form-status" role="alert"></p>
+            <button class="primary hj-save-question" type="submit">Сохранить изменения</button>
+          </form>
+
+          <details class="hj-question-more">
+            <summary>Другие действия</summary>
+            <div>
+              <form action="/api/master/quiz-questions/{{ question.db_id }}/move" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="up"><button type="submit" {% if loop.first %}disabled{% endif %}>Поднять выше</button></form>
+              <form action="/api/master/quiz-questions/{{ question.db_id }}/move" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="down"><button type="submit" {% if loop.last %}disabled{% endif %}>Опустить ниже</button></form>
+              <form action="/api/master/quiz-questions/{{ question.db_id }}/duplicate" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Дублировать</button></form>
+              <form class="delete-question-form" action="/api/master/quiz-questions/{{ question.db_id }}/delete" method="post" data-question-title="{{ question.title }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-text" type="submit">Удалить</button></form>
+            </div>
+          </details>
+        </div>
+      </details>
+    {% else %}<div class="card empty">Вопросов пока нет. Добавьте первый вопрос выше.</div>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

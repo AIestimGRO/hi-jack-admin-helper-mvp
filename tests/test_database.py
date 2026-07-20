@@ -64,3 +64,17 @@ def test_existing_preference_table_is_migrated_without_data_loss(tmp_path):
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(preference_types)")}
         assert {"position", "created_by_admin_id", "created_at", "updated_at"}.issubset(columns)
         assert conn.execute("SELECT title FROM preference_types WHERE code='legacy_bonus'").fetchone()[0] == "Старый бонус"
+
+
+def test_quiz_campaign_schedule_columns_are_migrated(tmp_path):
+    path = tmp_path / "legacy-campaign.sqlite3"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE quiz_campaigns (id INTEGER PRIMARY KEY, code TEXT UNIQUE, title TEXT, is_active INTEGER)"
+        )
+        conn.execute("INSERT INTO quiz_campaigns VALUES (1, 'legacy', 'Старый квиз', 1)")
+    init_db(path)
+    with connect(path) as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(quiz_campaigns)")}
+        assert {"active_from", "active_until"}.issubset(columns)
+        assert conn.execute("SELECT title FROM quiz_campaigns WHERE code='legacy'").fetchone()[0] == "Старый квиз"

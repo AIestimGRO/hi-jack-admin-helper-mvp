@@ -44,6 +44,33 @@ def test_private_pages_require_login(tmp_path):
         assert client.get("/api/clients/search").status_code == 401
 
 
+def test_brand_theme_and_versioned_assets_are_used_everywhere(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        login_page = client.get("/login")
+        assert "/static/css/theme.css?v=1.9" in login_page.text
+        assert "/static/js/app.js?v=1.9" in login_page.text
+        assert "/static/img/brand/hi-jack-mark.webp?v=1.9" in login_page.text
+
+        login(client)
+        for url in ("/", "/clients", "/clients/import", "/logs", "/master", "/admin/quiz-results"):
+            page = client.get(url)
+            assert page.status_code == 200
+            assert "/static/css/theme.css?v=1.9" in page.text
+            assert "/static/js/app.js?v=1.9" in page.text
+
+        quiz = client.get("/quiz?campaign=default")
+        assert quiz.status_code == 200
+        assert "/static/css/quiz-theme.css?v=1.9" in quiz.text
+        assert "/static/js/quiz.js?v=1.9" in quiz.text
+
+        with transaction(settings.db_path) as conn:
+            campaign_id = conn.execute("SELECT id FROM quiz_campaigns WHERE code='default'").fetchone()[0]
+        builder = client.get(f"/master/quiz-builder/{campaign_id}")
+        assert builder.status_code == 200
+        assert "/static/css/builder.css?v=1.9" in builder.text
+
+
 def test_login_qr_and_preference_operation(tmp_path, monkeypatch):
     client, settings = make_client(tmp_path)
     captured: dict[str, str] = {}

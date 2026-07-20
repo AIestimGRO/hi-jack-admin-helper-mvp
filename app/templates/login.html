@@ -2,8 +2,8 @@
 {% block title %}Вход — Hi Jack Club{% endblock %}
 {% block content %}
 <section class="login-card card">
-  <div class="logo-mark">HJ</div>
-  <h1>Admin Helper</h1>
+  <img class="logo-mark" src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="Hi, Jack! Club">
+  <h1>Club Helper</h1>
   <p class="muted">Доступ только для администраторов клуба</p>
   {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
   <form method="post" action="/login" class="stack">

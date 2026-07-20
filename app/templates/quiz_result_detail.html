@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Результат квиза #{{ result.id }} — Hi Jack Club{% endblock %}
+{% block content %}
+<a class="back" href="/admin/quiz-results">← К результатам</a>
+<div class="page-head">
+  <div><p class="eyebrow">Результат #{{ result.id }}</p><h1>{{ result.campaign_title or result.campaign_code }}</h1></div>
+  <a class="button" href="/clients/{{ result.client_id }}">Открыть клиента</a>
+</div>
+
+<section class="result-detail-grid">
+  <div class="card result-detail-item"><small>Телефон</small><strong>{{ display_phone(result.phone_local, result.phone_raw) }}</strong></div>
+  <div class="card result-detail-item"><small>Username</small><strong>{% if result.username %}@{{ result.username }}{% else %}—{% endif %}</strong></div>
+  <div class="card result-detail-item"><small>Имя / никнейм</small><strong>{{ result.name or '—' }}{% if result.nickname %} · {{ result.nickname }}{% endif %}</strong></div>
+  <div class="card result-detail-item"><small>Баллы</small><strong>{{ result.score|int }} из {{ result.max_score }}</strong></div>
+  <div class="card result-detail-item"><small>Правильные ответы</small><strong>{{ result.correct_count }} из {{ result.max_correct_count }}</strong></div>
+  <div class="card result-detail-item"><small>Проходной порог</small><strong class="{{ 'status-yes' if result.passed else 'status-no' }}">{{ 'Пройден' if result.passed else 'Не пройден' }}</strong></div>
+  <div class="card result-detail-item"><small>Бонус</small><strong>{% if result.bonus_granted %}Начислен{% elif result.bonus_pending %}Ожидает проверки{% else %}Не начислен{% endif %}{% if result.bonus_title %} · {{ result.bonus_title }}{% endif %}</strong></div>
+  <div class="card result-detail-item"><small>Дата прохождения</small><strong>{{ result.created_at }}</strong></div>
+  <div class="card result-detail-item"><small>Клиент</small><strong>#{{ result.client_id }} · {{ 'новый' if result.is_new_client else 'существующий' }}</strong></div>
+  <div class="card result-detail-item"><small>Повторное прохождение</small><strong>{{ 'Да' if result.is_duplicate else 'Нет' }}</strong></div>
+  <div class="card result-detail-item"><small>Источник</small><strong>{{ result.source or '—' }}</strong></div>
+  <div class="card result-detail-item"><small>Referrer ID</small><strong>{{ result.quiz_referrer_id or '—' }}</strong></div>
+</section>
+
+<section class="card result-answer-card">
+  <div class="section-head"><h2>Ответы участника</h2></div>
+  <dl class="result-answer-list">
+  {% for question, answer, is_correct in answers %}
+    <div class="result-answer-row">
+      <dt>{{ question }}</dt>
+      <dd>{% if is_correct is sameas true %}<span class="answer-correct">✓ Правильно</span>{% elif is_correct is sameas false %}<span class="answer-wrong">✕ Неверно</span>{% endif %}{% if is_correct is not none %}<br>{% endif %}{{ answer }}</dd>
+    </div>
+  {% else %}
+    <div class="empty">Ответы не найдены</div>
+  {% endfor %}
+  </dl>
+</section>
+{% endblock %}
