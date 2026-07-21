@@ -295,6 +295,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         referrer_id: str = "",
         source: str = "",
         telegram_error: str = "",
+        telegram_verified: bool = False,
     ):
         campaign = normalize_campaign(campaign)
         campaign_row = quiz_campaign_or_404(campaign)
@@ -310,6 +311,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "telegram_available": bool(settings.telegram_client_id and settings.telegram_client_secret),
                 "email_auth_available": bool(settings.smtp_host and settings.smtp_from),
                 "telegram_error": telegram_error[:300],
+                "telegram_verified": telegram_verified,
             },
         )
 
@@ -440,7 +442,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "campaign": campaign, "method": "telegram", "telegram_user_id": str(claims["sub"]),
             "username": username, "name": name.strip()[:100],
         }
-        return RedirectResponse(f"/quiz?{urlencode(return_query)}", status_code=303)
+        return RedirectResponse(
+            f"/quiz?{urlencode({**return_query, 'telegram_verified': '1'})}",
+            status_code=303,
+        )
 
     @app.post("/api/quiz/email/request")
     async def quiz_email_request(request: Request):

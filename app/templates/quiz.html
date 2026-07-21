@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/quiz-theme.css') }}?v={{ asset_version }}">
 </head>
 <body>
-  <main class="quiz-shell" id="quiz-app" data-campaign="{{ campaign }}" data-referrer="{{ referrer_id }}" data-source="{{ source }}">
+  <main class="quiz-shell" id="quiz-app" data-campaign="{{ campaign }}" data-referrer="{{ referrer_id }}" data-source="{{ source }}" data-telegram-verified="{{ '1' if telegram_verified else '0' }}">
     <header class="quiz-brand"><img class="quiz-logo" src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="Hi, Jack!"><strong>Hi, Jack!</strong><small>SPORT POKER CLUB</small></header>
 
     <section class="quiz-screen active" data-screen="loading"><div class="quiz-loader"></div><p>Загружаем квиз…</p></section>
@@ -25,37 +25,29 @@
 
     <section class="quiz-screen" data-screen="identity">
       <p class="quiz-kicker">Перед началом</p>
-      <h2>Как тебя найти?</h2>
-      <p class="quiz-lead small" data-content="identity-text"></p>
-      <form class="quiz-contact quiz-identity" autocomplete="on">
+      <h2>Как подтвердить данные?</h2>
+      <p class="quiz-lead small">Выбери удобный способ — через Telegram или по номеру телефона.</p>
+      <div class="quiz-identity-methods">
+        {% if telegram_available %}
+        <a class="quiz-primary telegram-login-button" href="/quiz/telegram/start?campaign={{ campaign|urlencode }}&amp;referrer_id={{ referrer_id|urlencode }}&amp;source={{ source|urlencode }}">Подтвердить через Telegram</a>
+        {% endif %}
+        <button class="quiz-secondary" type="button" data-action="phone-identity">Номер телефона</button>
+      </div>
+      <p class="quiz-validation quiz-identity-error" role="alert">{% if telegram_error %}{{ telegram_error }}{% endif %}</p>
+
+      <form class="quiz-contact quiz-identity" autocomplete="on" hidden>
+        <p class="quiz-contact-note" data-content="identity-text"></p>
         <div class="quiz-field-grid">
-          <label>Номер телефона<input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="+7 999 123-45-67"></label>
-          <label>Telegram username<input name="username" autocomplete="username" maxlength="100" placeholder="@username"></label>
+          <label>Номер телефона <span>*</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="+7 999 123-45-67" required></label>
+          <label>Telegram username <small>необязательно</small><input name="username" autocomplete="username" maxlength="100" placeholder="@username"></label>
           <label>Имя <small>необязательно</small><input name="name" autocomplete="name" maxlength="100" placeholder="Как к тебе обращаться"></label>
           <label>Никнейм в Hi Jack APP <small>необязательно</small><input name="nickname" maxlength="100" placeholder="Если есть"></label>
         </div>
-        <p class="quiz-contact-note">Номер телефона или Telegram username — обязательно. По этим данным мы сохраним попытку и вернём тебя к тому же вопросу.</p>
+        <p class="quiz-contact-note">Номер телефона обязателен. Остальные данные можно заполнить по желанию.</p>
         <div class="quiz-verified" hidden></div>
-        <p class="quiz-validation" role="alert"></p>
         <div class="quiz-actions single-action"><button class="quiz-primary" type="submit" data-action="start">Продолжить</button></div>
+        <button class="quiz-method-back" type="button" data-action="identity-methods">Назад к способам подтверждения</button>
       </form>
-
-      <div class="quiz-verification" hidden>
-        <div class="quiz-divider"><span>подтвердить личность</span></div>
-        {% if telegram_available %}
-        <div class="quiz-auth-option telegram-auth"><p>Быстрее всего — через Telegram</p><a class="quiz-primary telegram-login-button" href="/quiz/telegram/start?campaign={{ campaign|urlencode }}&amp;referrer_id={{ referrer_id|urlencode }}&amp;source={{ source|urlencode }}">Войти через Telegram</a></div>
-        {% endif %}
-        {% if email_auth_available %}
-        <div class="quiz-auth-option email-auth">
-          <label>Email<input name="verification_email" type="email" autocomplete="email" maxlength="254" placeholder="name@example.com"></label>
-          <button class="quiz-secondary" type="button" data-action="email-request">Получить код</button>
-          <div class="quiz-email-code" hidden>
-            <label>Код из письма<input name="email_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></label>
-            <button class="quiz-primary" type="button" data-action="email-verify">Подтвердить и начать</button>
-          </div>
-        </div>
-        {% endif %}
-      </div>
     </section>
 
     <section class="quiz-screen" data-screen="question">

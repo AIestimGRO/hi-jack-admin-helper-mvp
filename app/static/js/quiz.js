@@ -3,7 +3,7 @@
   if (!app) return;
 
   const campaign = app.dataset.campaign || 'default';
-  const state = { meta: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, submitting: false, finishing: false };
+  const state = { meta: null, verifiedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, submitting: false, finishing: false };
   const screens = [...app.querySelectorAll('[data-screen]')];
   const show = (name) => screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
   const errorText = (message) => typeof message === 'string' ? message : 'Попробуй ещё раз чуть позже.';
@@ -22,7 +22,21 @@
   }
 
   function validateIdentity(values) {
-    if (!values.phone && !values.username) throw new Error('Укажи номер телефона или Telegram username');
+    if (state.verifiedIdentity?.verified && state.verifiedIdentity.method === 'telegram') return;
+    if (!values.phone) throw new Error('Укажи номер телефона');
+  }
+
+  function showIdentityMethods() {
+    app.querySelector('.quiz-identity-methods').hidden = false;
+    identityForm.hidden = true;
+    show('identity');
+  }
+
+  function showPhoneIdentity() {
+    app.querySelector('.quiz-identity-methods').hidden = true;
+    identityForm.hidden = false;
+    setIdentityError('');
+    identityForm.querySelector('[name="phone"]').focus();
   }
 
   async function loadMeta() {
@@ -40,11 +54,13 @@
       app.querySelector('[data-content="welcome-text"]').textContent = data.content.welcome_text;
       app.querySelector('[data-content="identity-text"]').textContent = data.content.identity_text;
       app.querySelector('[data-action="identify"]').textContent = data.content.start_button_text;
-      const verification = app.querySelector('.quiz-verification');
-      verification.hidden = !(data.telegram_available || data.email_available);
       const identityResponse = await fetch(`/api/quiz/identity?campaign=${encodeURIComponent(campaign)}`, { headers: { Accept: 'application/json' } });
       const identity = await identityResponse.json();
       if (identity.verified) showVerified(identity);
+      if (identity.verified && identity.method === 'telegram' && app.dataset.telegramVerified === '1') {
+        await startQuiz();
+        return;
+      }
       show('welcome');
     } catch (error) {
       app.querySelector('.quiz-error-message').textContent = errorText(error.message);
@@ -53,13 +69,22 @@
   }
 
   function showVerified(identity) {
+    state.verifiedIdentity = identity;
     const box = app.querySelector('.quiz-verified');
     const label = identity.method === 'telegram' ? `Telegram подтверждён${identity.username ? `: @${identity.username}` : ''}` : `Email подтверждён${identity.email ? `: ${identity.email}` : ''}`;
     box.textContent = `✓ ${label}`;
     box.hidden = false;
   }
 
-  function setIdentityError(message) { identityForm.querySelector('.quiz-validation').textContent = errorText(message); }
+  function setIdentityError(message) { app.querySelector('.quiz-identity-error').textContent = message ? errorText(message) : ''; }
+
+  function clearTelegramVerifiedFlag() {
+    if (app.dataset.telegramVerified !== '1') return;
+    app.dataset.telegramVerified = '0';
+    const url = new URL(window.location.href);
+    url.searchParams.delete('telegram_verified');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }
 
   async function startQuiz() {
     if (state.submitting) return;
@@ -84,6 +109,7 @@
         box.textContent = 'Продолжаем ранее начатую попытку';
         box.hidden = false;
       }
+      clearTelegramVerifiedFlag();
       renderQuestion();
       startTimer();
     } catch (error) {
@@ -91,6 +117,8 @@
       if (/исчерпан|успешно пройден/.test(error.message)) {
         app.querySelector('.quiz-error-message').textContent = errorText(error.message);
         show('error');
+      } else {
+        showIdentityMethods();
       }
     } finally {
       state.submitting = false;
@@ -201,20 +229,6 @@
   }
   function stopTimer() { if (state.timer) window.clearInterval(state.timer); state.timer = null; }
 
-  async function requestEmailCode() {
-    const values = identityValues();
-    try { validateIdentity(values); } catch (error) { setIdentityError(error.message); return; }
-    const email = app.querySelector('[name="verification_email"]').value.trim();
-    try { await jsonRequest('/api/quiz/email/request', { campaign, email, ...values }); app.querySelector('.quiz-email-code').hidden = false; setIdentityError('Код отправлен. Проверь почту.'); }
-    catch (error) { setIdentityError(error.message); }
-  }
-
-  async function verifyEmailCode() {
-    const email = app.querySelector('[name="verification_email"]').value.trim(); const code = app.querySelector('[name="email_code"]').value.trim();
-    try { const data = await jsonRequest('/api/quiz/email/verify', { campaign, email, code }); showVerified(data.identity); await startQuiz(); }
-    catch (error) { setIdentityError(error.message); }
-  }
-
   function launchConfetti() {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const layer = document.createElement('div'); layer.className = 'confetti-layer'; layer.setAttribute('aria-hidden', 'true'); const colors = ['#006985', '#d5a547', '#00a184', '#ffffff'];
@@ -222,14 +236,14 @@
     document.body.append(layer); window.setTimeout(() => layer.remove(), 5000);
   }
 
-  app.querySelector('[data-action="identify"]').addEventListener('click', () => show('identity'));
+  app.querySelector('[data-action="identify"]').addEventListener('click', showIdentityMethods);
+  app.querySelector('[data-action="phone-identity"]').addEventListener('click', showPhoneIdentity);
+  app.querySelector('[data-action="identity-methods"]').addEventListener('click', showIdentityMethods);
   identityForm.addEventListener('submit', (event) => { event.preventDefault(); startQuiz(); });
   app.querySelector('[data-action="back"]').addEventListener('click', () => navigate('back'));
   app.querySelector('[data-action="next"]').addEventListener('click', () => navigate('next'));
   app.querySelector('[data-action="retry"]').addEventListener('click', loadMeta);
   app.querySelector('[data-action="new-attempt"]').addEventListener('click', () => { state.finishing = false; startQuiz(); });
-  const emailRequest = app.querySelector('[data-action="email-request"]'); if (emailRequest) emailRequest.addEventListener('click', requestEmailCode);
-  const emailVerify = app.querySelector('[data-action="email-verify"]'); if (emailVerify) emailVerify.addEventListener('click', verifyEmailCode);
   window.addEventListener('beforeunload', stopTimer);
   loadMeta();
 })();

@@ -118,6 +118,23 @@ def test_username_only_creates_new_client_with_acquisition_campaign(tmp_path):
         assert source["first_referrer_id"] == "app-42"
 
 
+def test_public_identity_screen_offers_telegram_or_phone_first(tmp_path):
+    client, _ = make_client(
+        tmp_path, telegram_client_id="123456789", telegram_client_secret="telegram-client-secret",
+    )
+    with client:
+        page = client.get("/quiz")
+    assert page.status_code == 200
+    assert "Подтвердить через Telegram" in page.text
+    assert 'data-action="phone-identity">Номер телефона</button>' in page.text
+    assert 'class="quiz-contact quiz-identity" autocomplete="on" hidden' in page.text
+    assert 'name="phone"' in page.text
+    assert 'name="username"' in page.text
+    assert 'name="name"' in page.text
+    assert 'name="nickname"' in page.text
+    assert "Получить код" not in page.text
+
+
 def test_verified_telegram_identity_can_start_required_campaign(tmp_path, monkeypatch):
     client, settings = make_client(
         tmp_path, telegram_client_id="123456789", telegram_client_secret="telegram-client-secret",
@@ -147,6 +164,7 @@ def test_verified_telegram_identity_can_start_required_campaign(tmp_path, monkey
         return_query = urllib.parse.parse_qs(urllib.parse.urlparse(verified.headers["location"]).query)
         assert return_query["source"] == ["tg_post"]
         assert return_query["referrer_id"] == ["campaign-42"]
+        assert return_query["telegram_verified"] == ["1"]
         started = client.post(
             "/api/quiz/start",
             json={"campaign": "default", "source": "tg_post", "referrer_id": "campaign-42"},
