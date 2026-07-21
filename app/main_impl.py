@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import hmac
 import io
 import json
@@ -96,8 +97,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
     templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
     templates.env.globals["display_phone"] = display_phone
-    version_file = BASE_DIR / "VERSION"
-    templates.env.globals["asset_version"] = version_file.read_text(encoding="utf-8").strip() if version_file.exists() else "dev"
+
+    static_dir = BASE_DIR / "app" / "static"
+    asset_digest = hashlib.sha256()
+    for asset_path in sorted(path for path in static_dir.rglob("*") if path.is_file()):
+        asset_digest.update(asset_path.relative_to(static_dir).as_posix().encode("utf-8"))
+        asset_digest.update(b"\0")
+        asset_digest.update(asset_path.read_bytes())
+    templates.env.globals["asset_version"] = asset_digest.hexdigest()[:12]
 
     @app.middleware("http")
     async def private_cache_control(request: Request, call_next):
