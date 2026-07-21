@@ -10,6 +10,7 @@
       <p class="eyebrow">Конструктор квиза</p>
       <h1>{{ campaign.title }}</h1>
       <div class="hj-quiz-summary">
+        <span>Версия <strong>{{ campaign.current_version }}</strong></span>
         <span><strong>{{ questions|length }}</strong> вопросов</span>
         <span>Порог <strong>{{ campaign.pass_score }}</strong></span>
         <span>Время <strong>{{ campaign.quiz_time_limit_seconds }} сек.</strong></span>
@@ -18,6 +19,10 @@
       <div class="hj-hero-actions">
         <a class="primary button" href="{{ request.app.state.settings.quiz_public_base_url.rstrip('/') }}/quiz?campaign={{ campaign.code }}" target="hj-quiz-preview" rel="noopener noreferrer">Посмотреть квиз ↗</a>
         <a class="button" href="/master?tab=campaigns">Настройки</a>
+        <form action="/api/master/quiz-campaigns/{{ campaign.id }}/publish-version" method="post" onsubmit="return confirm('Опубликовать новую версию? Все участники смогут пройти квиз заново, а незавершённые попытки будут закрыты.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button" type="submit">Опубликовать новую версию</button>
+        </form>
       </div>
     </div>
     <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="" aria-hidden="true">
@@ -29,7 +34,7 @@
   {% if hidden_count %}<div class="alert warning">Остались старые скрытые вопросы: {{ hidden_count }}. Откройте нужный вопрос и нажмите «Сохранить изменения» — он сразу появится в квизе.</div>{% endif %}
 
   <section class="hj-create-section">
-    <div class="hj-section-heading"><div><p class="eyebrow">Новый вопрос</p><h2>Вопрос и ответы</h2></div><span>Сохраняется сразу в квиз</span></div>
+    <div class="hj-section-heading"><div><p class="eyebrow">Новый вопрос</p><h2>Вопрос и ответы</h2></div><span>Новая версия обнулит попытки участников</span></div>
     <form class="hj-question-editor card" id="quick-question-form">
       <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" placeholder="Например: Какая комбинация старше?" required></textarea></label>
       <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice">Один правильный</option><option value="multi_choice">Несколько правильных</option><option value="text">Свободный текст</option></select></label>

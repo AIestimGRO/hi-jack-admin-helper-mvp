@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     referral_threshold INTEGER NOT NULL DEFAULT 1,
     referral_repeatable INTEGER NOT NULL DEFAULT 0,
     referral_max_rewards INTEGER NOT NULL DEFAULT 1,
+    current_version INTEGER NOT NULL DEFAULT 1,
     active_from TEXT,
     active_until TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -190,6 +191,7 @@ CREATE INDEX IF NOT EXISTS ix_quiz_options_question ON quiz_options(question_id,
 CREATE TABLE IF NOT EXISTS quiz_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     campaign_code TEXT NOT NULL,
+    campaign_version INTEGER NOT NULL DEFAULT 1,
     client_id INTEGER REFERENCES clients(id),
     attempt_number INTEGER NOT NULL DEFAULT 1,
     identity_method TEXT NOT NULL DEFAULT 'legacy',
@@ -218,6 +220,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     attempt_id INTEGER UNIQUE REFERENCES quiz_attempts(id),
     campaign_code TEXT NOT NULL,
+    campaign_version INTEGER NOT NULL DEFAULT 1,
     client_id INTEGER NOT NULL REFERENCES clients(id),
     phone_raw TEXT NOT NULL,
     phone_local TEXT NOT NULL,
@@ -269,11 +272,25 @@ CREATE TABLE IF NOT EXISTS quiz_participation_summary (
     PRIMARY KEY(client_id, campaign_code)
 );
 
+CREATE TABLE IF NOT EXISTS quiz_participation_versions (
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    campaign_code TEXT NOT NULL,
+    campaign_version INTEGER NOT NULL DEFAULT 1,
+    attempts_used INTEGER NOT NULL DEFAULT 0,
+    successful INTEGER NOT NULL DEFAULT 0,
+    reward_issued INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    completed_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(client_id, campaign_code, campaign_version)
+);
+
 CREATE TABLE IF NOT EXISTS quiz_reward_codes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
     client_id INTEGER NOT NULL REFERENCES clients(id),
     campaign_code TEXT NOT NULL,
+    campaign_version INTEGER NOT NULL DEFAULT 1,
     submission_id INTEGER,
     reward_kind TEXT NOT NULL DEFAULT 'quiz',
     referral_milestone INTEGER,
@@ -418,6 +435,10 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_campaigns", "referral_threshold INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_campaigns", "referral_repeatable INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "referral_max_rewards INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "quiz_campaigns", "current_version INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "quiz_attempts", "campaign_version INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "quiz_submissions", "campaign_version INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "quiz_reward_codes", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_reward_codes", "reward_kind TEXT NOT NULL DEFAULT 'quiz'")
         _ensure_column(conn, "quiz_reward_codes", "referral_milestone INTEGER")
         _ensure_column(conn, "quiz_questions", "time_limit_seconds INTEGER")
@@ -438,6 +459,17 @@ def init_db(db_path: str | Path) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS ix_quiz_attempts_client_campaign ON quiz_attempts(client_id, campaign_code, status, created_at DESC)")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_quiz_submissions_attempt ON quiz_submissions(attempt_id) WHERE attempt_id IS NOT NULL"
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO quiz_participation_versions(
+                client_id, campaign_code, campaign_version, attempts_used, successful,
+                reward_issued, last_attempt_at, completed_at
+            )
+            SELECT client_id, campaign_code, 1, attempts_used, successful,
+                   reward_issued, last_attempt_at, completed_at
+            FROM quiz_participation_summary
+            """
         )
         conn.execute(
             """

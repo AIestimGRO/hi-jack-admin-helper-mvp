@@ -16,6 +16,7 @@
   <div class="card result-detail-item"><small>Проходной порог</small><strong class="{{ 'status-yes' if result.passed else 'status-no' }}">{{ 'Пройден' if result.passed else 'Не пройден' }}</strong></div>
   <div class="card result-detail-item"><small>Бонус</small><strong>{% if result.reward_status=='used' %}Начислен{% elif result.reward_status=='issued' %}Код активен{% elif result.reward_status=='expired' %}Код просрочен{% elif result.reward_status=='cancelled' %}Код отменён{% else %}Не начислен{% endif %}{% if result.bonus_title %} · {{ result.bonus_title }}{% endif %}</strong>{% if result.reward_code %}<code>{{ result.reward_code }}</code>{% endif %}</div>
   <div class="card result-detail-item"><small>Дата прохождения</small><strong>{{ result.created_at }}</strong></div>
+  <div class="card result-detail-item"><small>Версия квиза</small><strong>{{ result.campaign_version }}</strong></div>
   <div class="card result-detail-item"><small>Клиент</small><strong>#{{ result.client_id }} · {{ 'новый' if result.is_new_client else 'существующий' }}</strong></div>
   <div class="card result-detail-item"><small>Повторное прохождение</small><strong>{{ 'Да' if result.is_duplicate else 'Нет' }}</strong></div>
   <div class="card result-detail-item"><small>Источник</small><strong>{{ result.source or '—' }}</strong></div>

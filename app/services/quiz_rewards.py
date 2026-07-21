@@ -56,14 +56,15 @@ def issue_reward(
     campaign: sqlite3.Row | dict[str, Any],
     submission_id: int,
     timezone_name: str,
+    campaign_version: int = 1,
 ) -> sqlite3.Row | None:
     preference_code = campaign["bonus_preference_code"]
     amount = int(campaign["bonus_amount"] or 0)
     if not preference_code or amount < 1:
         return None
     existing = conn.execute(
-        "SELECT * FROM quiz_reward_codes WHERE client_id=? AND campaign_code=? AND reward_kind='quiz' ORDER BY id DESC LIMIT 1",
-        (client_id, campaign["code"]),
+        "SELECT * FROM quiz_reward_codes WHERE client_id=? AND campaign_code=? AND campaign_version=? AND reward_kind='quiz' ORDER BY id DESC LIMIT 1",
+        (client_id, campaign["code"], campaign_version),
     ).fetchone()
     if existing:
         return existing
@@ -72,10 +73,10 @@ def issue_reward(
     cursor = conn.execute(
         """
         INSERT INTO quiz_reward_codes(
-            code, client_id, campaign_code, submission_id, preference_code, amount, valid_from, valid_until
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            code, client_id, campaign_code, campaign_version, submission_id, preference_code, amount, valid_from, valid_until
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (code, client_id, campaign["code"], submission_id, preference_code, amount, valid_from, valid_until),
+        (code, client_id, campaign["code"], campaign_version, submission_id, preference_code, amount, valid_from, valid_until),
     )
     reward_id = int(cursor.lastrowid)
     conn.execute(

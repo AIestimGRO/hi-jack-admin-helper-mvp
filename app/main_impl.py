@@ -334,6 +334,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=500, detail=str(exc))
         return {
             "campaign": campaign,
+            "campaign_version": int(campaign_row["current_version"] or 1),
             "title": campaign_row["title"],
             "questions": [],
             "questions_count": len(questions),
@@ -584,6 +585,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ip_hash = ip_fingerprint(settings.secret_key, client_ip)
         now = utc_now()
         seconds = max(0, int(campaign_row["quiz_time_limit_seconds"] or 0))
+        campaign_version = max(1, int(campaign_row["current_version"] or 1))
         user_agent = request.headers.get("user-agent", "")[:300]
         try:
             with transaction(settings.db_path) as conn:
@@ -592,8 +594,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     email=email, telegram_user_id=telegram_user_id, source=source, referrer_id=referrer_id,
                 )
                 active = conn.execute(
-                    "SELECT * FROM quiz_attempts WHERE client_id=? AND campaign_code=? AND status='in_progress' ORDER BY id DESC LIMIT 1",
-                    (client_id, campaign),
+                    "SELECT * FROM quiz_attempts WHERE client_id=? AND campaign_code=? AND campaign_version=? AND status='in_progress' ORDER BY id DESC LIMIT 1",
+                    (client_id, campaign, campaign_version),
                 ).fetchone()
                 if active and active["attempt_deadline_at"] and datetime.fromisoformat(active["attempt_deadline_at"]) <= now:
                     conn.execute("UPDATE quiz_attempts SET status='expired', finished_at=?, last_activity_at=? WHERE id=?", (quiz_timestamp(now), quiz_timestamp(now), active["id"]))
@@ -605,8 +607,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     active = conn.execute("SELECT * FROM quiz_attempts WHERE id=?", (active["id"],)).fetchone()
                     return attempt_response(active, token, resumed=True)
                 summary = conn.execute(
-                    "SELECT * FROM quiz_participation_summary WHERE client_id=? AND campaign_code=?",
-                    (client_id, campaign),
+                    "SELECT * FROM quiz_participation_versions WHERE client_id=? AND campaign_code=? AND campaign_version=?",
+                    (client_id, campaign, campaign_version),
                 ).fetchone()
                 attempts_used = int(summary["attempts_used"]) if summary else 0
                 if summary and summary["successful"]:
@@ -625,16 +627,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 cursor = conn.execute(
                 """
                 INSERT INTO quiz_attempts(
-                    campaign_code, client_id, attempt_number, identity_method, is_new_client,
+                    campaign_code, campaign_version, client_id, attempt_number, identity_method, is_new_client,
                     quiz_referrer_id, source, token_hash, questions_snapshot_json, answers_json, current_index,
                     status, question_started_at, question_deadline_at, attempt_deadline_at, ip_hash, user_agent, last_activity_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 0, 'in_progress', ?, NULL, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 0, 'in_progress', ?, NULL, ?, ?, ?, ?)
                 """,
                 (
-                    campaign, client_id, attempts_used + 1, identity_method, int(is_new_client), referrer_id or None,
+                    campaign, campaign_version, client_id, attempts_used + 1, identity_method, int(is_new_client), referrer_id or None,
                     source or None, token_hash, json.dumps(questions, ensure_ascii=False, sort_keys=True),
                     quiz_timestamp(now), quiz_timestamp(deadline) if deadline else None, ip_hash, user_agent, quiz_timestamp(now),
                 ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO quiz_participation_versions(client_id, campaign_code, campaign_version, attempts_used, last_attempt_at)
+                    VALUES (?, ?, ?, 1, ?)
+                    ON CONFLICT(client_id, campaign_code, campaign_version) DO UPDATE SET
+                        attempts_used=attempts_used+1, last_attempt_at=excluded.last_attempt_at, updated_at=CURRENT_TIMESTAMP
+                    """,
+                    (client_id, campaign, campaign_version, quiz_timestamp(now)),
                 )
                 conn.execute(
                     """
@@ -731,14 +742,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cursor = conn.execute(
                 """
                 INSERT INTO quiz_submissions(
-                    attempt_id, campaign_code, client_id, phone_raw, phone_local, name, username, nickname,
+                    attempt_id, campaign_code, campaign_version, client_id, phone_raw, phone_local, name, username, nickname,
                     answers_json, questions_snapshot_json, score, max_score, correct_count, max_correct_count, passed,
                     bonus_granted, bonus_pending, bonus_type, is_duplicate, is_new_client,
                     quiz_referrer_id, source, user_agent, ip_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?)
                 """,
                 (
-                    attempt["id"], attempt["campaign_code"], attempt["client_id"], client_row["phone_raw"] or "",
+                    attempt["id"], attempt["campaign_code"], attempt["campaign_version"], attempt["client_id"], client_row["phone_raw"] or "",
                     client_row["phone_local"] or "", client_row["first_name"], client_row["username"], client_row["nickname"],
                     json.dumps(answers, ensure_ascii=False, sort_keys=True),
                     json.dumps(questions, ensure_ascii=False, sort_keys=True), scoring["score"], scoring["max_score"],
@@ -751,6 +762,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             reward = issue_reward(
                 conn, client_id=int(attempt["client_id"]), campaign=campaign_row,
                 submission_id=submission_id, timezone_name=settings.timezone_name,
+                campaign_version=int(attempt["campaign_version"] or 1),
             ) if bonus_eligible else None
             referral_reward = None
             referral_count = 0
@@ -814,6 +826,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ).fetchone()
             conn.execute(
                 """
+                UPDATE quiz_participation_versions SET successful=MAX(successful, ?),
+                    reward_issued=MAX(reward_issued, ?), completed_at=CASE WHEN ?=1 THEN ? ELSE completed_at END,
+                    updated_at=CURRENT_TIMESTAMP WHERE client_id=? AND campaign_code=? AND campaign_version=?
+                """,
+                (int(passed), int(bool(reward)), int(passed), quiz_timestamp(now), attempt["client_id"],
+                 attempt["campaign_code"], attempt["campaign_version"]),
+            )
+            conn.execute(
+                """
                 UPDATE quiz_attempts SET answers_json=?, current_index=?, status='submitted',
                     completed_questions_at=?, finished_at=?, last_activity_at=? WHERE id=?
                 """,
@@ -828,8 +849,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (int(passed), int(bool(reward)), int(passed), quiz_timestamp(now), attempt["client_id"], attempt["campaign_code"]),
             )
             summary = conn.execute(
-                "SELECT * FROM quiz_participation_summary WHERE client_id=? AND campaign_code=?",
-                (attempt["client_id"], attempt["campaign_code"]),
+                "SELECT * FROM quiz_participation_versions WHERE client_id=? AND campaign_code=? AND campaign_version=?",
+                (attempt["client_id"], attempt["campaign_code"], attempt["campaign_version"]),
             ).fetchone()
         attempts_used = int(summary["attempts_used"])
         max_attempts = int(campaign_row["max_attempts"] or 3)
@@ -853,6 +874,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             message = render_campaign_text(campaign_row["completion_text"], values)
         return {
             "ok": True, "completed": True, "submission_id": submission_id, "outcome": outcome,
+            "campaign_version": int(attempt["campaign_version"] or 1),
             "title": title, "message": message, "passed": passed, "score": scoring["score"],
             "max_score": scoring["max_score"], "correct_count": scoring["correct_count"],
             "max_correct_count": scoring["max_correct_count"], "attempts_used": attempts_used,
@@ -1597,6 +1619,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 details={"code": row["code"], "title": row["title"]},
             )
         return master_redirect("Кампания включена" if new_state else "Кампания отключена", tab="campaigns")
+
+    @app.post("/api/master/quiz-campaigns/{campaign_id}/publish-version")
+    async def publish_quiz_campaign_version(
+        request: Request, campaign_id: int, csrf_token: str = Form(...)
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            row = conn.execute("SELECT * FROM quiz_campaigns WHERE id=?", (campaign_id,)).fetchone()
+            if not row:
+                return builder_redirect(campaign_id, "Кампания не найдена", error=True)
+            try:
+                questions = load_db_questions(conn, row["code"])
+            except ValueError:
+                return builder_redirect(campaign_id, "Нельзя опубликовать версию без готовых вопросов", error=True)
+            new_version = max(1, int(row["current_version"] or 1)) + 1
+            conn.execute(
+                "UPDATE quiz_attempts SET status='expired', finished_at=CURRENT_TIMESTAMP WHERE campaign_code=? AND status='in_progress'",
+                (row["code"],),
+            )
+            conn.execute(
+                "UPDATE quiz_campaigns SET current_version=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (new_version, campaign_id),
+            )
+            audit(
+                conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                action="publish_version", entity_type="quiz_campaign", entity_id=campaign_id,
+                details={"code": row["code"], "old_version": row["current_version"], "new_version": new_version,
+                         "questions": len(questions)},
+            )
+        return builder_redirect(campaign_id, f"Опубликована версия {new_version}. Попытки участников начались заново")
 
     def builder_redirect(campaign_id: int, message: str, *, error: bool = False) -> RedirectResponse:
         parameter = "error" if error else "ok"
