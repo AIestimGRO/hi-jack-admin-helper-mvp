@@ -1,0 +1,214 @@
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.container,
+.card,
+.master-item,
+.master-item > * {
+  min-width: 0;
+}
+
+.master-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+}
+
+.campaign-create,
+.campaign-edit {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.campaign-create > button,
+.campaign-edit > button,
+.check-label {
+  align-self: end;
+}
+
+.campaign-content-fields {
+  grid-column: 1 / -1;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.campaign-content-fields summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.campaign-content-fields > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.campaign-content-fields textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.topbar,
+.topbar nav {
+  min-width: 0;
+}
+
+.topbar nav {
+  scrollbar-width: thin;
+}
+
+.table-wrap {
+  max-width: 100%;
+}
+
+.reward-redeem-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 520px);
+  align-items: end;
+  gap: 24px;
+  padding: 22px;
+  margin-bottom: 14px;
+}
+
+.reward-redeem-card h2,
+.reward-redeem-card p {
+  margin-bottom: 6px;
+}
+
+.reward-redeem-card form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.reward-filters {
+  grid-template-columns: 2fr 1fr auto;
+}
+
+.reward-code-cell {
+  letter-spacing: 1.5px;
+  white-space: nowrap;
+}
+
+.reward-status {
+  display: inline-block;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--panel2);
+  font-size: 12px;
+}
+
+.reward-status.issued { color: var(--green); }
+.reward-status.expired,
+.reward-status.cancelled { color: var(--accent2); }
+.reward-events { margin-top: 16px; }
+.reward-events > summary { padding: 18px; cursor: pointer; font-weight: 800; }
+.quiz-participation-list { display: grid; gap: 10px; }
+.quiz-participation-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; }
+.quiz-participation-item p { margin: 5px 0 0; }
+.quiz-participation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 760px) {
+  .campaign-content-fields > div,
+  .campaign-create,
+  .campaign-edit {
+    grid-template-columns: 1fr;
+  }
+
+  .master-item-head {
+    align-items: flex-start;
+  }
+
+  .campaign-url {
+    overflow-wrap: anywhere;
+  }
+
+  .topbar {
+    min-height: 58px;
+  }
+
+  .topbar nav {
+    gap: 10px;
+  }
+
+  .container {
+    width: calc(100% - 16px);
+  }
+
+  .page-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-head > .button {
+    width: 100%;
+  }
+
+  .master-tabs button {
+    white-space: nowrap;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .reward-redeem-card,
+  .reward-redeem-card form {
+    grid-template-columns: 1fr;
+  }
+
+  .quiz-participation-item { align-items: stretch; flex-direction: column; }
+  .quiz-participation-actions { justify-content: stretch; }
+  .quiz-participation-actions form,
+  .quiz-participation-actions button { width: 100%; }
+
+  .reward-filters {
+    grid-template-columns: 1fr 1fr auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar {
+    padding: 0 8px;
+    gap: 8px;
+  }
+
+  .brand img {
+    width: 34px;
+    height: 34px;
+  }
+
+  .topbar nav a {
+    font-size: 12px;
+  }
+
+  .topbar nav a:nth-child(2) {
+    display: none;
+  }
+
+  .master-item,
+  .campaign-content-fields {
+    padding: 12px;
+  }
+
+  .filters,
+  .quiz-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .reward-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .filters input:first-child {
+    grid-column: auto;
+  }
+
+  .stat-grid,
+  .quiz-stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

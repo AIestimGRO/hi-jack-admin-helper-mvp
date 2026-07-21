@@ -23,7 +23,9 @@ openssl rand -hex 32
 nano .env
 ```
 
-Обязательно задайте `HJC_MASTER_LOGIN`, `HJC_ADMIN_PIN`, `HJC_SECRET_KEY`, `HJC_ADMIN_NAME`, `HJC_PUBLIC_BASE_URL` и `HJC_QUIZ_PUBLIC_BASE_URL`. `HJC_ADMIN_PIN` используется только для создания первого мастер-аккаунта. Затем:
+Обязательно задайте `HJC_MASTER_LOGIN`, `HJC_ADMIN_PIN`, `HJC_SECRET_KEY`, `HJC_ADMIN_NAME`, `HJC_PUBLIC_BASE_URL` и `HJC_QUIZ_PUBLIC_BASE_URL`. `HJC_ADMIN_PIN` используется только для создания первого мастер-аккаунта.
+
+Для Telegram Login в BotFather откройте **Bot Settings → Web Login**, добавьте разрешённые URL `https://quiz.hijackpoker.ru` и `https://quiz.hijackpoker.ru/quiz/telegram/callback`, затем задайте выданные `HJC_TELEGRAM_CLIENT_ID` и `HJC_TELEGRAM_CLIENT_SECRET`. Для входа по email укажите `HJC_SMTP_HOST`, `HJC_SMTP_PORT`, `HJC_SMTP_USERNAME`, `HJC_SMTP_PASSWORD` и `HJC_SMTP_FROM`. Оба способа необязательны; SMS в проекте не используется. Затем:
 
 ```bash
 sudo chown -R www-data:www-data /opt/hi-jack-admin-helper/data
@@ -70,7 +72,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Не меняйте конфиг и unit турнирного таймера. Admin Helper и Quiz используют общий upstream `127.0.0.1:8090`, поскольку работают с одной базой клиентов. На публичном поддомене Nginx разрешает только квиз, его API старта/ответов/завершения/отправки результата и статические файлы; админские маршруты там закрыты.
+Не меняйте конфиг и unit турнирного таймера. Admin Helper и Quiz используют общий upstream `127.0.0.1:8090`, поскольку работают с одной базой клиентов. На публичном поддомене Nginx разрешает только квиз, OpenID Connect маршруты Telegram, API вопросов, идентификации, email-подтверждения, старта/ответов/завершения и статические файлы; админские маршруты там закрыты. Внешние скрипты CSP не разрешает.
 
 Проверка после запуска:
 
@@ -96,13 +98,17 @@ sudo systemctl list-timers hi-jack-admin-helper-backup.timer
 
 ```bash
 cd /opt/hi-jack-admin-helper
+sudo systemctl start hi-jack-admin-helper-backup.service
 sudo -u www-data git pull --ff-only
 .venv/bin/pip install -r requirements.txt
+sudo cp deploy/quiz.hijackpoker.ru.nginx /etc/nginx/sites-available/quiz.hijackpoker.ru
+sudo nginx -t
+sudo systemctl reload nginx
 sudo systemctl restart hi-jack-admin-helper
 curl http://127.0.0.1:8090/health
 ```
 
-После обновления существующего MVP входите с логином из `HJC_MASTER_LOGIN` (по умолчанию `master`) и прежним `HJC_ADMIN_PIN`. Существующая база клиентов и история операций мигрируются автоматически.
+После обновления входите с прежним логином и PIN. Существующая база клиентов, бонусы и история операций сохраняются; v2.0 добавляет таблицы и колонки автоматически при старте. Перед перезапуском создаётся отдельная SQLite-копия.
 
 Если PIN мастер-администратора утерян, остановите сервис и сбросьте его локально:
 

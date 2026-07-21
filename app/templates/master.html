@@ -79,6 +79,12 @@
     <label>Количество<input name="bonus_amount" type="number" min="0" max="100" value="0"></label>
     <label>Порог баллов <small>0 = за прохождение</small><input name="pass_score" type="number" min="0" max="10000" value="0"></label>
     <label>Секунд на весь тест <small>0 = без таймера</small><input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="120"></label>
+    <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="3"></label>
+    <label class="check-label"><input name="verification_required" type="checkbox" value="true"> Требовать Telegram или email</label>
+    <label>Срок кода<select name="reward_validity_mode"><option value="end_of_day">До конца дня</option><option value="hours">Количество часов</option><option value="days">Количество дней</option><option value="fixed">Точная дата</option><option value="unlimited">Без срока</option></select></label>
+    <label>Часов / дней<input name="reward_validity_value" type="number" min="0" max="365" value="0"></label>
+    <label>Код действует с<input name="reward_valid_from" type="datetime-local"></label>
+    <label>Код действует до<input name="reward_valid_until" type="datetime-local"></label>
     <label>Активен с <small>{{ campaign_timezone_name }}</small><input name="active_from" type="datetime-local"></label>
     <label>Активен до <small>{{ campaign_timezone_name }}</small><input name="active_until" type="datetime-local"></label>
     <button class="primary" type="submit">Создать кампанию</button>
@@ -99,8 +105,30 @@
         <label>Количество<input name="bonus_amount" type="number" min="0" max="100" value="{{ campaign.bonus_amount }}"></label>
         <label>Порог баллов<input name="pass_score" type="number" min="0" max="10000" value="{{ campaign.pass_score }}"></label>
         <label>Секунд на весь тест<input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="{{ campaign.quiz_time_limit_seconds }}"></label>
+        <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="{{ campaign.max_attempts }}"></label>
+        <label class="check-label"><input name="verification_required" type="checkbox" value="true" {% if campaign.verification_required %}checked{% endif %}> Требовать Telegram или email</label>
+        <label>Срок кода<select name="reward_validity_mode"><option value="end_of_day" {% if campaign.reward_validity_mode=='end_of_day' %}selected{% endif %}>До конца дня</option><option value="hours" {% if campaign.reward_validity_mode=='hours' %}selected{% endif %}>Количество часов</option><option value="days" {% if campaign.reward_validity_mode=='days' %}selected{% endif %}>Количество дней</option><option value="fixed" {% if campaign.reward_validity_mode=='fixed' %}selected{% endif %}>Точная дата</option><option value="unlimited" {% if campaign.reward_validity_mode=='unlimited' %}selected{% endif %}>Без срока</option></select></label>
+        <label>Часов / дней<input name="reward_validity_value" type="number" min="0" max="365" value="{{ campaign.reward_validity_value }}"></label>
+        <label>Код действует с<input name="reward_valid_from" type="datetime-local" value="{{ campaign.reward_valid_from or '' }}"></label>
+        <label>Код действует до<input name="reward_valid_until" type="datetime-local" value="{{ campaign.reward_valid_until or '' }}"></label>
         <label>Активен с <small>{{ campaign_timezone_name }}</small><input name="active_from" type="datetime-local" value="{{ campaign.active_from or '' }}"></label>
         <label>Активен до <small>{{ campaign_timezone_name }}</small><input name="active_until" type="datetime-local" value="{{ campaign.active_until or '' }}"></label>
+        <details class="campaign-content-fields">
+          <summary>Тексты квиза</summary>
+          <div>
+            <label>Подпись над названием<input name="welcome_kicker" maxlength="1000" value="{{ campaign.welcome_kicker }}"></label>
+            <label>Вступительный текст<textarea name="welcome_text" maxlength="1000">{{ campaign.welcome_text }}</textarea></label>
+            <label>Кнопка старта<input name="start_button_text" maxlength="1000" value="{{ campaign.start_button_text }}"></label>
+            <label>Текст идентификации<textarea name="identity_text" maxlength="1000">{{ campaign.identity_text }}</textarea></label>
+            <label>Заголовок победы<input name="victory_title" maxlength="1000" value="{{ campaign.victory_title }}"></label>
+            <label>Текст победы<textarea name="victory_text" maxlength="1000">{{ campaign.victory_text }}</textarea></label>
+            <label>Заголовок неудачи<input name="failure_title" maxlength="1000" value="{{ campaign.failure_title }}"></label>
+            <label>Текст неудачи<textarea name="failure_text" maxlength="1000">{{ campaign.failure_text }}</textarea></label>
+            <label>Заголовок завершения<input name="completion_title" maxlength="1000" value="{{ campaign.completion_title }}"></label>
+            <label>Текст завершения<textarea name="completion_text" maxlength="1000">{{ campaign.completion_text }}</textarea></label>
+          </div>
+          <small class="muted">Переменные: {bonus}, {score}, {max_score}, {correct_count}, {max_correct_count}, {attempts_used}, {max_attempts}</small>
+        </details>
         <button class="button" type="submit">Сохранить</button>
       </form>
       <form action="/api/master/quiz-campaigns/{{ campaign.id }}/toggle" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="{{ 'danger-outline' if campaign.is_active else 'success-outline' }}" type="submit">{{ 'Отключить' if campaign.is_active else 'Включить' }}</button></form>

@@ -29,7 +29,7 @@
         <td>{% if row.username %}@{{ row.username }}{% else %}—{% endif %}</td>
         <td><strong>{{ row.score|int }}</strong></td>
         <td><span class="{{ 'status-yes' if row.passed else 'status-no' }}">{{ 'Пройден' if row.passed else 'Не пройден' }}</span></td>
-        <td>{% if row.bonus_granted %}<span class="status-yes">Начислен</span>{% elif row.bonus_pending %}Ожидает{% else %}<span class="status-no">Нет</span>{% endif %}</td>
+        <td>{% if row.reward_status=='used' %}<span class="status-yes">Начислен</span><small>{{ row.reward_code }}</small>{% elif row.reward_status=='issued' %}Код выдан<small>{{ row.reward_code }}</small>{% elif row.reward_status %}<span class="status-no">{{ 'Просрочен' if row.reward_status=='expired' else 'Отменён' }}</span><small>{{ row.reward_code }}</small>{% else %}<span class="status-no">Нет</span>{% endif %}</td>
         <td>{{ row.created_at[:16] }}</td>
         <td class="result-name">{{ row.campaign_title or row.campaign_code }}</td>
         <td><a class="result-action" href="/admin/quiz-results/{{ row.id }}">Открыть →</a></td>

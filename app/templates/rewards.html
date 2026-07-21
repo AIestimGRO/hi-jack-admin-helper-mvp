@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Коды наград — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Награды за квизы</p><h1>Коды наград</h1></div></div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<section class="card reward-redeem-card">
+  <div><h2>Применить код</h2><p class="muted">После применения бонус зачислится клиенту и не будет сгорать.</p></div>
+  <form action="/api/rewards/redeem" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="code" autocomplete="off" maxlength="20" placeholder="HJ-XXXX-XXXX" required>
+    <button class="primary" type="submit">Начислить бонус</button>
+  </form>
+</section>
+
+<form class="card filters reward-filters" method="get">
+  <input name="code" value="{{ filters.code }}" placeholder="Поиск по коду">
+  <select name="status"><option value="">Все статусы</option><option value="issued" {% if filters.status=='issued' %}selected{% endif %}>Активен</option><option value="used" {% if filters.status=='used' %}selected{% endif %}>Использован</option><option value="expired" {% if filters.status=='expired' %}selected{% endif %}>Просрочен</option><option value="cancelled" {% if filters.status=='cancelled' %}selected{% endif %}>Отменён</option></select>
+  <button class="button" type="submit">Найти</button>
+</form>
+
+<div class="card table-wrap">
+  <table><thead><tr><th>Код</th><th>Клиент</th><th>Кампания</th><th>Награда</th><th>Статус</th><th>Срок</th><th></th></tr></thead><tbody>
+  {% for row in rewards %}
+    <tr><td><strong class="reward-code-cell">{{ row.code }}</strong></td><td><a href="/clients/{{ row.client_id }}">{{ row.first_name or row.nickname or ('@' ~ row.username if row.username else 'Клиент #' ~ row.client_id) }}</a><small>{{ display_phone(row.phone_local, row.phone_raw) }}</small></td><td>{{ row.campaign_title or row.campaign_code }}</td><td>{{ row.amount }} × {{ row.preference_title or row.preference_code }}</td><td><span class="reward-status {{ row.status }}">{{ {'issued':'Активен','used':'Использован','expired':'Просрочен','cancelled':'Отменён'}[row.status] }}</span></td><td>{{ row.valid_until or 'Без срока' }}</td><td>{% if row.status=='issued' and admin_role=='master_admin' %}<form action="/api/rewards/{{ row.id }}/cancel" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Отменить</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7" class="empty">Кодов не найдено</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+
+<details class="card reward-events"><summary>Журнал действий с кодами</summary><div class="table-wrap"><table><thead><tr><th>Время</th><th>Код</th><th>Действие</th><th>Администратор</th></tr></thead><tbody>{% for row in events %}<tr><td>{{ row.created_at }}</td><td>{{ row.code }}</td><td>{{ row.action }}</td><td>{{ row.admin_name }}</td></tr>{% else %}<tr><td colspan="4" class="empty">Событий пока нет</td></tr>{% endfor %}</tbody></table></div></details>
+{% endblock %}

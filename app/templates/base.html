@@ -7,6 +7,7 @@
   <title>{% block title %}Hi Jack Club{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/responsive.css') }}?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -18,6 +19,7 @@
       <a href="/clients/import">Импорт</a>
       <a href="/logs">Логи</a>
       <a href="/admin/quiz-results">Квиз</a>
+      <a href="/admin/rewards">Коды</a>
       {% if admin_role == 'master_admin' %}<a class="master-link" href="/master">Мастер</a>{% endif %}
     </nav>
     <form action="/logout" method="post">

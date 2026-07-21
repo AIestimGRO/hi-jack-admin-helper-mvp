@@ -78,3 +78,55 @@ def test_quiz_campaign_schedule_columns_are_migrated(tmp_path):
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(quiz_campaigns)")}
         assert {"active_from", "active_until"}.issubset(columns)
         assert conn.execute("SELECT title FROM quiz_campaigns WHERE code='legacy'").fetchone()[0] == "Старый квиз"
+
+
+def test_v18_quiz_tables_are_migrated_without_data_loss(tmp_path):
+    path = tmp_path / "legacy-v18.sqlite3"
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE clients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, app_user_id TEXT, telegram_id TEXT,
+                referrer_app_user_id TEXT, nickname TEXT, username TEXT, first_name TEXT,
+                phone_raw TEXT, phone_full TEXT, phone_local TEXT, source TEXT NOT NULL DEFAULT 'manual',
+                comment TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE quiz_campaigns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1, bonus_preference_code TEXT, bonus_amount INTEGER NOT NULL DEFAULT 0,
+                pass_score INTEGER NOT NULL DEFAULT 0, question_time_limit_seconds INTEGER NOT NULL DEFAULT 20,
+                quiz_time_limit_seconds INTEGER NOT NULL DEFAULT 120, active_from TEXT, active_until TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE quiz_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_code TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+                questions_snapshot_json TEXT NOT NULL, answers_json TEXT NOT NULL DEFAULT '{}', current_index INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'in_progress', question_started_at TEXT, question_deadline_at TEXT,
+                attempt_deadline_at TEXT, completed_questions_at TEXT, ip_hash TEXT NOT NULL, user_agent TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE quiz_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, attempt_id INTEGER, campaign_code TEXT NOT NULL,
+                client_id INTEGER NOT NULL, phone_raw TEXT NOT NULL, phone_local TEXT NOT NULL,
+                answers_json TEXT NOT NULL, questions_snapshot_json TEXT, score REAL, max_score INTEGER NOT NULL DEFAULT 0,
+                correct_count INTEGER NOT NULL DEFAULT 0, max_correct_count INTEGER NOT NULL DEFAULT 0,
+                passed INTEGER NOT NULL DEFAULT 0, bonus_granted INTEGER NOT NULL DEFAULT 0,
+                bonus_pending INTEGER NOT NULL DEFAULT 0, bonus_type TEXT, is_duplicate INTEGER NOT NULL DEFAULT 0,
+                is_new_client INTEGER NOT NULL DEFAULT 0, quiz_referrer_id TEXT, source TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, user_agent TEXT, ip_hash TEXT NOT NULL
+            );
+            INSERT INTO clients(first_name, phone_local, source) VALUES ('Старый клиент', '9991234567', 'import');
+            """
+        )
+    init_db(path)
+    with connect(path) as conn:
+        client = conn.execute("SELECT * FROM clients").fetchone()
+        assert client["first_name"] == "Старый клиент"
+        assert client["client_status"] == "existing"
+        campaign = conn.execute("SELECT * FROM quiz_campaigns WHERE code='default'").fetchone()
+        assert campaign["max_attempts"] == 3
+        assert campaign["welcome_kicker"]
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(quiz_attempts)")}
+        assert {"client_id", "attempt_number", "last_activity_at"}.issubset(columns)
+        assert conn.execute("SELECT COUNT(*) FROM quiz_reward_codes").fetchone()[0] == 0

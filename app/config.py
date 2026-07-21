@@ -31,6 +31,18 @@ class Settings:
     session_hours: int = int(os.getenv("HJC_SESSION_HOURS", "12"))
     max_upload_mb: int = int(os.getenv("HJC_MAX_UPLOAD_MB", "15"))
     timezone_name: str = os.getenv("HJC_TIMEZONE", "Europe/Moscow")
+    telegram_client_id: str = os.getenv("HJC_TELEGRAM_CLIENT_ID", "").strip()
+    telegram_client_secret: str = os.getenv("HJC_TELEGRAM_CLIENT_SECRET", "").strip()
+    smtp_host: str = os.getenv("HJC_SMTP_HOST", "").strip()
+    smtp_port: int = int(os.getenv("HJC_SMTP_PORT", "587"))
+    smtp_username: str = os.getenv("HJC_SMTP_USERNAME", "").strip()
+    smtp_password: str = os.getenv("HJC_SMTP_PASSWORD", "")
+    smtp_from: str = os.getenv("HJC_SMTP_FROM", "").strip()
+    smtp_starttls: bool = _bool_env("HJC_SMTP_STARTTLS", True)
+    email_code_minutes: int = int(os.getenv("HJC_EMAIL_CODE_MINUTES", "10"))
+    quiz_detail_retention_days: int = int(os.getenv("HJC_QUIZ_DETAIL_RETENTION_DAYS", "7"))
+    reward_retention_days: int = int(os.getenv("HJC_REWARD_RETENTION_DAYS", "14"))
+    action_log_retention_days: int = int(os.getenv("HJC_ACTION_LOG_RETENTION_DAYS", "31"))
 
     def validate(self) -> None:
         if not self.admin_pin:
@@ -43,3 +55,7 @@ class Settings:
             ZoneInfo(self.timezone_name)
         except ZoneInfoNotFoundError as exc:
             raise RuntimeError("HJC_TIMEZONE must contain a valid IANA timezone") from exc
+        if not 1 <= self.email_code_minutes <= 60:
+            raise RuntimeError("HJC_EMAIL_CODE_MINUTES must be between 1 and 60")
+        if self.quiz_detail_retention_days < 1 or self.reward_retention_days < 1:
+            raise RuntimeError("Quiz retention settings must be positive")

@@ -34,8 +34,19 @@ def login(client: TestClient) -> None:
     assert response.status_code == 303
 
 
-def complete_quiz(client: TestClient, campaign: str, answer_by_question: dict | None = None) -> str:
-    response = client.post("/api/quiz/start", json={"campaign": campaign})
+def complete_quiz(
+    client: TestClient,
+    campaign: str,
+    answer_by_question: dict | None = None,
+    *,
+    phone: str = "9991112233",
+    username: str = "ivan_test",
+    **identity,
+) -> str:
+    response = client.post(
+        "/api/quiz/start",
+        json={"campaign": campaign, "phone": phone, "username": username, "name": "Иван", "nickname": "Vanya", **identity},
+    )
     assert response.status_code == 200
     data = response.json()
     attempt_token = data["attempt_token"]
@@ -53,8 +64,6 @@ def complete_quiz(client: TestClient, campaign: str, answer_by_question: dict | 
             json={"attempt_token": attempt_token, "question_id": question["id"], "answer": answer},
         )
         assert response.status_code == 200
-    finished = client.post("/api/quiz/finish", json={"attempt_token": attempt_token})
-    assert finished.status_code == 200
     return attempt_token
 
 
@@ -66,16 +75,11 @@ def submit(
     answer_by_question: dict | None = None,
     **extra,
 ):
-    payload = {
-        "attempt_token": complete_quiz(client, campaign, answer_by_question),
-        "phone": phone,
-        "name": "Иван",
-        "username": "ivan_test",
-        "nickname": "Vanya",
-        "website": "",
-        **extra,
-    }
-    return client.post("/api/quiz/submit", json=payload)
+    token = complete_quiz(
+        client, campaign, answer_by_question, phone=phone,
+        username=extra.pop("username", f"user_{''.join(ch for ch in phone if ch.isdigit())[-6:]}"), **extra,
+    )
+    return client.post("/api/quiz/finish", json={"attempt_token": token})
 
 
 def test_questions_support_campaign_fallback(tmp_path):
@@ -150,7 +154,7 @@ def test_server_uses_one_deadline_and_allows_answer_revision(tmp_path):
         assert metadata.json()["questions"] == []
         assert metadata.json()["questions_count"] == 4
 
-        started = client.post("/api/quiz/start", json={"campaign": "default"})
+        started = client.post("/api/quiz/start", json={"campaign": "default", "phone": "9991112233", "username": "timer_user"})
         assert started.status_code == 200
         first = started.json()
         assert [question["id"] for question in first["questions"]] == ["q1", "q2", "q3", "q4"]
@@ -189,25 +193,18 @@ def test_server_uses_one_deadline_and_allows_answer_revision(tmp_path):
 def test_quiz_cannot_be_submitted_before_server_attempt_is_completed(tmp_path):
     client, _ = make_client(tmp_path)
     with client:
-        missing = client.post(
-            "/api/quiz/submit",
-            json={"phone": "9991112233", "name": "Иван", "website": ""},
-        )
+        missing = client.post("/api/quiz/start", json={"campaign": "default"})
         assert missing.status_code == 422
-        started = client.post("/api/quiz/start", json={"campaign": "default"})
+        started = client.post("/api/quiz/start", json={"campaign": "default", "username": "identity_user"})
+        assert started.status_code == 200
         premature = client.post(
             "/api/quiz/submit",
-            json={
-                "attempt_token": started.json()["attempt_token"],
-                "phone": "9991112233",
-                "name": "Иван",
-                "website": "",
-            },
+            json={"attempt_token": started.json()["attempt_token"]},
         )
-        assert premature.status_code == 409
+        assert premature.status_code == 410
 
 
-def test_submission_creates_client_and_duplicate_without_second_client(tmp_path):
+def test_submission_creates_new_client_and_blocks_repeat_after_success(tmp_path):
     client, settings = make_client(tmp_path)
     with client:
         first = submit(
@@ -218,20 +215,19 @@ def test_submission_creates_client_and_duplicate_without_second_client(tmp_path)
             source="tg_post",
         )
         assert first.status_code == 200
-        assert first.json()["new_client"] is True
-        assert first.json()["duplicate"] is False
-        second = submit(client, campaign="default", phone="89991234567")
-        assert second.status_code == 200
-        assert second.json()["new_client"] is False
-        assert second.json()["duplicate"] is True
+        second = client.post("/api/quiz/start", json={"campaign": "default", "phone": "89991234567"})
+        assert second.status_code == 409
     with connect(settings.db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM quiz_submissions").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM quiz_submissions").fetchone()[0] == 1
         row = conn.execute("SELECT * FROM quiz_submissions ORDER BY id LIMIT 1").fetchone()
         assert row["phone_local"] == "9991234567"
         assert row["quiz_referrer_id"] == "485"
         assert row["source"] == "tg_post"
         assert row["is_new_client"] == 1
+        client_row = conn.execute("SELECT * FROM clients").fetchone()
+        assert client_row["client_status"] == "new"
+        assert client_row["acquisition_campaign_code"] == "default"
 
 
 def test_existing_client_is_linked_without_overwriting_name(tmp_path):
@@ -241,7 +237,6 @@ def test_existing_client_is_linked_without_overwriting_name(tmp_path):
             client_id, _ = upsert_client(conn, {"app_user_id": "42", "first_name": "Старое имя", "phone_raw": "9992223344"})
         response = submit(client, campaign="default", phone="+7 999 222-33-44")
         assert response.status_code == 200
-        assert response.json()["new_client"] is False
     with connect(settings.db_path) as conn:
         row = conn.execute("SELECT * FROM clients WHERE id = ?", (client_id,)).fetchone()
         assert row["first_name"] == "Старое имя"
@@ -249,7 +244,7 @@ def test_existing_client_is_linked_without_overwriting_name(tmp_path):
         assert row["source"] != "quiz"
 
 
-def test_campaign_bonus_is_logged_once(tmp_path):
+def test_campaign_reward_code_is_redeemed_once(tmp_path):
     client, settings = make_client(tmp_path)
     with client:
         with transaction(settings.db_path) as conn:
@@ -258,11 +253,19 @@ def test_campaign_bonus_is_logged_once(tmp_path):
             )
         first = submit(client, campaign="honor_more", phone="9993334455")
         assert first.status_code == 200
-        assert first.json()["bonus_granted"] is True
-        second = submit(client, campaign="honor_more", phone="79993334455")
-        assert second.status_code == 200
-        assert second.json()["duplicate"] is True
-        assert second.json()["bonus_granted"] is False
+        assert first.json()["bonus_granted"] is False
+        assert first.json()["reward_code"].startswith("HJ-")
+        login(client)
+        rewards_page = client.get("/admin/rewards")
+        token = re.search(r'name="csrf_token" value="([^"]+)"', rewards_page.text).group(1)
+        redeemed = client.post(
+            "/api/rewards/redeem",
+            data={"csrf_token": token, "code": first.json()["reward_code"]},
+            follow_redirects=False,
+        )
+        assert redeemed.status_code == 303
+        second = client.post("/api/quiz/start", json={"campaign": "honor_more", "phone": "79993334455"})
+        assert second.status_code == 409
     with connect(settings.db_path) as conn:
         balance = conn.execute(
             """
@@ -273,20 +276,17 @@ def test_campaign_bonus_is_logged_once(tmp_path):
         ).fetchone()[0]
         assert balance == 1
         log = conn.execute("SELECT * FROM preference_log").fetchone()
-        assert log["reason"] == "quiz_completed"
-        assert log["admin_name"] == "system"
+        assert log["reason"] == "quiz_reward_redeemed"
+        assert log["admin_name"] == "Test Admin"
+        assert conn.execute("SELECT status FROM quiz_reward_codes").fetchone()[0] == "used"
 
 
-def test_honeypot_rate_limit_results_page_and_csv(tmp_path):
+def test_multiple_results_page_and_csv(tmp_path):
     client, settings = make_client(tmp_path)
     with client:
-        fake = client.post("/api/quiz/submit", json={"website": "spam"})
-        assert fake.status_code == 200
         for index in range(5):
-            response = submit(client, campaign="summer", phone=f"99900000{index:02d}")
+            response = submit(client, campaign="summer", phone=f"99900000{index:02d}", username=f"user_{index}")
             assert response.status_code == 200
-        blocked = submit(client, campaign="summer", phone="9990000099")
-        assert blocked.status_code == 429
         login(client)
         page = client.get("/admin/quiz-results")
         assert page.status_code == 200
@@ -581,7 +581,7 @@ def test_full_builder_scores_answers_and_grants_bonus_only_after_threshold(tmp_p
         assert public.status_code == 200
         assert public.json()["questions"] == []
         assert public.json()["questions_count"] == 1
-        started = client.post("/api/quiz/start", json={"campaign": "knowledge"})
+        started = client.post("/api/quiz/start", json={"campaign": "knowledge", "phone": "9990001122", "username": "preview_user"})
         assert started.status_code == 200
         public_question = started.json()["questions"][0]
         assert all("correct" not in option for option in public_question["options"])
@@ -601,9 +601,9 @@ def test_full_builder_scores_answers_and_grants_bonus_only_after_threshold(tmp_p
         assert correct_result.json()["score"] == 2
         assert correct_result.json()["correct_count"] == 1
         assert correct_result.json()["passed"] is True
-        assert correct_result.json()["bonus_granted"] is True
+        assert correct_result.json()["bonus_granted"] is False
         assert correct_result.json()["outcome"] == "won"
-        assert "Поздравляем! Вы получаете" in correct_result.json()["bonus_message"]
+        assert correct_result.json()["reward_code"].startswith("HJ-")
 
         wrong_result = submit(
             client,
@@ -617,7 +617,7 @@ def test_full_builder_scores_answers_and_grants_bonus_only_after_threshold(tmp_p
         assert wrong_result.json()["passed"] is False
         assert wrong_result.json()["bonus_granted"] is False
         assert wrong_result.json()["outcome"] == "not_won"
-        assert "в следующий раз вам обязательно повезёт" in wrong_result.json()["bonus_message"]
+        assert wrong_result.json()["retry_allowed"] is True
 
         with transaction(settings.db_path) as conn:
             conn.execute("UPDATE quiz_questions SET title='Изменённый после прохождения вопрос' WHERE id=?", (question["id"],))
@@ -635,7 +635,7 @@ def test_full_builder_scores_answers_and_grants_bonus_only_after_threshold(tmp_p
         assert "1 из 1" in detail_page.text
 
     with connect(settings.db_path) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM preference_log WHERE reason='quiz_completed'").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM quiz_reward_codes WHERE campaign_code='knowledge'").fetchone()[0] == 1
         submissions = conn.execute("SELECT score, passed, bonus_granted FROM quiz_submissions WHERE campaign_code='knowledge' ORDER BY id").fetchall()
-        assert [tuple(row) for row in submissions] == [(2.0, 1, 1), (0.0, 0, 0)]
+        assert [tuple(row) for row in submissions] == [(2.0, 1, 0), (0.0, 0, 0)]
         assert conn.execute("SELECT COUNT(*) FROM quiz_submissions WHERE questions_snapshot_json IS NOT NULL").fetchone()[0] >= 2

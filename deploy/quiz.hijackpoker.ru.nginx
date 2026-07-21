@@ -38,6 +38,16 @@ server {
         proxy_pass http://127.0.0.1:8090;
     }
 
+    location = /quiz/telegram/start {
+        limit_req zone=hjc_quiz_submit burst=5 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+    }
+
+    location = /quiz/telegram/callback {
+        limit_req zone=hjc_quiz_submit burst=5 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+    }
+
     location = /api/quiz/questions {
         proxy_pass http://127.0.0.1:8090;
     }
@@ -48,6 +58,20 @@ server {
     }
 
     location = /api/quiz/start {
+        limit_req zone=hjc_quiz_submit burst=5 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+    }
+
+    location = /api/quiz/identity {
+        proxy_pass http://127.0.0.1:8090;
+    }
+
+    location = /api/quiz/email/request {
+        limit_req zone=hjc_quiz_submit burst=3 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+    }
+
+    location = /api/quiz/email/verify {
         limit_req zone=hjc_quiz_submit burst=5 nodelay;
         proxy_pass http://127.0.0.1:8090;
     }

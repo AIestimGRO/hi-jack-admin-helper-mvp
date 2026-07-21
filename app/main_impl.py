@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
 import qrcode
@@ -20,6 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from app.config import BASE_DIR, Settings
 from app.db import connect, init_db, transaction
@@ -40,9 +42,19 @@ from app.services.quiz import (
     public_questions,
     score_answers,
     seed_questions_from_json,
-    upsert_quiz_client,
     validate_answers,
 )
+from app.services.quiz_identity import (
+    email_code_hash,
+    find_or_create_quiz_client,
+    generate_email_code,
+    identity_json,
+    normalize_email,
+)
+from app.services.quiz_mail import send_quiz_email_code
+from app.services.quiz_retention import cleanup_quiz_data
+from app.services.quiz_rewards import issue_reward, redeem_reward, render_campaign_text
+from app.services.telegram_oidc import authorization_url, exchange_telegram_code, new_pkce
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -61,11 +73,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 pin=settings.admin_pin,
             )
             seed_questions_from_json(conn, BASE_DIR / "data" / "quiz_questions.json")
+            cleanup_quiz_data(
+                conn,
+                detail_days=settings.quiz_detail_retention_days,
+                reward_days=settings.reward_retention_days,
+                action_log_days=settings.action_log_retention_days,
+            )
         (BASE_DIR / "data" / "uploads").mkdir(parents=True, exist_ok=True)
         yield
 
     app = FastAPI(title="Hi Jack Club Admin Helper", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.settings = settings
+    app.state.next_quiz_cleanup_at = datetime.now(timezone.utc) + timedelta(days=1)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key or "development-secret-key-change-before-use",
@@ -82,6 +101,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def private_cache_control(request: Request, call_next):
+        now = datetime.now(timezone.utc)
+        if now >= app.state.next_quiz_cleanup_at:
+            app.state.next_quiz_cleanup_at = now + timedelta(days=1)
+            try:
+                with transaction(settings.db_path) as conn:
+                    cleanup_quiz_data(
+                        conn, detail_days=settings.quiz_detail_retention_days,
+                        reward_days=settings.reward_retention_days,
+                        action_log_days=settings.action_log_retention_days,
+                    )
+            except sqlite3.Error:
+                pass
         response = await call_next(request)
         if not request.url.path.startswith("/static/"):
             response.headers.setdefault("Cache-Control", "private, no-store")
@@ -263,6 +294,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         campaign: str = "default",
         referrer_id: str = "",
         source: str = "",
+        telegram_error: str = "",
     ):
         campaign = normalize_campaign(campaign)
         campaign_row = quiz_campaign_or_404(campaign)
@@ -275,6 +307,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "campaign_title": campaign_row["title"],
                 "referrer_id": referrer_id.strip()[:80],
                 "source": source.strip()[:80],
+                "telegram_available": bool(settings.telegram_client_id and settings.telegram_client_secret),
+                "email_auth_available": bool(settings.smtp_host and settings.smtp_from),
+                "telegram_error": telegram_error[:300],
             },
         )
 
@@ -294,6 +329,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "questions_count": len(questions),
             "timed": campaign_row["quiz_time_limit_seconds"] > 0,
             "time_limit_seconds": campaign_row["quiz_time_limit_seconds"],
+            "max_attempts": campaign_row["max_attempts"],
+            "verification_required": bool(campaign_row["verification_required"]),
+            "telegram_available": bool(settings.telegram_client_id and settings.telegram_client_secret),
+            "email_available": bool(settings.smtp_host and settings.smtp_from),
+            "content": {
+                "welcome_kicker": campaign_row["welcome_kicker"],
+                "welcome_text": campaign_row["welcome_text"],
+                "start_button_text": campaign_row["start_button_text"],
+                "identity_text": campaign_row["identity_text"],
+            },
         }
 
     def utc_now() -> datetime:
@@ -302,62 +347,310 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def quiz_timestamp(value: datetime) -> str:
         return value.isoformat(timespec="milliseconds")
 
-    @app.post("/api/quiz/start")
-    async def quiz_start(request: Request):
-        try:
-            payload = await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise HTTPException(status_code=400, detail="Некорректные данные")
+    def parse_quiz_payload(payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="Некорректные данные")
+        return payload
+
+    async def request_json(request: Request) -> dict[str, Any]:
+        try:
+            return parse_quiz_payload(await request.json())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="Некорректные данные")
+
+    def verified_identity(request: Request, campaign: str) -> dict[str, Any]:
+        value = request.session.get("quiz_verified_identity")
+        if not isinstance(value, dict) or value.get("campaign") != campaign:
+            return {}
+        return value
+
+    @app.get("/api/quiz/identity")
+    async def quiz_identity_status(request: Request, campaign: str = "default"):
+        campaign = normalize_campaign(campaign)
+        identity = verified_identity(request, campaign)
+        return {
+            "verified": bool(identity),
+            "method": identity.get("method"),
+            "username": identity.get("username"),
+            "email": identity.get("email"),
+        }
+
+    @app.get("/quiz/telegram/start")
+    async def quiz_telegram_start(
+        request: Request,
+        campaign: str = "default",
+        referrer_id: str = "",
+        source: str = "",
+    ):
+        campaign = normalize_campaign(campaign)
+        quiz_campaign_or_404(campaign)
+        if not settings.telegram_client_id or not settings.telegram_client_secret:
+            raise HTTPException(status_code=503, detail="Вход через Telegram пока не настроен")
+        verifier, challenge = new_pkce()
+        state = secrets.token_urlsafe(32)
+        redirect_uri = settings.quiz_public_base_url.rstrip("/") + "/quiz/telegram/callback"
+        request.session["telegram_oauth"] = {
+            "state": state,
+            "verifier": verifier,
+            "campaign": campaign,
+            "referrer_id": referrer_id.strip()[:80],
+            "source": source.strip()[:80],
+            "created_at": int(utc_now().timestamp()),
+        }
+        return RedirectResponse(
+            authorization_url(
+                client_id=settings.telegram_client_id, redirect_uri=redirect_uri,
+                state=state, code_challenge=challenge,
+            ),
+            status_code=302,
+        )
+
+    @app.get("/quiz/telegram/callback")
+    async def quiz_telegram_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+        oauth = request.session.pop("telegram_oauth", None)
+        campaign = normalize_campaign(oauth.get("campaign") if isinstance(oauth, dict) else "default")
+        return_query = {
+            "campaign": campaign,
+            "referrer_id": str(oauth.get("referrer_id", ""))[:80] if isinstance(oauth, dict) else "",
+            "source": str(oauth.get("source", ""))[:80] if isinstance(oauth, dict) else "",
+        }
+        failure_url = f"/quiz?{urlencode({**return_query, 'telegram_error': 'Не удалось подтвердить Telegram. Попробуйте ещё раз'})}"
+        if error or not code or not state or not isinstance(oauth, dict):
+            return RedirectResponse(failure_url, status_code=303)
+        if not hmac.compare_digest(state, str(oauth.get("state", ""))):
+            return RedirectResponse(failure_url, status_code=303)
+        if int(utc_now().timestamp()) - int(oauth.get("created_at", 0)) > 900:
+            return RedirectResponse(
+                f"/quiz?{urlencode({**return_query, 'telegram_error': 'Вход Telegram устарел. Попробуйте ещё раз'})}",
+                status_code=303,
+            )
+        redirect_uri = settings.quiz_public_base_url.rstrip("/") + "/quiz/telegram/callback"
+        try:
+            claims = await run_in_threadpool(
+                exchange_telegram_code,
+                code=code, client_id=settings.telegram_client_id,
+                client_secret=settings.telegram_client_secret, redirect_uri=redirect_uri,
+                code_verifier=str(oauth["verifier"]),
+            )
+        except Exception:
+            return RedirectResponse(failure_url, status_code=303)
+        username = str(claims.get("preferred_username") or "")
+        name = str(claims.get("name") or " ".join(filter(None, [claims.get("given_name"), claims.get("family_name")])))
+        request.session["quiz_verified_identity"] = {
+            "campaign": campaign, "method": "telegram", "telegram_user_id": str(claims["sub"]),
+            "username": username, "name": name.strip()[:100],
+        }
+        return RedirectResponse(f"/quiz?{urlencode(return_query)}", status_code=303)
+
+    @app.post("/api/quiz/email/request")
+    async def quiz_email_request(request: Request):
+        if not settings.smtp_host or not settings.smtp_from:
+            raise HTTPException(status_code=503, detail="Вход по email пока не настроен")
+        payload = await request_json(request)
         campaign = normalize_campaign(payload.get("campaign"))
         campaign_row = quiz_campaign_or_404(campaign)
-        with connect(settings.db_path) as conn:
-            questions = load_db_questions(conn, campaign)
-        client_ip = request.client.host if request.client else "unknown"
-        ip_hash = ip_fingerprint(settings.secret_key, client_ip)
-        token = secrets.token_urlsafe(32)
-        token_hash = attempt_token_hash(settings.secret_key, token)
-        now = utc_now()
-        seconds = max(0, int(campaign_row["quiz_time_limit_seconds"] or 0))
-        deadline = now + timedelta(seconds=seconds) if seconds > 0 else None
-        user_agent = request.headers.get("user-agent", "")[:300]
+        try:
+            email = normalize_email(payload.get("email"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Проверьте адрес электронной почты")
+        if not email:
+            raise HTTPException(status_code=422, detail="Укажите электронную почту")
+        phone = str(payload.get("phone", "")).strip()[:80]
+        username = str(payload.get("username", "")).strip()[:100]
+        if not phone and not username:
+            raise HTTPException(status_code=422, detail="Укажите номер телефона или Telegram username")
+        code = generate_email_code()
+        expires = utc_now() + timedelta(minutes=settings.email_code_minutes)
+        identity = {
+            "phone": phone,
+            "username": username,
+            "name": str(payload.get("name", "")).strip()[:100],
+            "nickname": str(payload.get("nickname", "")).strip()[:100],
+            "email": email,
+        }
         with transaction(settings.db_path) as conn:
-            recent_attempts = conn.execute(
-                "SELECT COUNT(*) FROM quiz_attempts WHERE ip_hash=? AND created_at >= datetime('now', '-1 hour')",
-                (ip_hash,),
+            recent = conn.execute(
+                "SELECT COUNT(*) FROM quiz_email_codes WHERE email_normalized=? AND created_at >= datetime('now', '-1 hour')",
+                (email,),
             ).fetchone()[0]
-            if recent_attempts >= 10:
-                raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже")
+            if recent >= 5:
+                raise HTTPException(status_code=429, detail="Слишком много кодов. Попробуйте позже")
             conn.execute(
                 """
-                INSERT INTO quiz_attempts(
-                    campaign_code, token_hash, questions_snapshot_json, answers_json, current_index,
-                    status, question_started_at, question_deadline_at, attempt_deadline_at, ip_hash, user_agent
-                ) VALUES (?, ?, ?, '{}', 0, 'in_progress', ?, NULL, ?, ?, ?)
+                INSERT INTO quiz_email_codes(email_normalized, code_hash, identity_json, campaign_code, expires_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (
-                    campaign, token_hash, json.dumps(questions, ensure_ascii=False, sort_keys=True),
-                    quiz_timestamp(now), quiz_timestamp(deadline) if deadline else None, ip_hash, user_agent,
-                ),
+                (email, email_code_hash(settings.secret_key, email, code), identity_json(**identity), campaign, quiz_timestamp(expires)),
             )
+        try:
+            await run_in_threadpool(
+                send_quiz_email_code,
+                host=settings.smtp_host,
+                port=settings.smtp_port,
+                username=settings.smtp_username,
+                password=settings.smtp_password,
+                sender=settings.smtp_from,
+                starttls=settings.smtp_starttls,
+                recipient=email,
+                code=code,
+                campaign_title=campaign_row["title"],
+                expires_minutes=settings.email_code_minutes,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Не удалось отправить письмо. Попробуйте позже") from exc
+        return {"ok": True, "expires_minutes": settings.email_code_minutes}
+
+    @app.post("/api/quiz/email/verify")
+    async def quiz_email_verify(request: Request):
+        payload = await request_json(request)
+        campaign = normalize_campaign(payload.get("campaign"))
+        try:
+            email = normalize_email(payload.get("email"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Проверьте адрес электронной почты")
+        code = str(payload.get("code", "")).strip()
+        if not email or not re.fullmatch(r"\d{6}", code):
+            raise HTTPException(status_code=422, detail="Введите шестизначный код")
+        with transaction(settings.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM quiz_email_codes
+                WHERE email_normalized=? AND campaign_code=? AND used_at IS NULL
+                ORDER BY id DESC LIMIT 1
+                """,
+                (email, campaign),
+            ).fetchone()
+            if not row or datetime.fromisoformat(row["expires_at"]) < utc_now():
+                raise HTTPException(status_code=410, detail="Код истёк. Запросите новый")
+            if row["attempts_left"] <= 0:
+                raise HTTPException(status_code=429, detail="Лимит проверок исчерпан. Запросите новый код")
+            expected = email_code_hash(settings.secret_key, email, code)
+            if not hmac.compare_digest(expected, row["code_hash"]):
+                conn.execute("UPDATE quiz_email_codes SET attempts_left=attempts_left-1 WHERE id=?", (row["id"],))
+                raise HTTPException(status_code=422, detail="Неверный код")
+            conn.execute("UPDATE quiz_email_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?", (row["id"],))
+            identity = json.loads(row["identity_json"])
+        identity.update({"campaign": campaign, "method": "email", "email": email})
+        request.session["quiz_verified_identity"] = identity
+        return {"ok": True, "identity": {"method": "email", "email": email}}
+
+    def attempt_response(attempt: sqlite3.Row, token: str, *, resumed: bool) -> dict[str, Any]:
+        questions = json.loads(attempt["questions_snapshot_json"])
+        answers = json.loads(attempt["answers_json"] or "{}")
         return {
             "ok": True,
+            "resumed": resumed,
             "attempt_token": token,
+            "attempt_number": int(attempt["attempt_number"]),
             "questions": public_questions(questions),
+            "answers": answers,
+            "current_index": min(max(0, int(attempt["current_index"] or 0)), max(0, len(questions) - 1)),
             "total": len(questions),
-            "time_limit_seconds": seconds,
-            "deadline_at": quiz_timestamp(deadline) if deadline else None,
+            "time_limit_seconds": 0 if not attempt["attempt_deadline_at"] else max(0, int((datetime.fromisoformat(attempt["attempt_deadline_at"]) - datetime.fromisoformat(attempt["question_started_at"])).total_seconds())),
+            "deadline_at": attempt["attempt_deadline_at"],
         }
+
+    @app.post("/api/quiz/start")
+    async def quiz_start(request: Request):
+        payload = await request_json(request)
+        campaign = normalize_campaign(payload.get("campaign"))
+        campaign_row = quiz_campaign_or_404(campaign)
+        verified = verified_identity(request, campaign)
+        if campaign_row["verification_required"] and not verified:
+            raise HTTPException(status_code=403, detail="Подтвердите вход через Telegram или email")
+        phone = str(verified.get("phone") or payload.get("phone") or "").strip()[:80]
+        username = str(verified.get("username") or payload.get("username") or "").strip()[:100]
+        name = str(verified.get("name") or payload.get("name") or "").strip()[:100]
+        nickname = str(verified.get("nickname") or payload.get("nickname") or "").strip()[:100]
+        email = str(verified.get("email") or payload.get("email") or "").strip()[:254]
+        telegram_user_id = str(verified.get("telegram_user_id") or "")[:80]
+        identity_method = str(verified.get("method") or "contact")
+        source = str(payload.get("source", "")).strip()[:80]
+        referrer_id = str(payload.get("referrer_id", "")).strip()[:80]
+        client_ip = request.client.host if request.client else "unknown"
+        ip_hash = ip_fingerprint(settings.secret_key, client_ip)
+        now = utc_now()
+        seconds = max(0, int(campaign_row["quiz_time_limit_seconds"] or 0))
+        user_agent = request.headers.get("user-agent", "")[:300]
+        try:
+            with transaction(settings.db_path) as conn:
+                client_id, is_new_client, _ = find_or_create_quiz_client(
+                    conn, campaign=campaign, phone_raw=phone, username=username, name=name, nickname=nickname,
+                    email=email, telegram_user_id=telegram_user_id, source=source, referrer_id=referrer_id,
+                )
+                active = conn.execute(
+                    "SELECT * FROM quiz_attempts WHERE client_id=? AND campaign_code=? AND status='in_progress' ORDER BY id DESC LIMIT 1",
+                    (client_id, campaign),
+                ).fetchone()
+                if active and active["attempt_deadline_at"] and datetime.fromisoformat(active["attempt_deadline_at"]) <= now:
+                    conn.execute("UPDATE quiz_attempts SET status='expired', finished_at=?, last_activity_at=? WHERE id=?", (quiz_timestamp(now), quiz_timestamp(now), active["id"]))
+                    active = None
+                token = secrets.token_urlsafe(32)
+                token_hash = attempt_token_hash(settings.secret_key, token)
+                if active:
+                    conn.execute("UPDATE quiz_attempts SET token_hash=?, last_activity_at=? WHERE id=?", (token_hash, quiz_timestamp(now), active["id"]))
+                    active = conn.execute("SELECT * FROM quiz_attempts WHERE id=?", (active["id"],)).fetchone()
+                    return attempt_response(active, token, resumed=True)
+                summary = conn.execute(
+                    "SELECT * FROM quiz_participation_summary WHERE client_id=? AND campaign_code=?",
+                    (client_id, campaign),
+                ).fetchone()
+                attempts_used = int(summary["attempts_used"]) if summary else 0
+                if summary and summary["successful"]:
+                    raise HTTPException(status_code=409, detail="Этот квиз уже успешно пройден")
+                max_attempts = max(1, int(campaign_row["max_attempts"] or 3))
+                if attempts_used >= max_attempts:
+                    raise HTTPException(status_code=429, detail="Лимит попыток для этого квиза исчерпан")
+                recent_attempts = conn.execute(
+                    "SELECT COUNT(*) FROM quiz_attempts WHERE ip_hash=? AND created_at >= datetime('now', '-1 hour')",
+                    (ip_hash,),
+                ).fetchone()[0]
+                if recent_attempts >= 10:
+                    raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже")
+                questions = load_db_questions(conn, campaign)
+                deadline = now + timedelta(seconds=seconds) if seconds > 0 else None
+                cursor = conn.execute(
+                """
+                INSERT INTO quiz_attempts(
+                    campaign_code, client_id, attempt_number, identity_method, is_new_client,
+                    quiz_referrer_id, source, token_hash, questions_snapshot_json, answers_json, current_index,
+                    status, question_started_at, question_deadline_at, attempt_deadline_at, ip_hash, user_agent, last_activity_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', 0, 'in_progress', ?, NULL, ?, ?, ?, ?)
+                """,
+                (
+                    campaign, client_id, attempts_used + 1, identity_method, int(is_new_client), referrer_id or None,
+                    source or None, token_hash, json.dumps(questions, ensure_ascii=False, sort_keys=True),
+                    quiz_timestamp(now), quiz_timestamp(deadline) if deadline else None, ip_hash, user_agent, quiz_timestamp(now),
+                ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO quiz_participation_summary(client_id, campaign_code, attempts_used, last_attempt_at)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(client_id, campaign_code) DO UPDATE SET
+                        attempts_used=attempts_used+1, last_attempt_at=excluded.last_attempt_at, updated_at=CURRENT_TIMESTAMP
+                    """,
+                    (client_id, campaign, quiz_timestamp(now)),
+                )
+                attempt = conn.execute("SELECT * FROM quiz_attempts WHERE id=?", (cursor.lastrowid,)).fetchone()
+                response = attempt_response(attempt, token, resumed=False)
+                response["time_limit_seconds"] = seconds
+                response["max_attempts"] = max_attempts
+                response["attempts_left"] = max_attempts - attempts_used - 1
+                return response
+        except ValueError as exc:
+            messages = {
+                "phone_invalid": "Проверьте номер телефона",
+                "username_invalid": "Проверьте Telegram username",
+                "identity_required": "Укажите номер телефона или Telegram username",
+                "identity_conflict": "Телефон и Telegram относятся к разным карточкам. Обратитесь к администратору",
+                "email_invalid": "Проверьте адрес электронной почты",
+            }
+            raise HTTPException(status_code=422, detail=messages.get(str(exc), "Не удалось определить участника"))
 
     @app.post("/api/quiz/answer")
     async def quiz_answer(request: Request):
-        try:
-            payload = await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise HTTPException(status_code=400, detail="Некорректные данные")
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="Некорректные данные")
+        payload = await request_json(request)
         token = str(payload.get("attempt_token", ""))
         if len(token) < 32:
             raise HTTPException(status_code=404, detail="Попытка не найдена")
@@ -381,20 +674,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=422, detail="Выберите ответ") from exc
             answers = json.loads(attempt["answers_json"])
             answers[question["id"]] = value
+            question_index = next(index for index, item in enumerate(questions) if item["id"] == question_id)
             conn.execute(
-                "UPDATE quiz_attempts SET answers_json=? WHERE id=?",
-                (json.dumps(answers, ensure_ascii=False, sort_keys=True), attempt["id"]),
+                "UPDATE quiz_attempts SET answers_json=?, current_index=MAX(current_index, ?), last_activity_at=? WHERE id=?",
+                (json.dumps(answers, ensure_ascii=False, sort_keys=True), min(question_index + 1, len(questions) - 1), quiz_timestamp(now), attempt["id"]),
             )
         return {"ok": True, "question_id": question_id, "saved": True}
 
     @app.post("/api/quiz/finish")
     async def quiz_finish(request: Request):
-        try:
-            payload = await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise HTTPException(status_code=400, detail="Некорректные данные")
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="Некорректные данные")
+        payload = await request_json(request)
         token = str(payload.get("attempt_token", ""))
         if len(token) < 32:
             raise HTTPException(status_code=404, detail="Попытка не найдена")
@@ -404,179 +693,109 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             attempt = conn.execute("SELECT * FROM quiz_attempts WHERE token_hash=?", (token_hash,)).fetchone()
             if not attempt or attempt["status"] != "in_progress":
                 raise HTTPException(status_code=409, detail="Эта попытка уже завершена")
+            campaign_row = conn.execute(
+                """
+                SELECT qc.*, pt.title AS bonus_title FROM quiz_campaigns qc
+                LEFT JOIN preference_types pt ON pt.code=qc.bonus_preference_code
+                WHERE qc.code=?
+                """,
+                (attempt["campaign_code"],),
+            ).fetchone()
+            if not campaign_row or not attempt["client_id"]:
+                raise HTTPException(status_code=409, detail="Данные попытки устарели")
             questions = json.loads(attempt["questions_snapshot_json"])
             answers = json.loads(attempt["answers_json"])
             for question in questions:
                 if question["id"] not in answers:
                     answers[question["id"]] = [] if question["type"] == "multi_choice" else ""
+            scoring = score_answers(questions, answers)
+            pass_score = int(campaign_row["pass_score"] or 0)
+            deadline = datetime.fromisoformat(attempt["attempt_deadline_at"]) if attempt["attempt_deadline_at"] else None
+            timed_out = bool(deadline and now > deadline + timedelta(seconds=1))
+            passed = bool(not timed_out and (pass_score <= 0 or scoring["score"] >= pass_score))
+            client_row = conn.execute("SELECT * FROM clients WHERE id=?", (attempt["client_id"],)).fetchone()
+            bonus_eligible = bool(passed and campaign_row["bonus_preference_code"] and int(campaign_row["bonus_amount"] or 0) > 0)
+            cursor = conn.execute(
+                """
+                INSERT INTO quiz_submissions(
+                    attempt_id, campaign_code, client_id, phone_raw, phone_local, name, username, nickname,
+                    answers_json, questions_snapshot_json, score, max_score, correct_count, max_correct_count, passed,
+                    bonus_granted, bonus_pending, bonus_type, is_duplicate, is_new_client,
+                    quiz_referrer_id, source, user_agent, ip_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?)
+                """,
+                (
+                    attempt["id"], attempt["campaign_code"], attempt["client_id"], client_row["phone_raw"] or "",
+                    client_row["phone_local"] or "", client_row["first_name"], client_row["username"], client_row["nickname"],
+                    json.dumps(answers, ensure_ascii=False, sort_keys=True),
+                    json.dumps(questions, ensure_ascii=False, sort_keys=True), scoring["score"], scoring["max_score"],
+                    scoring["correct_count"], scoring["max_correct_count"], int(passed), int(bonus_eligible),
+                    campaign_row["bonus_preference_code"], attempt["is_new_client"], attempt["quiz_referrer_id"],
+                    attempt["source"], attempt["user_agent"], attempt["ip_hash"],
+                ),
+            )
+            submission_id = int(cursor.lastrowid)
+            reward = issue_reward(
+                conn, client_id=int(attempt["client_id"]), campaign=campaign_row,
+                submission_id=submission_id, timezone_name=settings.timezone_name,
+            ) if bonus_eligible else None
             conn.execute(
                 """
-                UPDATE quiz_attempts SET answers_json=?, current_index=?, status='awaiting_contact',
-                    completed_questions_at=? WHERE id=?
+                UPDATE quiz_attempts SET answers_json=?, current_index=?, status='submitted',
+                    completed_questions_at=?, finished_at=?, last_activity_at=? WHERE id=?
                 """,
-                (json.dumps(answers, ensure_ascii=False, sort_keys=True), len(questions), quiz_timestamp(now), attempt["id"]),
+                (json.dumps(answers, ensure_ascii=False, sort_keys=True), len(questions), quiz_timestamp(now), quiz_timestamp(now), quiz_timestamp(now), attempt["id"]),
             )
-        return {"ok": True, "completed": True}
+            conn.execute(
+                """
+                UPDATE quiz_participation_summary SET successful=MAX(successful, ?),
+                    reward_issued=MAX(reward_issued, ?), completed_at=CASE WHEN ?=1 THEN ? ELSE completed_at END,
+                    updated_at=CURRENT_TIMESTAMP WHERE client_id=? AND campaign_code=?
+                """,
+                (int(passed), int(bool(reward)), int(passed), quiz_timestamp(now), attempt["client_id"], attempt["campaign_code"]),
+            )
+            summary = conn.execute(
+                "SELECT * FROM quiz_participation_summary WHERE client_id=? AND campaign_code=?",
+                (attempt["client_id"], attempt["campaign_code"]),
+            ).fetchone()
+        attempts_used = int(summary["attempts_used"])
+        max_attempts = int(campaign_row["max_attempts"] or 3)
+        values = {
+            "bonus": campaign_row["bonus_title"] or campaign_row["bonus_preference_code"] or "",
+            "score": scoring["score"], "max_score": scoring["max_score"],
+            "correct_count": scoring["correct_count"], "max_correct_count": scoring["max_correct_count"],
+            "attempts_used": attempts_used, "max_attempts": max_attempts,
+        }
+        if reward:
+            outcome = "won"
+            title = render_campaign_text(campaign_row["victory_title"], values)
+            message = render_campaign_text(campaign_row["victory_text"], values)
+        elif not passed:
+            outcome = "not_won"
+            title = render_campaign_text(campaign_row["failure_title"], values)
+            message = render_campaign_text(campaign_row["failure_text"], values)
+        else:
+            outcome = "completed"
+            title = render_campaign_text(campaign_row["completion_title"], values)
+            message = render_campaign_text(campaign_row["completion_text"], values)
+        return {
+            "ok": True, "completed": True, "submission_id": submission_id, "outcome": outcome,
+            "title": title, "message": message, "passed": passed, "score": scoring["score"],
+            "max_score": scoring["max_score"], "correct_count": scoring["correct_count"],
+            "max_correct_count": scoring["max_correct_count"], "attempts_used": attempts_used,
+            "max_attempts": max_attempts, "attempts_left": max(0, max_attempts - attempts_used),
+            "retry_allowed": bool(not passed and attempts_used < max_attempts),
+            "timed_out": timed_out,
+            "reward_code": reward["code"] if reward else None,
+            "reward_valid_from": reward["valid_from"] if reward else None,
+            "reward_valid_until": reward["valid_until"] if reward else None,
+            "bonus_message": f"Покажи код администратору: {reward['code']}" if reward else None,
+            "bonus_granted": False,
+        }
 
     @app.post("/api/quiz/submit")
     async def quiz_submit(request: Request):
-        try:
-            payload = await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            raise HTTPException(status_code=400, detail="Некорректные данные")
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="Некорректные данные")
-        if str(payload.get("website", "")).strip():
-            return {"ok": True, "message": "Ответы сохранены"}
-
-        attempt_token = str(payload.get("attempt_token", ""))
-        if len(attempt_token) < 32:
-            raise HTTPException(status_code=422, detail="Сначала пройдите вопросы квиза")
-        token_hash = attempt_token_hash(settings.secret_key, attempt_token)
-        phone_raw = str(payload.get("phone", "")).strip()[:80]
-        name = str(payload.get("name", "")).strip()[:100]
-        username = str(payload.get("username", "")).strip().lstrip("@")[:100]
-        nickname = str(payload.get("nickname", "")).strip()[:100]
-        if not phone_raw:
-            raise HTTPException(status_code=422, detail="Укажите номер телефона")
-        if not any((name, username, nickname)):
-            raise HTTPException(status_code=422, detail="Укажите имя, никнейм или Telegram username")
-
-        client_ip = request.client.host if request.client else "unknown"
-        ip_hash = ip_fingerprint(settings.secret_key, client_ip)
-        user_agent = request.headers.get("user-agent", "")[:300]
-        quiz_referrer_id = str(payload.get("referrer_id", "")).strip()[:80] or None
-        quiz_source = str(payload.get("source", "")).strip()[:80] or None
-
-        try:
-            with transaction(settings.db_path) as conn:
-                attempt = conn.execute("SELECT * FROM quiz_attempts WHERE token_hash=?", (token_hash,)).fetchone()
-                if not attempt or attempt["status"] != "awaiting_contact":
-                    raise HTTPException(status_code=409, detail="Попытка не найдена или уже отправлена")
-                campaign = attempt["campaign_code"]
-                campaign_row = conn.execute(
-                    """
-                    SELECT qc.*, pt.title AS bonus_title FROM quiz_campaigns qc
-                    LEFT JOIN preference_types pt ON pt.code=qc.bonus_preference_code
-                    WHERE qc.code=?
-                    """,
-                    (campaign,),
-                ).fetchone()
-                if not campaign_row:
-                    raise HTTPException(status_code=409, detail="Кампания больше недоступна")
-                questions = json.loads(attempt["questions_snapshot_json"])
-                answers = json.loads(attempt["answers_json"])
-                scoring = score_answers(questions, answers)
-                pass_score = int(campaign_row["pass_score"] or 0)
-                passed = pass_score <= 0 or scoring["score"] >= pass_score
-                recent_count = conn.execute(
-                    "SELECT COUNT(*) FROM quiz_submissions WHERE ip_hash = ? AND created_at >= datetime('now', '-1 hour')",
-                    (ip_hash,),
-                ).fetchone()[0]
-                if recent_count >= 5:
-                    raise HTTPException(status_code=429, detail="Слишком много отправок. Попробуйте позже")
-                client_id, is_new_client = upsert_quiz_client(
-                    conn,
-                    phone_raw=phone_raw,
-                    name=name,
-                    username=username,
-                    nickname=nickname,
-                )
-                phone_local = conn.execute("SELECT phone_local FROM clients WHERE id = ?", (client_id,)).fetchone()[0]
-                duplicate = bool(
-                    conn.execute(
-                        "SELECT 1 FROM quiz_submissions WHERE phone_local = ? AND campaign_code = ? LIMIT 1",
-                        (phone_local, campaign),
-                    ).fetchone()
-                )
-                bonus_code = campaign_row["bonus_preference_code"]
-                bonus_amount = int(campaign_row["bonus_amount"] or 0)
-                bonus_granted = 0
-                bonus_pending = 0
-                if bonus_code and bonus_amount > 0 and not duplicate and passed:
-                    preference = conn.execute(
-                        "SELECT kind, is_active FROM preference_types WHERE code = ?",
-                        (bonus_code,),
-                    ).fetchone()
-                    if preference and preference["kind"] == "counter" and preference["is_active"]:
-                        try:
-                            ensure_preferences(conn, client_id)
-                            change_counter(
-                                conn,
-                                client_id=client_id,
-                                code=bonus_code,
-                                delta=bonus_amount,
-                                reason="quiz_completed",
-                                comment=f"Квиз campaign={campaign}",
-                                admin_name="system",
-                            )
-                            bonus_granted = 1
-                        except ValueError:
-                            bonus_pending = 1
-                    else:
-                        bonus_pending = 1
-                cursor = conn.execute(
-                    """
-                    INSERT INTO quiz_submissions(
-                        attempt_id, campaign_code, client_id, phone_raw, phone_local, name, username, nickname,
-                        answers_json, questions_snapshot_json, score, max_score, correct_count, max_correct_count, passed,
-                        bonus_granted, bonus_pending, bonus_type, is_duplicate, is_new_client,
-                        quiz_referrer_id, source, user_agent, ip_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        attempt["id"], campaign, client_id, phone_raw, phone_local, name or None, username or None,
-                        nickname or None, json.dumps(answers, ensure_ascii=False, sort_keys=True),
-                        json.dumps(questions, ensure_ascii=False, sort_keys=True),
-                        scoring["score"], scoring["max_score"], scoring["correct_count"],
-                        scoring["max_correct_count"], int(passed), bonus_granted, bonus_pending,
-                        bonus_code, int(duplicate), int(is_new_client), quiz_referrer_id,
-                        quiz_source, user_agent, ip_hash,
-                    ),
-                )
-                submission_id = int(cursor.lastrowid)
-                conn.execute("UPDATE quiz_attempts SET status='submitted' WHERE id=?", (attempt["id"],))
-        except ValueError as exc:
-            if str(exc) == "phone_invalid":
-                raise HTTPException(status_code=422, detail="Проверьте номер телефона")
-            raise
-
-        bonus_title = campaign_row["bonus_title"] or bonus_code or "бонус"
-        prize_label = f"{bonus_amount} × {bonus_title}" if bonus_amount > 1 else bonus_title
-        won = bool(passed and bonus_code and bonus_amount > 0 and not duplicate)
-        if won:
-            outcome = "won"
-            bonus_message = f"Поздравляем! Вы получаете «{prize_label}»!"
-            if bonus_pending:
-                bonus_message += " Начисление будет подтверждено администратором."
-        elif pass_score > 0 and not passed:
-            outcome = "not_won"
-            bonus_message = "Не расстраивайтесь — в следующий раз вам обязательно повезёт!"
-        elif duplicate and bonus_code:
-            outcome = "completed"
-            bonus_message = "Повторная попытка сохранена. Бонус учитывается только по первой попытке."
-        else:
-            outcome = "completed"
-            bonus_message = None
-        return {
-            "ok": True,
-            "submission_id": submission_id,
-            "duplicate": duplicate,
-            "new_client": is_new_client,
-            "bonus_granted": bool(bonus_granted),
-            "bonus_message": bonus_message,
-            "bonus_title": bonus_title if bonus_code else None,
-            "bonus_amount": bonus_amount,
-            "prize_label": prize_label if bonus_code else None,
-            "outcome": outcome,
-            "score": scoring["score"],
-            "max_score": scoring["max_score"],
-            "correct_count": scoring["correct_count"],
-            "max_correct_count": scoring["max_correct_count"],
-            "passed": passed,
-            "pass_score": pass_score,
-            "message": "Спасибо! Ответы сохранены",
-        }
+        raise HTTPException(status_code=410, detail="Форма обновилась. Вернитесь на страницу квиза и начните снова")
 
     def quiz_result_filters(
         campaign: str, phone: str, username: str, bonus: str, date_from: str, date_to: str
@@ -610,9 +829,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as conn:
             return conn.execute(
                 f"""
-                SELECT qs.*, qc.title AS campaign_title
+                SELECT qs.*, qc.title AS campaign_title, qrc.code AS reward_code,
+                       qrc.status AS reward_status, qrc.valid_until AS reward_valid_until
                 FROM quiz_submissions qs
                 LEFT JOIN quiz_campaigns qc ON qc.code = qs.campaign_code
+                LEFT JOIN quiz_reward_codes qrc ON qrc.submission_id = qs.id
                 WHERE {where} ORDER BY qs.id DESC LIMIT ?
                 """,
                 (*params, limit),
@@ -641,10 +862,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as conn:
             row = conn.execute(
                 """
-                SELECT qs.*, qc.title AS campaign_title, pt.title AS bonus_title
+                SELECT qs.*, qc.title AS campaign_title, pt.title AS bonus_title,
+                       qrc.code AS reward_code, qrc.status AS reward_status,
+                       qrc.valid_from AS reward_valid_from, qrc.valid_until AS reward_valid_until,
+                       qrc.used_at AS reward_used_at
                 FROM quiz_submissions qs
                 LEFT JOIN quiz_campaigns qc ON qc.code=qs.campaign_code
                 LEFT JOIN preference_types pt ON pt.code=qs.bonus_type
+                LEFT JOIN quiz_reward_codes qrc ON qrc.submission_id=qs.id
                 WHERE qs.id=?
                 """,
                 (submission_id,),
@@ -670,6 +895,91 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             context(request, result=row, answers=answer_summary(snapshot, row["answers_json"])),
         )
 
+    def rewards_redirect(message: str, *, error: bool = False) -> RedirectResponse:
+        return RedirectResponse(f"/admin/rewards?{'error' if error else 'ok'}={quote(message)}", status_code=303)
+
+    @app.get("/admin/rewards", response_class=HTMLResponse)
+    async def rewards_page(request: Request, status: str = "", code: str = "", ok: str = "", error: str = ""):
+        require_auth(request)
+        clauses = ["1=1"]
+        params: list[Any] = []
+        if status in {"issued", "used", "expired", "cancelled"}:
+            clauses.append("qrc.status=?")
+            params.append(status)
+        if code.strip():
+            clauses.append("qrc.code LIKE ?")
+            params.append(f"%{code.strip().upper()}%")
+        with transaction(settings.db_path) as conn:
+            cleanup_quiz_data(
+                conn, detail_days=settings.quiz_detail_retention_days,
+                reward_days=settings.reward_retention_days,
+                action_log_days=settings.action_log_retention_days,
+            )
+            rewards = conn.execute(
+                f"""
+                SELECT qrc.*, qc.title AS campaign_title, pt.title AS preference_title,
+                       c.first_name, c.nickname, c.username, c.phone_local, c.phone_raw
+                FROM quiz_reward_codes qrc
+                JOIN clients c ON c.id=qrc.client_id
+                LEFT JOIN quiz_campaigns qc ON qc.code=qrc.campaign_code
+                LEFT JOIN preference_types pt ON pt.code=qrc.preference_code
+                WHERE {' AND '.join(clauses)} ORDER BY qrc.id DESC LIMIT 500
+                """,
+                params,
+            ).fetchall()
+            events = conn.execute("SELECT * FROM quiz_reward_events ORDER BY id DESC LIMIT 100").fetchall()
+        return templates.TemplateResponse(
+            request, "rewards.html",
+            context(request, rewards=rewards, events=events, filters={"status": status, "code": code}, ok=ok, error=error),
+        )
+
+    @app.post("/api/rewards/redeem")
+    async def redeem_reward_code(request: Request, code: str = Form(...), csrf_token: str = Form(...)):
+        require_auth(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                reward = redeem_reward(
+                    conn, code=code, admin_id=int(request.session["admin_id"]),
+                    admin_name=request.session["admin_name"],
+                )
+                audit(
+                    conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                    action="redeem", entity_type="quiz_reward", entity_id=int(reward["id"]),
+                    details={"code": reward["code"], "campaign": reward["campaign_code"], "client_id": reward["client_id"]},
+                )
+        except ValueError as exc:
+            messages = {
+                "reward_not_found": "Код не найден", "reward_used": "Код уже использован",
+                "reward_expired": "Срок действия кода истёк", "reward_cancelled": "Код отменён",
+                "reward_not_started": "Срок действия кода ещё не начался",
+                "reward_preference_unavailable": "Этот тип бонуса сейчас недоступен",
+            }
+            return rewards_redirect(messages.get(str(exc), "Не удалось применить код"), error=True)
+        return rewards_redirect(f"Код {reward['code']} применён. Бонус начислен клиенту")
+
+    @app.post("/api/rewards/{reward_id:int}/cancel")
+    async def cancel_reward_code(request: Request, reward_id: int, csrf_token: str = Form(...)):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            reward = conn.execute("SELECT * FROM quiz_reward_codes WHERE id=?", (reward_id,)).fetchone()
+            if not reward:
+                return rewards_redirect("Код не найден", error=True)
+            if reward["status"] != "issued":
+                return rewards_redirect("Можно отменить только неиспользованный активный код", error=True)
+            conn.execute("UPDATE quiz_reward_codes SET status='cancelled', cancelled_at=CURRENT_TIMESTAMP WHERE id=?", (reward_id,))
+            conn.execute(
+                "INSERT INTO quiz_reward_events(reward_id, code, client_id, campaign_code, action, admin_name) VALUES (?, ?, ?, ?, 'cancelled', ?)",
+                (reward_id, reward["code"], reward["client_id"], reward["campaign_code"], request.session["admin_name"]),
+            )
+            audit(
+                conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                action="cancel", entity_type="quiz_reward", entity_id=reward_id,
+                details={"code": reward["code"], "campaign": reward["campaign_code"]},
+            )
+        return rewards_redirect(f"Код {reward['code']} отменён")
+
     @app.get("/api/quiz/results")
     async def quiz_results_api(
         request: Request,
@@ -694,9 +1004,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as conn:
             totals = conn.execute(
                 """
-                SELECT COUNT(*) AS submissions, COUNT(DISTINCT phone_local) AS unique_people,
+                SELECT COUNT(*) AS submissions, COUNT(DISTINCT client_id) AS unique_people,
                     SUM(CASE WHEN is_duplicate=1 THEN 1 ELSE 0 END) AS duplicates,
-                    SUM(CASE WHEN bonus_granted=1 THEN 1 ELSE 0 END) AS bonuses_granted,
+                    (SELECT COUNT(*) FROM quiz_reward_codes WHERE status='used') AS bonuses_granted,
                     SUM(CASE WHEN is_new_client=1 THEN 1 ELSE 0 END) AS new_clients,
                     SUM(CASE WHEN passed=1 THEN 1 ELSE 0 END) AS passed,
                     COUNT(DISTINCT quiz_referrer_id) AS referrers
@@ -946,6 +1256,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ValueError("Количество бонусов должно быть от 1 до 100")
         return bonus_code, bonus_amount
 
+    def campaign_content_values(**values: str) -> dict[str, str]:
+        defaults = {
+            "welcome_kicker": "Короткий опрос клуба",
+            "welcome_text": "Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.",
+            "start_button_text": "Начать",
+            "identity_text": "Укажи номер телефона или Telegram username, чтобы мы сохранили попытку и смогли продолжить её после закрытия страницы.",
+            "victory_title": "Поздравляем!",
+            "victory_text": "Отличная игра! Твой результат — {score} из {max_score}.",
+            "failure_title": "Не расстраивайся",
+            "failure_text": "Попробуй ещё раз — использовано попыток: {attempts_used} из {max_attempts}.",
+            "completion_title": "Спасибо!",
+            "completion_text": "Твои ответы сохранены.",
+        }
+        result = {}
+        for key, default in defaults.items():
+            value = str(values.get(key, "")).strip() or default
+            if len(value) > 1000:
+                raise ValueError("Текст квиза не должен превышать 1000 символов")
+            result[key] = value
+        return result
+
+    def campaign_reward_values(
+        mode: str, value: int, valid_from: str, valid_until: str
+    ) -> tuple[str, int, str | None, str | None]:
+        if mode not in {"end_of_day", "hours", "days", "fixed", "unlimited"}:
+            raise ValueError("Проверьте срок действия награды")
+        if mode in {"hours", "days"} and not 1 <= value <= 365:
+            raise ValueError("Количество часов или дней должно быть от 1 до 365")
+        start, end = validate_campaign_period(valid_from, valid_until)
+        if mode == "fixed" and not end:
+            raise ValueError("Для фиксированного срока укажите дату окончания")
+        if mode != "fixed":
+            start, end = None, None
+        return mode, max(0, value), start, end
+
     @app.post("/api/master/quiz-campaigns/create")
     async def create_quiz_campaign(
         request: Request,
@@ -955,6 +1300,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bonus_amount: int = Form(0),
         pass_score: int = Form(0),
         quiz_time_limit_seconds: int = Form(120),
+        max_attempts: int = Form(3),
+        verification_required: bool = Form(False),
+        reward_validity_mode: str = Form("end_of_day"),
+        reward_validity_value: int = Form(0),
+        reward_valid_from: str = Form(""),
+        reward_valid_until: str = Form(""),
         active_from: str = Form(""),
         active_until: str = Form(""),
         csrf_token: str = Form(...),
@@ -969,18 +1320,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Порог должен быть от 0 до 10000", error=True, tab="campaigns")
         if quiz_time_limit_seconds < 0 or quiz_time_limit_seconds > 7200:
             return master_redirect("Общий таймер должен быть от 0 до 7200 секунд", error=True, tab="campaigns")
+        if max_attempts < 1 or max_attempts > 100:
+            return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
+        if verification_required and not (
+            (settings.telegram_client_id and settings.telegram_client_secret) or (settings.smtp_host and settings.smtp_from)
+        ):
+            return master_redirect("Сначала настройте Telegram или email в .env", error=True, tab="campaigns")
         try:
             active_from_value, active_until_value = validate_campaign_period(active_from, active_until)
+            reward_mode, reward_value, reward_from, reward_until = campaign_reward_values(
+                reward_validity_mode, reward_validity_value, reward_valid_from, reward_valid_until
+            )
             with transaction(settings.db_path) as conn:
                 bonus_code, bonus_amount = validate_campaign_bonus(conn, bonus_preference_code, bonus_amount)
                 cursor = conn.execute(
                     """
                     INSERT INTO quiz_campaigns(
                         code, title, bonus_preference_code, bonus_amount, pass_score, quiz_time_limit_seconds,
-                        active_from, active_until
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        max_attempts, verification_required, reward_validity_mode, reward_validity_value,
+                        reward_valid_from, reward_valid_until, active_from, active_until
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (code, title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, active_from_value, active_until_value),
+                    (code, title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, max_attempts,
+                     int(verification_required), reward_mode, reward_value, reward_from, reward_until,
+                     active_from_value, active_until_value),
                 )
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
@@ -1002,6 +1365,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bonus_amount: int = Form(0),
         pass_score: int = Form(0),
         quiz_time_limit_seconds: int = Form(120),
+        max_attempts: int = Form(3),
+        verification_required: bool = Form(False),
+        reward_validity_mode: str = Form("end_of_day"),
+        reward_validity_value: int = Form(0),
+        reward_valid_from: str = Form(""),
+        reward_valid_until: str = Form(""),
+        welcome_kicker: str = Form(""),
+        welcome_text: str = Form(""),
+        start_button_text: str = Form(""),
+        identity_text: str = Form(""),
+        victory_title: str = Form(""),
+        victory_text: str = Form(""),
+        failure_title: str = Form(""),
+        failure_text: str = Form(""),
+        completion_title: str = Form(""),
+        completion_text: str = Form(""),
         active_from: str = Form(""),
         active_until: str = Form(""),
         csrf_token: str = Form(...),
@@ -1015,8 +1394,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Порог должен быть от 0 до 10000", error=True, tab="campaigns")
         if quiz_time_limit_seconds < 0 or quiz_time_limit_seconds > 7200:
             return master_redirect("Общий таймер должен быть от 0 до 7200 секунд", error=True, tab="campaigns")
+        if max_attempts < 1 or max_attempts > 100:
+            return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
+        if verification_required and not (
+            (settings.telegram_client_id and settings.telegram_client_secret) or (settings.smtp_host and settings.smtp_from)
+        ):
+            return master_redirect("Сначала настройте Telegram или email в .env", error=True, tab="campaigns")
         try:
             active_from_value, active_until_value = validate_campaign_period(active_from, active_until)
+            reward_mode, reward_value, reward_from, reward_until = campaign_reward_values(
+                reward_validity_mode, reward_validity_value, reward_valid_from, reward_valid_until
+            )
+            content_values = campaign_content_values(
+                welcome_kicker=welcome_kicker, welcome_text=welcome_text, start_button_text=start_button_text,
+                identity_text=identity_text, victory_title=victory_title, victory_text=victory_text,
+                failure_title=failure_title, failure_text=failure_text,
+                completion_title=completion_title, completion_text=completion_text,
+            )
             with transaction(settings.db_path) as conn:
                 row = conn.execute("SELECT * FROM quiz_campaigns WHERE id = ?", (campaign_id,)).fetchone()
                 if not row:
@@ -1025,10 +1419,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 conn.execute(
                     """
                     UPDATE quiz_campaigns SET title=?, bonus_preference_code=?, bonus_amount=?, pass_score=?,
-                        quiz_time_limit_seconds=?, active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
+                        quiz_time_limit_seconds=?, max_attempts=?, verification_required=?,
+                        reward_validity_mode=?, reward_validity_value=?, reward_valid_from=?, reward_valid_until=?,
+                        welcome_kicker=?, welcome_text=?, start_button_text=?, identity_text=?,
+                        victory_title=?, victory_text=?, failure_title=?, failure_text=?,
+                        completion_title=?, completion_text=?, active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
-                    (title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, active_from_value, active_until_value, campaign_id),
+                    (title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, max_attempts,
+                     int(verification_required), reward_mode, reward_value, reward_from, reward_until,
+                     content_values["welcome_kicker"], content_values["welcome_text"], content_values["start_button_text"],
+                     content_values["identity_text"], content_values["victory_title"], content_values["victory_text"],
+                     content_values["failure_title"], content_values["failure_text"], content_values["completion_title"],
+                     content_values["completion_text"], active_from_value, active_until_value, campaign_id),
                 )
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
@@ -1731,17 +2134,89 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (client_id,),
             ).fetchall()
-        return client, prefs, logs
+            quiz_participation = conn.execute(
+                """
+                SELECT qps.*, qc.title, qc.max_attempts,
+                       EXISTS(SELECT 1 FROM quiz_attempts qa WHERE qa.client_id=qps.client_id AND qa.campaign_code=qps.campaign_code AND qa.status='in_progress') AS has_active_attempt
+                FROM quiz_participation_summary qps
+                LEFT JOIN quiz_campaigns qc ON qc.code=qps.campaign_code
+                WHERE qps.client_id=? ORDER BY qps.updated_at DESC
+                """,
+                (client_id,),
+            ).fetchall()
+        return client, prefs, logs, quiz_participation
 
     @app.get("/clients/{client_id:int}", response_class=HTMLResponse)
     async def client_detail(request: Request, client_id: int, ok: str = "", error: str = ""):
         require_auth(request)
-        client, prefs, logs = load_client(client_id)
+        client, prefs, logs, quiz_participation = load_client(client_id)
         return templates.TemplateResponse(
             request,
             "client_detail.html",
-            context(request, client=client, preferences=prefs, logs=logs, ok=ok, error=error),
+            context(request, client=client, preferences=prefs, logs=logs, quiz_participation=quiz_participation, ok=ok, error=error),
         )
+
+    @app.post("/api/clients/{client_id:int}/quiz/{campaign}/extra-attempt")
+    async def client_extra_quiz_attempt(request: Request, client_id: int, campaign: str, csrf_token: str = Form(...)):
+        require_auth(request, api=True)
+        check_csrf(request, csrf_token)
+        campaign = normalize_campaign(campaign)
+        with transaction(settings.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM quiz_participation_summary WHERE client_id=? AND campaign_code=?",
+                (client_id, campaign),
+            ).fetchone()
+            if not row:
+                return RedirectResponse(f"/clients/{client_id}?error={quote('Участие в кампании не найдено')}", status_code=303)
+            conn.execute(
+                "UPDATE quiz_participation_summary SET attempts_used=MAX(0, attempts_used-1), updated_at=CURRENT_TIMESTAMP WHERE client_id=? AND campaign_code=?",
+                (client_id, campaign),
+            )
+            audit(
+                conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                action="extra_attempt", entity_type="quiz_participation", entity_id=client_id,
+                details={"campaign": campaign, "previous_attempts_used": row["attempts_used"]},
+            )
+        return RedirectResponse(f"/clients/{client_id}?ok={quote('Дополнительная попытка предоставлена')}", status_code=303)
+
+    @app.post("/api/clients/{client_id:int}/quiz/{campaign}/reset-attempts")
+    async def client_reset_quiz_attempts(request: Request, client_id: int, campaign: str, csrf_token: str = Form(...)):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        campaign = normalize_campaign(campaign)
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                "UPDATE quiz_attempts SET status='expired', finished_at=CURRENT_TIMESTAMP WHERE client_id=? AND campaign_code=? AND status='in_progress'",
+                (client_id, campaign),
+            )
+            conn.execute(
+                "UPDATE quiz_participation_summary SET attempts_used=0, updated_at=CURRENT_TIMESTAMP WHERE client_id=? AND campaign_code=?",
+                (client_id, campaign),
+            )
+            audit(
+                conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                action="reset_attempts", entity_type="quiz_participation", entity_id=client_id,
+                details={"campaign": campaign},
+            )
+        return RedirectResponse(f"/clients/{client_id}?ok={quote('Счётчик попыток сброшен')}", status_code=303)
+
+    @app.post("/api/clients/{client_id:int}/quiz/{campaign}/finish-active")
+    async def client_finish_active_quiz(request: Request, client_id: int, campaign: str, csrf_token: str = Form(...)):
+        require_auth(request, api=True)
+        check_csrf(request, csrf_token)
+        campaign = normalize_campaign(campaign)
+        with transaction(settings.db_path) as conn:
+            changed = conn.execute(
+                "UPDATE quiz_attempts SET status='expired', finished_at=CURRENT_TIMESTAMP WHERE client_id=? AND campaign_code=? AND status='in_progress'",
+                (client_id, campaign),
+            ).rowcount
+            audit(
+                conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                action="finish_active_attempt", entity_type="quiz_participation", entity_id=client_id,
+                details={"campaign": campaign, "changed": changed},
+            )
+        message = "Активная попытка завершена" if changed else "Активная попытка не найдена"
+        return RedirectResponse(f"/clients/{client_id}?ok={quote(message)}", status_code=303)
 
     @app.get("/api/clients/{client_id}/qr")
     async def client_qr(request: Request, client_id: int):

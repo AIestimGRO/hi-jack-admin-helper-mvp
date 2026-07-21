@@ -14,7 +14,7 @@
   <div class="card result-detail-item"><small>Баллы</small><strong>{{ result.score|int }} из {{ result.max_score }}</strong></div>
   <div class="card result-detail-item"><small>Правильные ответы</small><strong>{{ result.correct_count }} из {{ result.max_correct_count }}</strong></div>
   <div class="card result-detail-item"><small>Проходной порог</small><strong class="{{ 'status-yes' if result.passed else 'status-no' }}">{{ 'Пройден' if result.passed else 'Не пройден' }}</strong></div>
-  <div class="card result-detail-item"><small>Бонус</small><strong>{% if result.bonus_granted %}Начислен{% elif result.bonus_pending %}Ожидает проверки{% else %}Не начислен{% endif %}{% if result.bonus_title %} · {{ result.bonus_title }}{% endif %}</strong></div>
+  <div class="card result-detail-item"><small>Бонус</small><strong>{% if result.reward_status=='used' %}Начислен{% elif result.reward_status=='issued' %}Код активен{% elif result.reward_status=='expired' %}Код просрочен{% elif result.reward_status=='cancelled' %}Код отменён{% else %}Не начислен{% endif %}{% if result.bonus_title %} · {{ result.bonus_title }}{% endif %}</strong>{% if result.reward_code %}<code>{{ result.reward_code }}</code>{% endif %}</div>
   <div class="card result-detail-item"><small>Дата прохождения</small><strong>{{ result.created_at }}</strong></div>
   <div class="card result-detail-item"><small>Клиент</small><strong>#{{ result.client_id }} · {{ 'новый' if result.is_new_client else 'существующий' }}</strong></div>
   <div class="card result-detail-item"><small>Повторное прохождение</small><strong>{{ 'Да' if result.is_duplicate else 'Нет' }}</strong></div>
