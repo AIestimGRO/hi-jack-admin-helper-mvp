@@ -48,27 +48,27 @@ def test_brand_theme_and_versioned_assets_are_used_everywhere(tmp_path):
     client, settings = make_client(tmp_path)
     with client:
         login_page = client.get("/login")
-        assert "/static/css/theme.css?v=2.0" in login_page.text
-        assert "/static/js/app.js?v=2.0" in login_page.text
-        assert "/static/img/brand/hi-jack-mark.webp?v=2.0" in login_page.text
+        asset_version = re.search(r"/static/css/theme.css\?v=([a-f0-9]{12})", login_page.text).group(1)
+        assert f"/static/js/app.js?v={asset_version}" in login_page.text
+        assert f"/static/img/brand/hi-jack-mark.webp?v={asset_version}" in login_page.text
 
         login(client)
         for url in ("/", "/clients", "/clients/import", "/logs", "/master", "/admin/quiz-results"):
             page = client.get(url)
             assert page.status_code == 200
-            assert "/static/css/theme.css?v=2.0" in page.text
-            assert "/static/js/app.js?v=2.0" in page.text
+            assert f"/static/css/theme.css?v={asset_version}" in page.text
+            assert f"/static/js/app.js?v={asset_version}" in page.text
 
         quiz = client.get("/quiz?campaign=default")
         assert quiz.status_code == 200
-        assert "/static/css/quiz-theme.css?v=2.0" in quiz.text
-        assert "/static/js/quiz.js?v=2.0" in quiz.text
+        assert f"/static/css/quiz-theme.css?v={asset_version}" in quiz.text
+        assert f"/static/js/quiz.js?v={asset_version}" in quiz.text
 
         with transaction(settings.db_path) as conn:
             campaign_id = conn.execute("SELECT id FROM quiz_campaigns WHERE code='default'").fetchone()[0]
         builder = client.get(f"/master/quiz-builder/{campaign_id}")
         assert builder.status_code == 200
-        assert "/static/css/builder.css?v=2.0" in builder.text
+        assert f"/static/css/builder.css?v={asset_version}" in builder.text
 
 
 def test_login_qr_and_preference_operation(tmp_path, monkeypatch):

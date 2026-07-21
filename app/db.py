@@ -142,6 +142,12 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     reward_validity_value INTEGER NOT NULL DEFAULT 0,
     reward_valid_from TEXT,
     reward_valid_until TEXT,
+    referral_enabled INTEGER NOT NULL DEFAULT 0,
+    referral_preference_code TEXT,
+    referral_amount INTEGER NOT NULL DEFAULT 0,
+    referral_threshold INTEGER NOT NULL DEFAULT 1,
+    referral_repeatable INTEGER NOT NULL DEFAULT 0,
+    referral_max_rewards INTEGER NOT NULL DEFAULT 1,
     active_from TEXT,
     active_until TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -269,6 +275,8 @@ CREATE TABLE IF NOT EXISTS quiz_reward_codes (
     client_id INTEGER NOT NULL REFERENCES clients(id),
     campaign_code TEXT NOT NULL,
     submission_id INTEGER,
+    reward_kind TEXT NOT NULL DEFAULT 'quiz',
+    referral_milestone INTEGER,
     preference_code TEXT NOT NULL,
     amount INTEGER NOT NULL CHECK(amount > 0),
     status TEXT NOT NULL DEFAULT 'issued' CHECK(status IN ('issued', 'used', 'expired', 'cancelled')),
@@ -281,6 +289,28 @@ CREATE TABLE IF NOT EXISTS quiz_reward_codes (
 );
 CREATE INDEX IF NOT EXISTS ix_quiz_reward_codes_client ON quiz_reward_codes(client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_quiz_reward_codes_status ON quiz_reward_codes(status, valid_until);
+
+CREATE TABLE IF NOT EXISTS quiz_referral_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    campaign_code TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(client_id, campaign_code)
+);
+
+CREATE TABLE IF NOT EXISTS quiz_referrals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_code TEXT NOT NULL,
+    referrer_client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    invited_client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    referral_code_id INTEGER NOT NULL REFERENCES quiz_referral_codes(id) ON DELETE CASCADE,
+    submission_id INTEGER REFERENCES quiz_submissions(id) ON DELETE SET NULL,
+    reward_id INTEGER REFERENCES quiz_reward_codes(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(campaign_code, invited_client_id)
+);
+CREATE INDEX IF NOT EXISTS ix_quiz_referrals_referrer ON quiz_referrals(referrer_client_id, campaign_code, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS quiz_reward_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -382,6 +412,14 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_campaigns", "reward_validity_value INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "reward_valid_from TEXT")
         _ensure_column(conn, "quiz_campaigns", "reward_valid_until TEXT")
+        _ensure_column(conn, "quiz_campaigns", "referral_enabled INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_campaigns", "referral_preference_code TEXT")
+        _ensure_column(conn, "quiz_campaigns", "referral_amount INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_campaigns", "referral_threshold INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "quiz_campaigns", "referral_repeatable INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_campaigns", "referral_max_rewards INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "quiz_reward_codes", "reward_kind TEXT NOT NULL DEFAULT 'quiz'")
+        _ensure_column(conn, "quiz_reward_codes", "referral_milestone INTEGER")
         _ensure_column(conn, "quiz_questions", "time_limit_seconds INTEGER")
         _ensure_column(conn, "quiz_submissions", "attempt_id INTEGER")
         _ensure_column(conn, "quiz_attempts", "attempt_deadline_at TEXT")

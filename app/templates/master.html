@@ -81,6 +81,15 @@
     <label>Секунд на весь тест <small>0 = без таймера</small><input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="120"></label>
     <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="3"></label>
     <label class="check-label"><input name="verification_required" type="checkbox" value="true"> Требовать Telegram или email</label>
+    <fieldset class="campaign-referral-fields">
+      <legend>Реферальная программа</legend>
+      <label class="check-label"><input name="referral_enabled" type="checkbox" value="true"> Включить кнопку «Поделиться тестом»</label>
+      <label>Награда рефоводу<select name="referral_preference_code"><option value="">Выберите бонус</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}">{{ pref.title }}</option>{% endfor %}</select></label>
+      <label>Количество бонусов<input name="referral_amount" type="number" min="0" max="100" value="1"></label>
+      <label>За каждые N участников<input name="referral_threshold" type="number" min="1" max="1000" value="1"></label>
+      <label class="check-label"><input name="referral_repeatable" type="checkbox" value="true"> Награждать повторно за каждые N приглашённых</label>
+      <label>Максимум наград <small>0 = без лимита</small><input name="referral_max_rewards" type="number" min="0" max="1000" value="1"></label>
+    </fieldset>
     <label>Срок кода<select name="reward_validity_mode"><option value="end_of_day">До конца дня</option><option value="hours">Количество часов</option><option value="days">Количество дней</option><option value="fixed">Точная дата</option><option value="unlimited">Без срока</option></select></label>
     <label>Часов / дней<input name="reward_validity_value" type="number" min="0" max="365" value="0"></label>
     <label>Код действует с<input name="reward_valid_from" type="datetime-local"></label>
@@ -107,6 +116,15 @@
         <label>Секунд на весь тест<input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="{{ campaign.quiz_time_limit_seconds }}"></label>
         <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="{{ campaign.max_attempts }}"></label>
         <label class="check-label"><input name="verification_required" type="checkbox" value="true" {% if campaign.verification_required %}checked{% endif %}> Требовать Telegram или email</label>
+        <fieldset class="campaign-referral-fields">
+          <legend>Реферальная программа</legend>
+          <label class="check-label"><input name="referral_enabled" type="checkbox" value="true" {% if campaign.referral_enabled %}checked{% endif %}> Включить кнопку «Поделиться тестом»</label>
+          <label>Награда рефоводу<select name="referral_preference_code"><option value="">Выберите бонус</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if campaign.referral_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
+          <label>Количество бонусов<input name="referral_amount" type="number" min="0" max="100" value="{{ campaign.referral_amount }}"></label>
+          <label>За каждые N участников<input name="referral_threshold" type="number" min="1" max="1000" value="{{ campaign.referral_threshold }}"></label>
+          <label class="check-label"><input name="referral_repeatable" type="checkbox" value="true" {% if campaign.referral_repeatable %}checked{% endif %}> Награждать повторно за каждые N приглашённых</label>
+          <label>Максимум наград <small>0 = без лимита</small><input name="referral_max_rewards" type="number" min="0" max="1000" value="{{ campaign.referral_max_rewards }}"></label>
+        </fieldset>
         <label>Срок кода<select name="reward_validity_mode"><option value="end_of_day" {% if campaign.reward_validity_mode=='end_of_day' %}selected{% endif %}>До конца дня</option><option value="hours" {% if campaign.reward_validity_mode=='hours' %}selected{% endif %}>Количество часов</option><option value="days" {% if campaign.reward_validity_mode=='days' %}selected{% endif %}>Количество дней</option><option value="fixed" {% if campaign.reward_validity_mode=='fixed' %}selected{% endif %}>Точная дата</option><option value="unlimited" {% if campaign.reward_validity_mode=='unlimited' %}selected{% endif %}>Без срока</option></select></label>
         <label>Часов / дней<input name="reward_validity_value" type="number" min="0" max="365" value="{{ campaign.reward_validity_value }}"></label>
         <label>Код действует с<input name="reward_valid_from" type="datetime-local" value="{{ campaign.reward_valid_from or '' }}"></label>

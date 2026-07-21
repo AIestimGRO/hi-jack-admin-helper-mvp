@@ -62,7 +62,7 @@ def issue_reward(
     if not preference_code or amount < 1:
         return None
     existing = conn.execute(
-        "SELECT * FROM quiz_reward_codes WHERE client_id=? AND campaign_code=? ORDER BY id DESC LIMIT 1",
+        "SELECT * FROM quiz_reward_codes WHERE client_id=? AND campaign_code=? AND reward_kind='quiz' ORDER BY id DESC LIMIT 1",
         (client_id, campaign["code"]),
     ).fetchone()
     if existing:
@@ -81,6 +81,50 @@ def issue_reward(
     conn.execute(
         "INSERT INTO quiz_reward_events(reward_id, code, client_id, campaign_code, action) VALUES (?, ?, ?, ?, 'issued')",
         (reward_id, code, client_id, campaign["code"]),
+    )
+    return conn.execute("SELECT * FROM quiz_reward_codes WHERE id=?", (reward_id,)).fetchone()
+
+
+def issue_referral_reward(
+    conn: sqlite3.Connection,
+    *,
+    client_id: int,
+    campaign: sqlite3.Row | dict[str, Any],
+    submission_id: int,
+    milestone: int,
+    timezone_name: str,
+) -> sqlite3.Row | None:
+    preference_code = campaign["referral_preference_code"]
+    amount = int(campaign["referral_amount"] or 0)
+    if not campaign["referral_enabled"] or not preference_code or amount < 1:
+        return None
+    existing = conn.execute(
+        """
+        SELECT * FROM quiz_reward_codes
+        WHERE client_id=? AND campaign_code=? AND reward_kind='referral' AND referral_milestone=?
+        """,
+        (client_id, campaign["code"], milestone),
+    ).fetchone()
+    if existing:
+        return existing
+    code = _new_code(conn)
+    valid_from, valid_until = reward_period(campaign, timezone_name)
+    cursor = conn.execute(
+        """
+        INSERT INTO quiz_reward_codes(
+            code, client_id, campaign_code, submission_id, reward_kind, referral_milestone,
+            preference_code, amount, valid_from, valid_until
+        ) VALUES (?, ?, ?, ?, 'referral', ?, ?, ?, ?, ?)
+        """,
+        (code, client_id, campaign["code"], submission_id, milestone, preference_code, amount, valid_from, valid_until),
+    )
+    reward_id = int(cursor.lastrowid)
+    conn.execute(
+        """
+        INSERT INTO quiz_reward_events(reward_id, code, client_id, campaign_code, action, details)
+        VALUES (?, ?, ?, ?, 'referral_issued', ?)
+        """,
+        (reward_id, code, client_id, campaign["code"], json.dumps({"milestone": milestone}, ensure_ascii=False)),
     )
     return conn.execute("SELECT * FROM quiz_reward_codes WHERE id=?", (reward_id,)).fetchone()
 

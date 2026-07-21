@@ -57,6 +57,61 @@ def login(client: TestClient) -> str:
     return re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
 
 
+def test_referral_link_counts_unique_completions_and_issues_separate_reward(tmp_path):
+    client, settings = make_client(tmp_path, quiz_public_base_url="https://quiz-v2.hijackpoker.ru")
+    with client:
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE quiz_campaigns SET referral_enabled=1, referral_preference_code='free_entry',
+                    referral_amount=1, referral_threshold=2, referral_repeatable=1,
+                    referral_max_rewards=0, pass_score=999 WHERE code='default'
+                """
+            )
+
+        owner = client.post(
+            "/api/quiz/start", json={"campaign": "default", "phone": "9991000001", "username": "owner"},
+        ).json()
+        owner_result = answer_all(client, owner)
+        assert owner_result["share_url"].startswith("https://quiz-v2.hijackpoker.ru/quiz?campaign=default&ref=")
+        referral_code = urllib.parse.parse_qs(urllib.parse.urlparse(owner_result["share_url"]).query)["ref"][0]
+
+        first = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9991000002", "username": "friend_one", "referrer_id": referral_code},
+        ).json()
+        assert answer_all(client, first)["referral_reward_issued"] is False
+
+        second = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9991000003", "username": "friend_two", "referrer_id": referral_code},
+        ).json()
+        assert answer_all(client, second)["referral_reward_issued"] is True
+
+        self_attempt = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9991000001", "username": "owner", "referrer_id": referral_code},
+        ).json()
+        answer_all(client, self_attempt)
+
+        with connect(settings.db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM quiz_referrals").fetchone()[0] == 2
+            reward = conn.execute(
+                "SELECT * FROM quiz_reward_codes WHERE reward_kind='referral'"
+            ).fetchone()
+            assert reward["client_id"] == conn.execute("SELECT id FROM clients WHERE username='owner'").fetchone()[0]
+            assert reward["referral_milestone"] == 1
+            assert conn.execute(
+                "SELECT COUNT(*) FROM quiz_reward_codes WHERE reward_kind='quiz'"
+            ).fetchone()[0] == 0
+
+        login(client)
+        stats = client.get("/admin/quiz-results")
+        assert "Реферальная статистика" in stats.text
+        assert "owner" in stats.text
+        assert re.search(r"owner.*?<td>2</td><td>1</td>", stats.text, re.DOTALL)
+
+
 def test_attempt_resumes_and_configured_limit_cannot_be_bypassed(tmp_path):
     client, settings = make_client(tmp_path)
     with client:

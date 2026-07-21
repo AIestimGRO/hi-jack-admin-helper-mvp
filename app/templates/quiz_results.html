@@ -19,6 +19,17 @@
   </form>
 </details>
 
+<details class="card results-filters" {% if referral_stats %}open{% endif %}>
+  <summary>Реферальная статистика ({{ referral_stats|length }})</summary>
+  <div class="table-wrap">
+    <table><thead><tr><th>Рефовод</th><th>Кампания</th><th>Завершили тест</th><th>Наград выдано</th><th>Последний реферал</th></tr></thead>
+    <tbody>{% for row in referral_stats %}<tr>
+      <td><strong>{{ row.first_name or row.nickname or ('@' ~ row.username if row.username else display_phone(row.phone_local, row.phone_raw)) }}</strong>{% if row.username %}<small>@{{ row.username }}</small>{% endif %}</td>
+      <td>{{ row.campaign_title or row.campaign_code }}</td><td>{{ row.completed_referrals }}</td><td>{{ row.rewards_issued }}</td><td>{{ row.last_referral_at[:16] }}</td>
+    </tr>{% else %}<tr><td colspan="5" class="empty">Завершённых приглашений пока нет</td></tr>{% endfor %}</tbody></table>
+  </div>
+</details>
+
 <div class="card table-wrap">
   <table class="quiz-results-table">
     <thead><tr><th>Телефон</th><th>Username</th><th>Набрано баллов</th><th>Порог</th><th>Бонус</th><th>Дата прохождения</th><th>Наименование</th><th>Действие</th></tr></thead>

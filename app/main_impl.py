@@ -54,7 +54,7 @@ from app.services.quiz_identity import (
 )
 from app.services.quiz_mail import send_quiz_email_code
 from app.services.quiz_retention import cleanup_quiz_data
-from app.services.quiz_rewards import issue_reward, redeem_reward, render_campaign_text
+from app.services.quiz_rewards import issue_referral_reward, issue_reward, redeem_reward, render_campaign_text
 from app.services.telegram_oidc import authorization_url, exchange_telegram_code, new_pkce
 
 
@@ -299,6 +299,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def quiz_page(
         request: Request,
         campaign: str = "default",
+        ref: str = "",
         referrer_id: str = "",
         source: str = "",
         telegram_error: str = "",
@@ -313,7 +314,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "request": request,
                 "campaign": campaign,
                 "campaign_title": campaign_row["title"],
-                "referrer_id": referrer_id.strip()[:80],
+                "referrer_id": (ref or referrer_id).strip()[:80],
                 "source": source.strip()[:80],
                 "telegram_available": bool(settings.telegram_client_id and settings.telegram_client_secret),
                 "email_auth_available": bool(settings.smtp_host and settings.smtp_from),
@@ -751,6 +752,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 conn, client_id=int(attempt["client_id"]), campaign=campaign_row,
                 submission_id=submission_id, timezone_name=settings.timezone_name,
             ) if bonus_eligible else None
+            referral_reward = None
+            referral_count = 0
+            referral_code = str(attempt["quiz_referrer_id"] or "")
+            if campaign_row["referral_enabled"] and referral_code:
+                referral_owner = conn.execute(
+                    "SELECT * FROM quiz_referral_codes WHERE code=? AND campaign_code=?",
+                    (referral_code, attempt["campaign_code"]),
+                ).fetchone()
+                if referral_owner and int(referral_owner["client_id"]) != int(attempt["client_id"]):
+                    referral_cursor = conn.execute(
+                        """
+                        INSERT OR IGNORE INTO quiz_referrals(
+                            campaign_code, referrer_client_id, invited_client_id, referral_code_id, submission_id
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (attempt["campaign_code"], referral_owner["client_id"], attempt["client_id"], referral_owner["id"], submission_id),
+                    )
+                    referral_count = int(conn.execute(
+                        "SELECT COUNT(*) FROM quiz_referrals WHERE campaign_code=? AND referrer_client_id=?",
+                        (attempt["campaign_code"], referral_owner["client_id"]),
+                    ).fetchone()[0])
+                    threshold = max(1, int(campaign_row["referral_threshold"] or 1))
+                    milestone = referral_count // threshold
+                    max_rewards = max(0, int(campaign_row["referral_max_rewards"] or 0))
+                    eligible_milestone = bool(
+                        referral_cursor.rowcount and referral_count % threshold == 0 and milestone >= 1
+                        and (campaign_row["referral_repeatable"] or milestone == 1)
+                        and (max_rewards == 0 or milestone <= max_rewards)
+                    )
+                    if eligible_milestone:
+                        referral_reward = issue_referral_reward(
+                            conn, client_id=int(referral_owner["client_id"]), campaign=campaign_row,
+                            submission_id=submission_id, milestone=milestone, timezone_name=settings.timezone_name,
+                        )
+                        if referral_reward:
+                            conn.execute(
+                                "UPDATE quiz_referrals SET reward_id=? WHERE id=(SELECT MAX(id) FROM quiz_referrals WHERE campaign_code=? AND invited_client_id=?)",
+                                (referral_reward["id"], attempt["campaign_code"], attempt["client_id"]),
+                            )
+            own_referral = None
+            if campaign_row["referral_enabled"]:
+                own_referral = conn.execute(
+                    "SELECT * FROM quiz_referral_codes WHERE client_id=? AND campaign_code=?",
+                    (attempt["client_id"], attempt["campaign_code"]),
+                ).fetchone()
+                if not own_referral:
+                    for _ in range(20):
+                        candidate = secrets.token_urlsafe(9).replace("-", "").replace("_", "")[:12]
+                        try:
+                            conn.execute(
+                                "INSERT INTO quiz_referral_codes(code, client_id, campaign_code) VALUES (?, ?, ?)",
+                                (candidate, attempt["client_id"], attempt["campaign_code"]),
+                            )
+                            break
+                        except sqlite3.IntegrityError:
+                            continue
+                    own_referral = conn.execute(
+                        "SELECT * FROM quiz_referral_codes WHERE client_id=? AND campaign_code=?",
+                        (attempt["client_id"], attempt["campaign_code"]),
+                    ).fetchone()
             conn.execute(
                 """
                 UPDATE quiz_attempts SET answers_json=?, current_index=?, status='submitted',
@@ -803,6 +864,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "reward_valid_until": reward["valid_until"] if reward else None,
             "bonus_message": f"Покажи код администратору: {reward['code']}" if reward else None,
             "bonus_granted": False,
+            "share_url": (
+                f"{settings.quiz_public_base_url.rstrip('/')}/quiz?campaign={quote(attempt['campaign_code'])}&ref={quote(own_referral['code'])}"
+                if own_referral else None
+            ),
+            "referral_count": referral_count,
+            "referral_reward_issued": bool(referral_reward),
         }
 
     @app.post("/api/quiz/submit")
@@ -845,7 +912,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        qrc.status AS reward_status, qrc.valid_until AS reward_valid_until
                 FROM quiz_submissions qs
                 LEFT JOIN quiz_campaigns qc ON qc.code = qs.campaign_code
-                LEFT JOIN quiz_reward_codes qrc ON qrc.submission_id = qs.id
+                LEFT JOIN quiz_reward_codes qrc ON qrc.submission_id = qs.id AND qrc.reward_kind='quiz'
                 WHERE {where} ORDER BY qs.id DESC LIMIT ?
                 """,
                 (*params, limit),
@@ -862,10 +929,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         results = load_quiz_results(where, params)
         with connect(settings.db_path) as conn:
             campaigns = conn.execute("SELECT code, title FROM quiz_campaigns ORDER BY title").fetchall()
+            referral_params: list[Any] = []
+            referral_where = ""
+            if campaign:
+                referral_where = "WHERE qr.campaign_code=?"
+                referral_params.append(campaign)
+            referral_stats = conn.execute(
+                f"""
+                SELECT qr.referrer_client_id, qr.campaign_code, qc.title AS campaign_title,
+                       c.first_name, c.nickname, c.username, c.phone_local, c.phone_raw,
+                       COUNT(DISTINCT qr.id) AS completed_referrals,
+                       COUNT(DISTINCT qrw.id) AS rewards_issued,
+                       MAX(qr.created_at) AS last_referral_at
+                FROM quiz_referrals qr
+                JOIN clients c ON c.id=qr.referrer_client_id
+                LEFT JOIN quiz_campaigns qc ON qc.code=qr.campaign_code
+                LEFT JOIN quiz_reward_codes qrw ON qrw.client_id=qr.referrer_client_id
+                    AND qrw.campaign_code=qr.campaign_code AND qrw.reward_kind='referral'
+                {referral_where}
+                GROUP BY qr.referrer_client_id, qr.campaign_code
+                ORDER BY completed_referrals DESC, last_referral_at DESC
+                LIMIT 200
+                """,
+                referral_params,
+            ).fetchall()
         filters = {"campaign": campaign, "phone": phone, "username": username, "bonus": bonus, "date_from": date_from, "date_to": date_to}
         return templates.TemplateResponse(
             request, "quiz_results.html",
-            context(request, results=results, campaigns=campaigns, filters=filters),
+            context(request, results=results, campaigns=campaigns, filters=filters, referral_stats=referral_stats),
         )
 
     @app.get("/admin/quiz-results/{submission_id:int}", response_class=HTMLResponse)
@@ -881,7 +972,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 FROM quiz_submissions qs
                 LEFT JOIN quiz_campaigns qc ON qc.code=qs.campaign_code
                 LEFT JOIN preference_types pt ON pt.code=qs.bonus_type
-                LEFT JOIN quiz_reward_codes qrc ON qrc.submission_id=qs.id
+                LEFT JOIN quiz_reward_codes qrc ON qrc.submission_id=qs.id AND qrc.reward_kind='quiz'
                 WHERE qs.id=?
                 """,
                 (submission_id,),
@@ -1314,6 +1405,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         quiz_time_limit_seconds: int = Form(120),
         max_attempts: int = Form(3),
         verification_required: bool = Form(False),
+        referral_enabled: bool = Form(False),
+        referral_preference_code: str = Form(""),
+        referral_amount: int = Form(0),
+        referral_threshold: int = Form(1),
+        referral_repeatable: bool = Form(False),
+        referral_max_rewards: int = Form(1),
         reward_validity_mode: str = Form("end_of_day"),
         reward_validity_value: int = Form(0),
         reward_valid_from: str = Form(""),
@@ -1345,16 +1442,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             with transaction(settings.db_path) as conn:
                 bonus_code, bonus_amount = validate_campaign_bonus(conn, bonus_preference_code, bonus_amount)
+                referral_code, referral_amount = validate_campaign_bonus(
+                    conn, referral_preference_code if referral_enabled else "",
+                    referral_amount if referral_enabled else 0,
+                )
+                if referral_enabled and not 1 <= referral_threshold <= 1000:
+                    raise ValueError("Количество приглашённых должно быть от 1 до 1000")
+                if referral_max_rewards < 0 or referral_max_rewards > 1000:
+                    raise ValueError("Лимит реферальных наград должен быть от 0 до 1000")
                 cursor = conn.execute(
                     """
                     INSERT INTO quiz_campaigns(
                         code, title, bonus_preference_code, bonus_amount, pass_score, quiz_time_limit_seconds,
                         max_attempts, verification_required, reward_validity_mode, reward_validity_value,
-                        reward_valid_from, reward_valid_until, active_from, active_until
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        reward_valid_from, reward_valid_until, referral_enabled, referral_preference_code,
+                        referral_amount, referral_threshold, referral_repeatable, referral_max_rewards,
+                        active_from, active_until
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (code, title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, max_attempts,
                      int(verification_required), reward_mode, reward_value, reward_from, reward_until,
+                     int(referral_enabled), referral_code, referral_amount, referral_threshold,
+                     int(referral_repeatable), referral_max_rewards,
                      active_from_value, active_until_value),
                 )
                 audit(
@@ -1379,6 +1488,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         quiz_time_limit_seconds: int = Form(120),
         max_attempts: int = Form(3),
         verification_required: bool = Form(False),
+        referral_enabled: bool = Form(False),
+        referral_preference_code: str = Form(""),
+        referral_amount: int = Form(0),
+        referral_threshold: int = Form(1),
+        referral_repeatable: bool = Form(False),
+        referral_max_rewards: int = Form(1),
         reward_validity_mode: str = Form("end_of_day"),
         reward_validity_value: int = Form(0),
         reward_valid_from: str = Form(""),
@@ -1428,6 +1543,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if not row:
                     return master_redirect("Кампания не найдена", error=True, tab="campaigns")
                 bonus_code, bonus_amount = validate_campaign_bonus(conn, bonus_preference_code, bonus_amount)
+                referral_code, referral_amount = validate_campaign_bonus(
+                    conn, referral_preference_code if referral_enabled else "",
+                    referral_amount if referral_enabled else 0,
+                )
+                if referral_enabled and not 1 <= referral_threshold <= 1000:
+                    raise ValueError("Количество приглашённых должно быть от 1 до 1000")
+                if referral_max_rewards < 0 or referral_max_rewards > 1000:
+                    raise ValueError("Лимит реферальных наград должен быть от 0 до 1000")
                 conn.execute(
                     """
                     UPDATE quiz_campaigns SET title=?, bonus_preference_code=?, bonus_amount=?, pass_score=?,
@@ -1435,7 +1558,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         reward_validity_mode=?, reward_validity_value=?, reward_valid_from=?, reward_valid_until=?,
                         welcome_kicker=?, welcome_text=?, start_button_text=?, identity_text=?,
                         victory_title=?, victory_text=?, failure_title=?, failure_text=?,
-                        completion_title=?, completion_text=?, active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
+                        completion_title=?, completion_text=?, referral_enabled=?, referral_preference_code=?,
+                        referral_amount=?, referral_threshold=?, referral_repeatable=?, referral_max_rewards=?,
+                        active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, max_attempts,
@@ -1443,7 +1568,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                      content_values["welcome_kicker"], content_values["welcome_text"], content_values["start_button_text"],
                      content_values["identity_text"], content_values["victory_title"], content_values["victory_text"],
                      content_values["failure_title"], content_values["failure_text"], content_values["completion_title"],
-                     content_values["completion_text"], active_from_value, active_until_value, campaign_id),
+                     content_values["completion_text"], int(referral_enabled), referral_code, referral_amount,
+                     referral_threshold, int(referral_repeatable), referral_max_rewards,
+                     active_from_value, active_until_value, campaign_id),
                 )
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],

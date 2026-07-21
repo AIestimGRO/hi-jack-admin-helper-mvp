@@ -3,7 +3,7 @@
   if (!app) return;
 
   const campaign = app.dataset.campaign || 'default';
-  const state = { meta: null, verifiedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, submitting: false, finishing: false };
+  const state = { meta: null, verifiedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, submitting: false, finishing: false, shareUrl: null };
   const screens = [...app.querySelectorAll('[data-screen]')];
   const show = (name) => screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
   const errorText = (message) => typeof message === 'string' ? message : 'Попробуй ещё раз чуть позже.';
@@ -213,7 +213,35 @@
     }
     const retry = app.querySelector('.quiz-retry'); retry.hidden = !data.retry_allowed;
     if (data.retry_allowed) retry.textContent = `Ещё одна попытка (${data.attempts_left} осталось)`;
+    state.shareUrl = data.share_url || null;
+    const share = app.querySelector('.quiz-share');
+    share.hidden = !state.shareUrl;
+    share.querySelector('.quiz-share-status').textContent = '';
     show('success');
+  }
+
+  async function copyShareLink() {
+    if (!state.shareUrl) return;
+    const status = app.querySelector('.quiz-share-status');
+    try {
+      await navigator.clipboard.writeText(state.shareUrl);
+      status.textContent = 'Ссылка скопирована';
+    } catch (_) {
+      window.prompt('Скопируй ссылку', state.shareUrl);
+    }
+  }
+
+  async function shareQuiz() {
+    if (!state.shareUrl) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: state.meta?.title || 'Квиз Hi, Jack!', text: 'Пройди квиз Hi, Jack!', url: state.shareUrl });
+        return;
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+      }
+    }
+    await copyShareLink();
   }
 
   function formatTime(milliseconds) { const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000)); return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`; }
@@ -244,6 +272,8 @@
   app.querySelector('[data-action="next"]').addEventListener('click', () => navigate('next'));
   app.querySelector('[data-action="retry"]').addEventListener('click', loadMeta);
   app.querySelector('[data-action="new-attempt"]').addEventListener('click', () => { state.finishing = false; startQuiz(); });
+  app.querySelector('[data-action="share"]').addEventListener('click', shareQuiz);
+  app.querySelector('[data-action="copy-share"]').addEventListener('click', copyShareLink);
   window.addEventListener('beforeunload', stopTimer);
   loadMeta();
 })();
