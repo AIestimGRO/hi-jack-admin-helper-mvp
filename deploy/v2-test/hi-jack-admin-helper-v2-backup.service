@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up Hi Jack Club Admin Helper v2 test
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/hi-jack-admin-helper-v2
+EnvironmentFile=/opt/hi-jack-admin-helper-v2/.env
+ExecStart=/opt/hi-jack-admin-helper-v2/.venv/bin/python scripts/backup.py --project /opt/hi-jack-admin-helper-v2 --destination /opt/hi-jack-club-tools-v2-backups --keep-days 14
