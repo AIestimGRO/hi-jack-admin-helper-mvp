@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily backup for Hi Jack Club Admin Helper v2 test
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=hi-jack-admin-helper-v2-backup.service
+
+[Install]
+WantedBy=timers.target
