@@ -72,6 +72,17 @@ if (quizBuilder) {
     const typeSelect = form.elements.question_type;
     const addOptionButton = form.querySelector('[data-action="add-option"]');
     const radioName = `correct-${questionId || 'new'}`;
+    const visualSelect = form.elements.visual_type;
+    const mediaInput = form.elements.image;
+    const existingImage = form.elements.image_path?.value || '';
+
+    function syncVisual() {
+      const needsImage = visualSelect.value !== 'standard';
+      form.querySelector('[data-question-media]').hidden = !needsImage;
+      if (needsImage) mediaInput.setAttribute('aria-required', existingImage ? 'false' : 'true');
+    }
+    visualSelect.addEventListener('change', syncVisual);
+    syncVisual();
 
     const seeds = [...optionsBox.querySelectorAll('.hj-option-seed')].map((seed) => ({
       text: seed.dataset.text || '',
@@ -164,20 +175,35 @@ if (quizBuilder) {
         text: row.querySelector('input[type="text"]').value,
         is_correct: row.querySelector('.quick-correct input').checked,
       }));
-      const payload = {
-        title: form.elements.title.value,
-        question_type: typeSelect.value,
-        options,
-        points: form.elements.points.value,
-        time_limit_seconds: 0,
-        required: form.elements.required.checked,
-        placeholder: form.elements.placeholder.value,
-      };
       const url = questionId
         ? `/api/master/quiz-questions/${questionId}/update-complete`
         : `/api/master/quiz-campaigns/${campaignId}/questions/create-complete`;
       setFormBusy(form, true);
       try {
+        let imagePath = form.elements.image_path?.value || '';
+        if (mediaInput.files[0]) {
+          const mediaData = new FormData();
+          mediaData.append('image', mediaInput.files[0]);
+          mediaData.append('csrf_token', csrfToken);
+          const response = await fetch(`/api/master/quiz-campaigns/${campaignId}/media`, {
+            method: 'POST', body: mediaData, credentials: 'same-origin',
+          });
+          const uploaded = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(uploaded.detail || 'Не удалось загрузить изображение');
+          imagePath = uploaded.path;
+        }
+        const payload = {
+          title: form.elements.title.value,
+          question_type: typeSelect.value,
+          visual_type: visualSelect.value,
+          image_path: imagePath,
+          section_id: form.elements.section_id.value,
+          options,
+          points: form.elements.points.value,
+          time_limit_seconds: 0,
+          required: form.elements.required.checked,
+          placeholder: form.elements.placeholder.value,
+        };
         const data = await builderRequest(url, payload);
         finishBuilderAction(data.message);
       } catch (error) {

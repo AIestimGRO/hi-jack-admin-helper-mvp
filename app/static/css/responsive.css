@@ -165,6 +165,16 @@ body {
   .quiz-participation-actions form,
   .quiz-participation-actions button { width: 100%; }
 
+  .preference-grid { gap: 8px; }
+  .preference { padding: 11px 12px; }
+  .pref-top strong { font-size: 24px; }
+  .quick-values { margin: 8px 0; }
+  .quick-values button { min-width: 36px; padding: 5px 8px; }
+  .pref-form { gap: 7px; }
+  .pref-form label { gap: 4px; font-size: 11px; }
+  .pref-form input,.pref-form select { min-height: 38px; padding: 7px 9px; }
+  .plus-button,.minus-button { min-height: 39px; }
+
   .reward-filters {
     grid-template-columns: 1fr 1fr auto;
   }

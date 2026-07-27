@@ -61,6 +61,8 @@ from app.services.telegram_oidc import authorization_url, exchange_telegram_code
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     campaign_timezone = ZoneInfo(settings.timezone_name)
+    quiz_media_dir = Path(settings.db_path).parent / "quiz-media"
+    quiz_media_dir.mkdir(parents=True, exist_ok=True)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -95,6 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         https_only=settings.secure_cookie,
     )
     app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
+    app.mount("/quiz-media", StaticFiles(directory=quiz_media_dir), name="quiz-media")
     templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
     templates.env.globals["display_phone"] = display_phone
 
@@ -881,11 +884,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "max_attempts": max_attempts, "attempts_left": max(0, max_attempts - attempts_used),
             "retry_allowed": bool(not passed and attempts_used < max_attempts),
             "timed_out": timed_out,
-            "reward_code": reward["code"] if reward else None,
-            "reward_valid_from": reward["valid_from"] if reward else None,
-            "reward_valid_until": reward["valid_until"] if reward else None,
-            "bonus_message": f"Покажи код администратору: {reward['code']}" if reward else None,
-            "bonus_granted": False,
+            "reward_code": reward["code"] if reward and campaign_row["reward_delivery_mode"] == "code" else None,
+            "reward_valid_from": reward["valid_from"] if reward and campaign_row["reward_delivery_mode"] == "code" else None,
+            "reward_valid_until": reward["valid_until"] if reward and campaign_row["reward_delivery_mode"] == "code" else None,
+            "bonus_message": (
+                f"Покажи код администратору: {reward['code']}"
+                if reward and campaign_row["reward_delivery_mode"] == "code"
+                else f"{campaign_row['bonus_title'] or 'Бонус'} уже начислен на твою карточку"
+                if reward else None
+            ),
+            "bonus_granted": bool(reward and campaign_row["reward_delivery_mode"] == "automatic"),
             "share_url": (
                 f"{settings.quiz_public_base_url.rstrip('/')}/quiz?campaign={quote(attempt['campaign_code'])}&ref={quote(own_referral['code'])}"
                 if own_referral else None
@@ -1423,6 +1431,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title: str = Form(...),
         bonus_preference_code: str = Form(""),
         bonus_amount: int = Form(0),
+        reward_delivery_mode: str = Form("automatic"),
         pass_score: int = Form(0),
         quiz_time_limit_seconds: int = Form(120),
         max_attempts: int = Form(3),
@@ -1430,6 +1439,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
+        referral_delivery_mode: str = Form("automatic"),
         referral_threshold: int = Form(1),
         referral_repeatable: bool = Form(False),
         referral_max_rewards: int = Form(1),
@@ -1453,6 +1463,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Общий таймер должен быть от 0 до 7200 секунд", error=True, tab="campaigns")
         if max_attempts < 1 or max_attempts > 100:
             return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
+        if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
+            return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
         if verification_required and not (
             (settings.telegram_client_id and settings.telegram_client_secret) or (settings.smtp_host and settings.smtp_from)
         ):
@@ -1475,16 +1487,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 cursor = conn.execute(
                     """
                     INSERT INTO quiz_campaigns(
-                        code, title, bonus_preference_code, bonus_amount, pass_score, quiz_time_limit_seconds,
+                        code, title, bonus_preference_code, bonus_amount, reward_delivery_mode,
+                        pass_score, quiz_time_limit_seconds,
                         max_attempts, verification_required, reward_validity_mode, reward_validity_value,
                         reward_valid_from, reward_valid_until, referral_enabled, referral_preference_code,
-                        referral_amount, referral_threshold, referral_repeatable, referral_max_rewards,
+                        referral_amount, referral_delivery_mode, referral_threshold, referral_repeatable, referral_max_rewards,
                         active_from, active_until
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (code, title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, max_attempts,
+                    (code, title, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
                      int(verification_required), reward_mode, reward_value, reward_from, reward_until,
-                     int(referral_enabled), referral_code, referral_amount, referral_threshold,
+                     int(referral_enabled), referral_code, referral_amount, referral_delivery_mode, referral_threshold,
                      int(referral_repeatable), referral_max_rewards,
                      active_from_value, active_until_value),
                 )
@@ -1506,6 +1519,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title: str = Form(...),
         bonus_preference_code: str = Form(""),
         bonus_amount: int = Form(0),
+        reward_delivery_mode: str = Form("automatic"),
         pass_score: int = Form(0),
         quiz_time_limit_seconds: int = Form(120),
         max_attempts: int = Form(3),
@@ -1513,6 +1527,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
+        referral_delivery_mode: str = Form("automatic"),
         referral_threshold: int = Form(1),
         referral_repeatable: bool = Form(False),
         referral_max_rewards: int = Form(1),
@@ -1545,6 +1560,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Общий таймер должен быть от 0 до 7200 секунд", error=True, tab="campaigns")
         if max_attempts < 1 or max_attempts > 100:
             return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
+        if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
+            return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
         if verification_required and not (
             (settings.telegram_client_id and settings.telegram_client_secret) or (settings.smtp_host and settings.smtp_from)
         ):
@@ -1575,22 +1592,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise ValueError("Лимит реферальных наград должен быть от 0 до 1000")
                 conn.execute(
                     """
-                    UPDATE quiz_campaigns SET title=?, bonus_preference_code=?, bonus_amount=?, pass_score=?,
+                    UPDATE quiz_campaigns SET title=?, bonus_preference_code=?, bonus_amount=?, reward_delivery_mode=?, pass_score=?,
                         quiz_time_limit_seconds=?, max_attempts=?, verification_required=?,
                         reward_validity_mode=?, reward_validity_value=?, reward_valid_from=?, reward_valid_until=?,
                         welcome_kicker=?, welcome_text=?, start_button_text=?, identity_text=?,
                         victory_title=?, victory_text=?, failure_title=?, failure_text=?,
                         completion_title=?, completion_text=?, referral_enabled=?, referral_preference_code=?,
-                        referral_amount=?, referral_threshold=?, referral_repeatable=?, referral_max_rewards=?,
+                        referral_amount=?, referral_delivery_mode=?, referral_threshold=?, referral_repeatable=?, referral_max_rewards=?,
                         active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
-                    (title, bonus_code, bonus_amount, pass_score, quiz_time_limit_seconds, max_attempts,
+                    (title, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
                      int(verification_required), reward_mode, reward_value, reward_from, reward_until,
                      content_values["welcome_kicker"], content_values["welcome_text"], content_values["start_button_text"],
                      content_values["identity_text"], content_values["victory_title"], content_values["victory_text"],
                      content_values["failure_title"], content_values["failure_text"], content_values["completion_title"],
-                     content_values["completion_text"], int(referral_enabled), referral_code, referral_amount,
+                     content_values["completion_text"], int(referral_enabled), referral_code, referral_amount, referral_delivery_mode,
                      referral_threshold, int(referral_repeatable), referral_max_rewards,
                      active_from_value, active_until_value, campaign_id),
                 )
@@ -1669,6 +1686,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not campaign:
                 raise HTTPException(status_code=404, detail="Кампания не найдена")
             questions = load_builder_questions(conn, campaign["code"])
+            sections = conn.execute(
+                "SELECT * FROM quiz_sections WHERE campaign_code=? ORDER BY position, id",
+                (campaign["code"],),
+            ).fetchall()
         active_questions = [question for question in questions if question["is_active"]]
         max_score = sum(
             question["points"] for question in active_questions
@@ -1684,15 +1705,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             context(
                 request, campaign=campaign, questions=questions, max_score=max_score,
                 max_correct=max_correct, published_count=len(active_questions),
-                hidden_count=len(questions) - len(active_questions), ok=ok, error=error,
+                hidden_count=len(questions) - len(active_questions), sections=sections,
+                ok=ok, error=error,
             ),
         )
 
     def normalize_complete_question(payload: dict[str, Any]) -> dict[str, Any]:
         title = str(payload.get("title", "")).strip()
         question_type = str(payload.get("question_type", "single_choice"))
+        visual_type = str(payload.get("visual_type", "standard"))
         if len(title) < 2 or len(title) > 300 or question_type not in {"single_choice", "multi_choice", "text"}:
             raise ValueError("Проверьте текст и тип вопроса")
+        if visual_type not in {"standard", "rebus", "photo"}:
+            raise ValueError("Проверьте визуальный формат вопроса")
+        image_path = str(payload.get("image_path", "")).strip()[:500] or None
+        try:
+            section_id = int(payload.get("section_id") or 0) or None
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Проверьте блок вопроса") from exc
+        if visual_type in {"rebus", "photo"} and not image_path:
+            raise ValueError("Для ребуса или фотовопроса добавьте изображение")
         try:
             points = int(payload.get("points", 1))
             time_limit_seconds = int(payload.get("time_limit_seconds", 0))
@@ -1728,6 +1760,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "title": title,
             "question_type": question_type,
+            "visual_type": visual_type,
+            "image_path": image_path,
+            "section_id": section_id,
             "required": bool(payload.get("required", True)),
             "points": points if question_type != "text" else 0,
             "time_limit_seconds": time_limit_seconds or None,
@@ -1750,12 +1785,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cursor = conn.execute(
             """
             INSERT INTO quiz_questions(
-                campaign_code, code, type, title, placeholder, required, points, time_limit_seconds,
+                campaign_code, code, type, title, visual_type, image_path, section_id,
+                placeholder, required, points, time_limit_seconds,
                 position, is_active, created_by_admin_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 campaign_code, f"q_{uuid.uuid4().hex[:10]}", question["question_type"], question["title"],
+                question["visual_type"], question["image_path"], question["section_id"],
                 question["placeholder"], int(question["required"]), question["points"],
                 question["time_limit_seconds"], position, int(question["publish"]), admin_id,
             ),
@@ -1792,6 +1829,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             campaign = conn.execute("SELECT code FROM quiz_campaigns WHERE id=?", (campaign_id,)).fetchone()
             if not campaign:
                 raise HTTPException(status_code=404, detail="Кампания не найдена")
+            if question["section_id"] and not conn.execute(
+                "SELECT 1 FROM quiz_sections WHERE id=? AND campaign_code=?",
+                (question["section_id"], campaign["code"]),
+            ).fetchone():
+                raise HTTPException(status_code=422, detail="Выбранный блок не найден")
             question_id = insert_complete_question(
                 conn, campaign_code=campaign["code"], question=question,
                 admin_id=request.session["admin_id"],
@@ -1830,11 +1872,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             conn.execute(
                 """
                 UPDATE quiz_questions SET type=?, title=?, placeholder=?, required=?, points=?,
+                    visual_type=?, image_path=?, section_id=?,
                     time_limit_seconds=NULL, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?
                 """,
                 (
                     question["question_type"], question["title"], question["placeholder"],
-                    int(question["required"]), question["points"], question_id,
+                    int(question["required"]), question["points"], question["visual_type"],
+                    question["image_path"], question["section_id"], question_id,
                 ),
             )
             conn.execute("DELETE FROM quiz_options WHERE question_id=?", (question_id,))
@@ -1855,6 +1899,111 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 details={"title": question["title"], "type": question["question_type"], "options": len(question["options"])},
             )
         return {"ok": True, "question_id": question_id, "message": "Изменения сохранены"}
+
+    @app.post("/api/master/quiz-campaigns/{campaign_id}/media")
+    async def upload_quiz_media(
+        request: Request,
+        campaign_id: int,
+        image: UploadFile = File(...),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with connect(settings.db_path) as conn:
+            campaign = conn.execute("SELECT code FROM quiz_campaigns WHERE id=?", (campaign_id,)).fetchone()
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Кампания не найдена")
+        allowed = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+        suffix = allowed.get(str(image.content_type or "").lower())
+        if not suffix:
+            raise HTTPException(status_code=422, detail="Загрузите JPG, PNG или WebP")
+        content = await image.read(8 * 1024 * 1024 + 1)
+        if not content or len(content) > 8 * 1024 * 1024:
+            raise HTTPException(status_code=422, detail="Размер изображения должен быть не больше 8 МБ")
+        campaign_dir = quiz_media_dir / campaign["code"]
+        campaign_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{uuid.uuid4().hex}{suffix}"
+        (campaign_dir / filename).write_bytes(content)
+        return {"ok": True, "path": f"/quiz-media/{campaign['code']}/{filename}"}
+
+    @app.post("/api/master/quiz-campaigns/{campaign_id}/sections")
+    async def create_quiz_section(
+        request: Request,
+        campaign_id: int,
+        title: str = Form(...),
+        theme: str = Form("theory"),
+        position: int = Form(100),
+        background_image: UploadFile | None = File(None),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request)
+        check_csrf(request, csrf_token)
+        title = title.strip()[:100]
+        if len(title) < 2 or theme not in {"theory", "rebus", "photo", "custom"}:
+            return builder_redirect(campaign_id, "Проверьте название и фон блока", error=True)
+        image_path = None
+        with transaction(settings.db_path) as conn:
+            campaign = conn.execute("SELECT code FROM quiz_campaigns WHERE id=?", (campaign_id,)).fetchone()
+            if not campaign:
+                raise HTTPException(status_code=404, detail="Кампания не найдена")
+            if background_image and background_image.filename:
+                allowed = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+                suffix = allowed.get(str(background_image.content_type or "").lower())
+                content = await background_image.read(8 * 1024 * 1024 + 1)
+                if not suffix or not content or len(content) > 8 * 1024 * 1024:
+                    return builder_redirect(campaign_id, "Фон: JPG, PNG или WebP до 8 МБ", error=True)
+                campaign_dir = quiz_media_dir / campaign["code"]
+                campaign_dir.mkdir(parents=True, exist_ok=True)
+                filename = f"{uuid.uuid4().hex}{suffix}"
+                (campaign_dir / filename).write_bytes(content)
+                image_path = f"/quiz-media/{campaign['code']}/{filename}"
+            conn.execute(
+                "INSERT INTO quiz_sections(campaign_code,title,theme,background_image,position) VALUES (?,?,?,?,?)",
+                (campaign["code"], title, theme, image_path, max(0, min(position, 9999))),
+            )
+        return builder_redirect(campaign_id, f"Блок «{title}» создан")
+
+    @app.post("/api/master/quiz-sections/{section_id}/update")
+    async def update_quiz_section(
+        request: Request,
+        section_id: int,
+        title: str = Form(...),
+        theme: str = Form("theory"),
+        position: int = Form(100),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request)
+        check_csrf(request, csrf_token)
+        title = title.strip()[:100]
+        with transaction(settings.db_path) as conn:
+            section = conn.execute(
+                "SELECT qs.*, qc.id AS campaign_id FROM quiz_sections qs JOIN quiz_campaigns qc ON qc.code=qs.campaign_code WHERE qs.id=?",
+                (section_id,),
+            ).fetchone()
+            if not section:
+                raise HTTPException(status_code=404, detail="Блок не найден")
+            if len(title) < 2 or theme not in {"theory", "rebus", "photo", "custom"}:
+                return builder_redirect(section["campaign_id"], "Проверьте название и фон блока", error=True)
+            conn.execute(
+                "UPDATE quiz_sections SET title=?, theme=?, position=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (title, theme, max(0, min(position, 9999)), section_id),
+            )
+        return builder_redirect(section["campaign_id"], f"Блок «{title}» обновлён")
+
+    @app.post("/api/master/quiz-sections/{section_id}/delete")
+    async def delete_quiz_section(request: Request, section_id: int, csrf_token: str = Form(...)):
+        require_master(request)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            section = conn.execute(
+                "SELECT qs.*, qc.id AS campaign_id FROM quiz_sections qs JOIN quiz_campaigns qc ON qc.code=qs.campaign_code WHERE qs.id=?",
+                (section_id,),
+            ).fetchone()
+            if not section:
+                raise HTTPException(status_code=404, detail="Блок не найден")
+            conn.execute("UPDATE quiz_questions SET section_id=NULL WHERE section_id=?", (section_id,))
+            conn.execute("DELETE FROM quiz_sections WHERE id=?", (section_id,))
+        return builder_redirect(section["campaign_id"], "Блок удалён; вопросы сохранены без блока")
 
     @app.post("/api/master/quiz-campaigns/{campaign_id}/questions/bulk-create")
     async def bulk_create_quiz_questions(request: Request, campaign_id: int):

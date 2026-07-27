@@ -75,8 +75,9 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Код кампании<input name="code" maxlength="50" pattern="[a-z0-9][a-z0-9_-]{0,49}" placeholder="summer_2026" required></label>
     <label>Название<input name="title" maxlength="80" placeholder="Летний розыгрыш" required></label>
-    <label>Автобонус<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}">{{ pref.title }}</option>{% endfor %}</select></label>
-    <label>Количество<input name="bonus_amount" type="number" min="0" max="100" value="0"></label>
+    <label>Награда участнику<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}">{{ pref.title }}</option>{% endfor %}</select></label>
+    <label>Количество бонусов участнику<input name="bonus_amount" type="number" min="0" max="100" value="0"></label>
+    <label>Способ выдачи участнику<select name="reward_delivery_mode"><option value="automatic">Начислить сразу на карточку</option><option value="code">Выдать уникальный срочный код</option></select></label>
     <label>Порог баллов <small>0 = за прохождение</small><input name="pass_score" type="number" min="0" max="10000" value="0"></label>
     <label>Секунд на весь тест <small>0 = без таймера</small><input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="120"></label>
     <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="3"></label>
@@ -86,11 +87,12 @@
       <label class="check-label"><input name="referral_enabled" type="checkbox" value="true"> Включить кнопку «Поделиться тестом»</label>
       <label>Награда рефоводу<select name="referral_preference_code"><option value="">Выберите бонус</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}">{{ pref.title }}</option>{% endfor %}</select></label>
       <label>Количество бонусов<input name="referral_amount" type="number" min="0" max="100" value="1"></label>
+      <label>Способ выдачи рефоводу<select name="referral_delivery_mode"><option value="automatic">Начислить сразу на карточку</option><option value="code">Выдать уникальный срочный код</option></select></label>
       <label>За каждые N участников<input name="referral_threshold" type="number" min="1" max="1000" value="1"></label>
       <label class="check-label"><input name="referral_repeatable" type="checkbox" value="true"> Награждать повторно за каждые N приглашённых</label>
       <label>Максимум наград <small>0 = без лимита</small><input name="referral_max_rewards" type="number" min="0" max="1000" value="1"></label>
     </fieldset>
-    <label>Срок кода<select name="reward_validity_mode"><option value="end_of_day">До конца дня</option><option value="hours">Количество часов</option><option value="days">Количество дней</option><option value="fixed">Точная дата</option><option value="unlimited">Без срока</option></select></label>
+    <label>Срок уникального кода<select name="reward_validity_mode"><option value="end_of_day">До конца дня</option><option value="hours">Количество часов</option><option value="days">Количество дней</option><option value="fixed">Точная дата</option><option value="unlimited">Без срока</option></select></label>
     <label>Часов / дней<input name="reward_validity_value" type="number" min="0" max="365" value="0"></label>
     <label>Код действует с<input name="reward_valid_from" type="datetime-local"></label>
     <label>Код действует до<input name="reward_valid_until" type="datetime-local"></label>
@@ -110,8 +112,9 @@
       <form class="campaign-edit" action="/api/master/quiz-campaigns/{{ campaign.id }}/update" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label>Название<input name="title" maxlength="80" value="{{ campaign.title }}" required></label>
-        <label>Автобонус<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if campaign.bonus_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
-        <label>Количество<input name="bonus_amount" type="number" min="0" max="100" value="{{ campaign.bonus_amount }}"></label>
+        <label>Награда участнику<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if campaign.bonus_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
+        <label>Количество бонусов участнику<input name="bonus_amount" type="number" min="0" max="100" value="{{ campaign.bonus_amount }}"></label>
+        <label>Способ выдачи участнику<select name="reward_delivery_mode"><option value="automatic" {% if campaign.reward_delivery_mode=='automatic' %}selected{% endif %}>Начислить сразу на карточку</option><option value="code" {% if campaign.reward_delivery_mode=='code' %}selected{% endif %}>Выдать уникальный срочный код</option></select></label>
         <label>Порог баллов<input name="pass_score" type="number" min="0" max="10000" value="{{ campaign.pass_score }}"></label>
         <label>Секунд на весь тест<input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="{{ campaign.quiz_time_limit_seconds }}"></label>
         <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="{{ campaign.max_attempts }}"></label>
@@ -121,11 +124,12 @@
           <label class="check-label"><input name="referral_enabled" type="checkbox" value="true" {% if campaign.referral_enabled %}checked{% endif %}> Включить кнопку «Поделиться тестом»</label>
           <label>Награда рефоводу<select name="referral_preference_code"><option value="">Выберите бонус</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if campaign.referral_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
           <label>Количество бонусов<input name="referral_amount" type="number" min="0" max="100" value="{{ campaign.referral_amount }}"></label>
+          <label>Способ выдачи рефоводу<select name="referral_delivery_mode"><option value="automatic" {% if campaign.referral_delivery_mode=='automatic' %}selected{% endif %}>Начислить сразу на карточку</option><option value="code" {% if campaign.referral_delivery_mode=='code' %}selected{% endif %}>Выдать уникальный срочный код</option></select></label>
           <label>За каждые N участников<input name="referral_threshold" type="number" min="1" max="1000" value="{{ campaign.referral_threshold }}"></label>
           <label class="check-label"><input name="referral_repeatable" type="checkbox" value="true" {% if campaign.referral_repeatable %}checked{% endif %}> Награждать повторно за каждые N приглашённых</label>
           <label>Максимум наград <small>0 = без лимита</small><input name="referral_max_rewards" type="number" min="0" max="1000" value="{{ campaign.referral_max_rewards }}"></label>
         </fieldset>
-        <label>Срок кода<select name="reward_validity_mode"><option value="end_of_day" {% if campaign.reward_validity_mode=='end_of_day' %}selected{% endif %}>До конца дня</option><option value="hours" {% if campaign.reward_validity_mode=='hours' %}selected{% endif %}>Количество часов</option><option value="days" {% if campaign.reward_validity_mode=='days' %}selected{% endif %}>Количество дней</option><option value="fixed" {% if campaign.reward_validity_mode=='fixed' %}selected{% endif %}>Точная дата</option><option value="unlimited" {% if campaign.reward_validity_mode=='unlimited' %}selected{% endif %}>Без срока</option></select></label>
+        <label>Срок уникального кода<select name="reward_validity_mode"><option value="end_of_day" {% if campaign.reward_validity_mode=='end_of_day' %}selected{% endif %}>До конца дня</option><option value="hours" {% if campaign.reward_validity_mode=='hours' %}selected{% endif %}>Количество часов</option><option value="days" {% if campaign.reward_validity_mode=='days' %}selected{% endif %}>Количество дней</option><option value="fixed" {% if campaign.reward_validity_mode=='fixed' %}selected{% endif %}>Точная дата</option><option value="unlimited" {% if campaign.reward_validity_mode=='unlimited' %}selected{% endif %}>Без срока</option></select></label>
         <label>Часов / дней<input name="reward_validity_value" type="number" min="0" max="365" value="{{ campaign.reward_validity_value }}"></label>
         <label>Код действует с<input name="reward_valid_from" type="datetime-local" value="{{ campaign.reward_valid_from or '' }}"></label>
         <label>Код действует до<input name="reward_valid_until" type="datetime-local" value="{{ campaign.reward_valid_until or '' }}"></label>

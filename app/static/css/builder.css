@@ -41,6 +41,17 @@ body {
   display: grid;
   gap: 24px;
 }
+.hj-block-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.hj-block-card { display: grid; gap: 4px; min-height: 96px; padding: 16px; border: 1px solid #24504b; border-radius: 15px; background: linear-gradient(145deg,#102823,#08110f); }
+.hj-block-card form:first-child { display: grid; grid-template-columns: 1fr 120px 76px; gap: 7px; }
+.hj-block-card form:first-child button { grid-column: 1/-1; }
+.hj-block-card input,.hj-block-card select { min-height: 38px; padding: 7px 9px; }
+.hj-block-card.theme-rebus { border-color: #285a7d; background: linear-gradient(145deg,#122c42,#080f16); }
+.hj-block-card.theme-photo { border-color: #653641; background: linear-gradient(145deg,#381721,#12080b); }
+.hj-block-card small,.hj-block-card span { color: var(--muted); }
+.hj-block-create { grid-column: 1/-1; display: grid; grid-template-columns: 1.4fr 1fr 1.2fr 100px auto; align-items: end; gap: 10px; padding: 15px; }
+.hj-media-field img { display: block; width: min(240px,100%); max-height: 170px; margin-top: 8px; border-radius: 12px; object-fit: contain; background: #030605; }
+@media(max-width:760px){.hj-block-list{grid-template-columns:1fr}.hj-block-create{grid-template-columns:1fr}.hj-question-editor{grid-template-columns:1fr}.hj-title-field,.hj-type-field,.hj-question-editor .wide{grid-column:auto}}
 
 .hj-builder .back {
   margin: 0;

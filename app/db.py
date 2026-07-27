@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     is_active INTEGER NOT NULL DEFAULT 1,
     bonus_preference_code TEXT,
     bonus_amount INTEGER NOT NULL DEFAULT 0 CHECK(bonus_amount >= 0),
+    reward_delivery_mode TEXT NOT NULL DEFAULT 'automatic' CHECK(reward_delivery_mode IN ('automatic', 'code')),
     pass_score INTEGER NOT NULL DEFAULT 0 CHECK(pass_score >= 0),
     question_time_limit_seconds INTEGER NOT NULL DEFAULT 20 CHECK(question_time_limit_seconds >= 0),
     quiz_time_limit_seconds INTEGER NOT NULL DEFAULT 120 CHECK(quiz_time_limit_seconds >= 0),
@@ -145,6 +146,7 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     referral_enabled INTEGER NOT NULL DEFAULT 0,
     referral_preference_code TEXT,
     referral_amount INTEGER NOT NULL DEFAULT 0,
+    referral_delivery_mode TEXT NOT NULL DEFAULT 'automatic' CHECK(referral_delivery_mode IN ('automatic', 'code')),
     referral_threshold INTEGER NOT NULL DEFAULT 1,
     referral_repeatable INTEGER NOT NULL DEFAULT 0,
     referral_max_rewards INTEGER NOT NULL DEFAULT 1,
@@ -155,12 +157,27 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS quiz_sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    theme TEXT NOT NULL DEFAULT 'theory' CHECK(theme IN ('theory', 'rebus', 'photo', 'custom')),
+    background_image TEXT,
+    position INTEGER NOT NULL DEFAULT 100,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_quiz_sections_campaign ON quiz_sections(campaign_code, position, id);
+
 CREATE TABLE IF NOT EXISTS quiz_questions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     campaign_code TEXT NOT NULL,
     code TEXT NOT NULL,
     type TEXT NOT NULL CHECK(type IN ('single_choice', 'multi_choice', 'text')),
     title TEXT NOT NULL,
+    visual_type TEXT NOT NULL DEFAULT 'standard' CHECK(visual_type IN ('standard', 'rebus', 'photo')),
+    image_path TEXT,
+    section_id INTEGER REFERENCES quiz_sections(id) ON DELETE SET NULL,
     placeholder TEXT,
     required INTEGER NOT NULL DEFAULT 1,
     points INTEGER NOT NULL DEFAULT 1 CHECK(points >= 0),
@@ -409,6 +426,8 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_submissions", "max_correct_count INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_submissions", "passed INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "pass_score INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_campaigns", "reward_delivery_mode TEXT NOT NULL DEFAULT 'automatic'")
+        _ensure_column(conn, "quiz_campaigns", "referral_delivery_mode TEXT NOT NULL DEFAULT 'automatic'")
         _ensure_column(conn, "quiz_campaigns", "question_time_limit_seconds INTEGER NOT NULL DEFAULT 20")
         _ensure_column(conn, "quiz_campaigns", "quiz_time_limit_seconds INTEGER NOT NULL DEFAULT 120")
         _ensure_column(conn, "quiz_campaigns", "active_from TEXT")
@@ -436,6 +455,9 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_campaigns", "referral_repeatable INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "referral_max_rewards INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_campaigns", "current_version INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "quiz_questions", "visual_type TEXT NOT NULL DEFAULT 'standard'")
+        _ensure_column(conn, "quiz_questions", "image_path TEXT")
+        _ensure_column(conn, "quiz_questions", "section_id INTEGER REFERENCES quiz_sections(id) ON DELETE SET NULL")
         _ensure_column(conn, "quiz_attempts", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_submissions", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_reward_codes", "campaign_version INTEGER NOT NULL DEFAULT 1")

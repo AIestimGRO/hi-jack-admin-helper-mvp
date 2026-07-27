@@ -33,11 +33,41 @@
   {% if campaign.pass_score > max_score and campaign.pass_score > 0 %}<div class="alert error">Порог выше доступного максимума: бонус сейчас невозможно получить.</div>{% endif %}
   {% if hidden_count %}<div class="alert warning">Остались старые скрытые вопросы: {{ hidden_count }}. Откройте нужный вопрос и нажмите «Сохранить изменения» — он сразу появится в квизе.</div>{% endif %}
 
+  <section class="hj-block-section">
+    <div class="hj-section-heading"><div><p class="eyebrow">Оформление</p><h2>Тематические блоки</h2></div><span>{{ sections|length }}</span></div>
+    <div class="hj-block-list">
+      {% for section in sections %}
+      <article class="hj-block-card theme-{{ section.theme }}">
+        <form action="/api/master/quiz-sections/{{ section.id }}/update" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input name="title" value="{{ section.title }}" maxlength="100" aria-label="Название блока" required>
+          <select name="theme" aria-label="Стиль блока"><option value="theory" {% if section.theme=='theory' %}selected{% endif %}>Теория</option><option value="rebus" {% if section.theme=='rebus' %}selected{% endif %}>Ребусы</option><option value="photo" {% if section.theme=='photo' %}selected{% endif %}>Фотораздачи</option><option value="custom" {% if section.theme=='custom' %}selected{% endif %}>Свой фон</option></select>
+          <input name="position" type="number" min="0" max="9999" value="{{ section.position }}" aria-label="Порядок">
+          <button class="hj-text-action" type="submit">Сохранить</button>
+        </form>
+        {% if section.background_image %}<span>Свой фон загружен</span>{% endif %}
+        <form action="/api/master/quiz-sections/{{ section.id }}/delete" method="post" onsubmit="return confirm('Удалить блок? Вопросы останутся и перейдут в раздел без блока.');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-text" type="submit">Удалить блок</button></form>
+      </article>
+      {% endfor %}
+      <form class="hj-block-create card" action="/api/master/quiz-campaigns/{{ campaign.id }}/sections" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Название блока<input name="title" maxlength="100" placeholder="Например: Теория покера" required></label>
+        <label>Стиль фона<select name="theme"><option value="theory">Теория — зелёный стол</option><option value="rebus">Ребусы — синий</option><option value="photo">Фотораздачи — бордовый</option><option value="custom">Свой фон</option></select></label>
+        <label>Фоновая картинка <small>необязательно</small><input name="background_image" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        <label>Порядок<input name="position" type="number" min="0" max="9999" value="{{ (sections|length + 1) * 10 }}"></label>
+        <button class="button" type="submit">Добавить блок</button>
+      </form>
+    </div>
+  </section>
+
   <section class="hj-create-section">
     <div class="hj-section-heading"><div><p class="eyebrow">Новый вопрос</p><h2>Вопрос и ответы</h2></div><span>Новая версия обнулит попытки участников</span></div>
     <form class="hj-question-editor card" id="quick-question-form">
       <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" placeholder="Например: Какая комбинация старше?" required></textarea></label>
       <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice">Один правильный</option><option value="multi_choice">Несколько правильных</option><option value="text">Свободный текст</option></select></label>
+      <label>Блок<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}">{{ section.title }}</option>{% endfor %}</select></label>
+      <label>Вид вопроса<select name="visual_type"><option value="standard">Обычный текстовый</option><option value="rebus">Ребус с картинкой</option><option value="photo">Фотовопрос / раздача</option></select></label>
+      <label class="wide hj-media-field" data-question-media hidden>Изображение<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_path" type="hidden"></label>
       <p class="correct-help">Выберите правильный вариант.</p>
       <div class="quick-options hj-answer-list" aria-label="Варианты ответа"></div>
       <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
@@ -78,6 +108,9 @@
           <form class="hj-question-editor hj-existing-editor" data-existing-question-form data-question-id="{{ question.db_id }}">
             <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" required>{{ question.title }}</textarea></label>
             <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice" {% if question.type=='single_choice' %}selected{% endif %}>Один правильный</option><option value="multi_choice" {% if question.type=='multi_choice' %}selected{% endif %}>Несколько правильных</option><option value="text" {% if question.type=='text' %}selected{% endif %}>Свободный текст</option></select></label>
+            <label>Блок<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}" {% if question.section_id==section.id %}selected{% endif %}>{{ section.title }}</option>{% endfor %}</select></label>
+            <label>Вид вопроса<select name="visual_type"><option value="standard" {% if question.visual_type=='standard' %}selected{% endif %}>Обычный текстовый</option><option value="rebus" {% if question.visual_type=='rebus' %}selected{% endif %}>Ребус с картинкой</option><option value="photo" {% if question.visual_type=='photo' %}selected{% endif %}>Фотовопрос / раздача</option></select></label>
+            <label class="wide hj-media-field" data-question-media {% if question.visual_type=='standard' %}hidden{% endif %}>Изображение<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_path" type="hidden" value="{{ question.image_path or '' }}">{% if question.image_path %}<img src="{{ question.image_path }}" alt="Текущее изображение">{% endif %}</label>
             <p class="correct-help">Выберите правильный вариант.</p>
             <div class="hj-answer-list" data-existing-options>
             {% for option in question.options %}

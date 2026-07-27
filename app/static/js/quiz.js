@@ -136,6 +136,18 @@
     const savedAnswer = state.answers[question.id] ?? emptyAnswer(question);
     app.querySelector('.quiz-step').textContent = `Вопрос ${state.index + 1} из ${state.questions.length}`;
     app.querySelector('.quiz-progress span').style.width = `${((state.index + 1) / state.questions.length) * 100}%`;
+    const screen = app.querySelector('[data-screen="question"]');
+    const section = question.section || {};
+    screen.dataset.theme = section.theme || 'theory';
+    if (section.background_image) screen.style.setProperty('--section-background', `url("${section.background_image}")`);
+    else screen.style.removeProperty('--section-background');
+    const sectionLabel = app.querySelector('.quiz-section-label');
+    sectionLabel.hidden = !section.title;
+    sectionLabel.textContent = section.title || '';
+    const questionImage = app.querySelector('.quiz-question-image');
+    questionImage.hidden = !question.image_path;
+    questionImage.src = question.image_path || '';
+    questionImage.alt = question.image_path ? question.title : '';
     app.querySelector('.quiz-question-title').textContent = question.title;
     app.querySelector('[data-screen="question"] .quiz-validation').textContent = '';
     const options = app.querySelector('.quiz-options');

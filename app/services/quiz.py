@@ -148,12 +148,26 @@ def _db_questions(
     campaign = normalize_campaign(campaign)
     active_clause = "AND is_active = 1" if active_only else ""
     rows = conn.execute(
-        f"SELECT * FROM quiz_questions WHERE campaign_code = ? {active_clause} ORDER BY position, id",
+        f"""
+        SELECT qq.*, qs.title AS section_title, qs.theme AS section_theme,
+               qs.background_image AS section_background_image, qs.position AS section_position
+        FROM quiz_questions qq
+        LEFT JOIN quiz_sections qs ON qs.id=qq.section_id
+        WHERE qq.campaign_code = ? {active_clause}
+        ORDER BY COALESCE(qs.position, 0), qq.position, qq.id
+        """,
         (campaign,),
     ).fetchall()
     if not rows and fallback and campaign != "default":
         rows = conn.execute(
-            f"SELECT * FROM quiz_questions WHERE campaign_code = 'default' {active_clause} ORDER BY position, id"
+            f"""
+            SELECT qq.*, qs.title AS section_title, qs.theme AS section_theme,
+                   qs.background_image AS section_background_image, qs.position AS section_position
+            FROM quiz_questions qq
+            LEFT JOIN quiz_sections qs ON qs.id=qq.section_id
+            WHERE qq.campaign_code = 'default' {active_clause}
+            ORDER BY COALESCE(qs.position, 0), qq.position, qq.id
+            """
         ).fetchall()
     result: list[dict[str, Any]] = []
     for row in rows:
@@ -167,6 +181,14 @@ def _db_questions(
             "campaign": row["campaign_code"],
             "type": row["type"],
             "title": row["title"],
+            "visual_type": row["visual_type"] or "standard",
+            "image_path": row["image_path"],
+            "section_id": row["section_id"],
+            "section": {
+                "title": row["section_title"] or "",
+                "theme": row["section_theme"] or "theory",
+                "background_image": row["section_background_image"],
+            },
             "placeholder": row["placeholder"],
             "required": bool(row["required"]),
             "points": int(row["points"]),
@@ -316,7 +338,10 @@ def attempt_token_hash(secret_key: str, token: str) -> str:
 
 
 def public_questions(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    allowed = {"id", "type", "title", "options", "required", "placeholder"}
+    allowed = {
+        "id", "type", "title", "options", "required", "placeholder",
+        "visual_type", "image_path", "section",
+    }
     result = []
     for question in questions:
         public = {key: value for key, value in question.items() if key in allowed and key != "options"}

@@ -49,6 +49,40 @@ def _new_code(conn: sqlite3.Connection) -> str:
     raise RuntimeError("reward_code_generation_failed")
 
 
+def _apply_automatic_reward(
+    conn: sqlite3.Connection,
+    *,
+    reward_id: int,
+    client_id: int,
+    preference_code: str,
+    amount: int,
+    campaign_code: str,
+    code: str,
+) -> None:
+    ensure_preferences(conn, client_id)
+    change_counter(
+        conn,
+        client_id=client_id,
+        code=preference_code,
+        delta=amount,
+        reason="quiz_reward_automatic",
+        comment=f"Автоматическое начисление; campaign={campaign_code}",
+        admin_name="system",
+    )
+    conn.execute(
+        "UPDATE quiz_reward_codes SET status='used', used_at=CURRENT_TIMESTAMP WHERE id=?",
+        (reward_id,),
+    )
+    conn.execute(
+        """
+        INSERT INTO quiz_reward_events(reward_id, code, client_id, campaign_code, action, details)
+        VALUES (?, ?, ?, ?, 'automatic_grant', ?)
+        """,
+        (reward_id, code, client_id, campaign_code,
+         json.dumps({"preference_code": preference_code, "amount": amount}, ensure_ascii=False)),
+    )
+
+
 def issue_reward(
     conn: sqlite3.Connection,
     *,
@@ -68,7 +102,8 @@ def issue_reward(
     ).fetchone()
     if existing:
         return existing
-    code = _new_code(conn)
+    delivery_mode = str(campaign["reward_delivery_mode"] or "automatic")
+    code = _new_code(conn) if delivery_mode == "code" else f"AUTO-{secrets.token_hex(8).upper()}"
     valid_from, valid_until = reward_period(campaign, timezone_name)
     cursor = conn.execute(
         """
@@ -83,6 +118,11 @@ def issue_reward(
         "INSERT INTO quiz_reward_events(reward_id, code, client_id, campaign_code, action) VALUES (?, ?, ?, ?, 'issued')",
         (reward_id, code, client_id, campaign["code"]),
     )
+    if delivery_mode == "automatic":
+        _apply_automatic_reward(
+            conn, reward_id=reward_id, client_id=client_id, preference_code=preference_code,
+            amount=amount, campaign_code=campaign["code"], code=code,
+        )
     return conn.execute("SELECT * FROM quiz_reward_codes WHERE id=?", (reward_id,)).fetchone()
 
 
@@ -108,7 +148,8 @@ def issue_referral_reward(
     ).fetchone()
     if existing:
         return existing
-    code = _new_code(conn)
+    delivery_mode = str(campaign["referral_delivery_mode"] or "automatic")
+    code = _new_code(conn) if delivery_mode == "code" else f"AUTO-{secrets.token_hex(8).upper()}"
     valid_from, valid_until = reward_period(campaign, timezone_name)
     cursor = conn.execute(
         """
@@ -127,6 +168,11 @@ def issue_referral_reward(
         """,
         (reward_id, code, client_id, campaign["code"], json.dumps({"milestone": milestone}, ensure_ascii=False)),
     )
+    if delivery_mode == "automatic":
+        _apply_automatic_reward(
+            conn, reward_id=reward_id, client_id=client_id, preference_code=preference_code,
+            amount=amount, campaign_code=campaign["code"], code=code,
+        )
     return conn.execute("SELECT * FROM quiz_reward_codes WHERE id=?", (reward_id,)).fetchone()
 
 
