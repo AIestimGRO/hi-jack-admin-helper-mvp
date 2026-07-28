@@ -249,7 +249,7 @@ def test_campaign_reward_code_is_redeemed_once(tmp_path):
     with client:
         with transaction(settings.db_path) as conn:
             conn.execute(
-                "UPDATE quiz_campaigns SET bonus_preference_code='free_reentry', bonus_amount=1 WHERE code='honor_more'"
+                "UPDATE quiz_campaigns SET bonus_preference_code='free_reentry', bonus_amount=1, reward_delivery_mode='code' WHERE code='honor_more'"
             )
         first = submit(client, campaign="honor_more", phone="9993334455")
         assert first.status_code == 200
@@ -547,6 +547,7 @@ def test_full_builder_scores_answers_and_grants_bonus_only_after_threshold(tmp_p
                 "title": "Покерный тест",
                 "bonus_preference_code": "free_entry",
                 "bonus_amount": 1,
+                "reward_delivery_mode": "code",
                 "pass_score": 2,
                 "csrf_token": token,
             },

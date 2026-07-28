@@ -3,7 +3,7 @@
   if (!app) return;
 
   const campaign = app.dataset.campaign || 'default';
-  const state = { meta: null, verifiedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, submitting: false, finishing: false, shareUrl: null };
+  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, submitting: false, finishing: false, shareUrl: null };
   const screens = [...app.querySelectorAll('[data-screen]')];
   const show = (name) => screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
   const errorText = (message) => typeof message === 'string' ? message : 'Попробуй ещё раз чуть позже.';
@@ -22,7 +22,7 @@
   }
 
   function validateIdentity(values) {
-    if (state.verifiedIdentity?.verified && state.verifiedIdentity.method === 'telegram') return;
+    if (state.verifiedIdentity?.verified) return;
     if (!values.phone) throw new Error('Укажи номер телефона');
   }
 
@@ -56,6 +56,11 @@
       app.querySelector('[data-action="identify"]').textContent = data.content.start_button_text;
       const identityResponse = await fetch(`/api/quiz/identity?campaign=${encodeURIComponent(campaign)}`, { headers: { Accept: 'application/json' } });
       const identity = await identityResponse.json();
+      if (!identityResponse.ok) throw new Error(identity.error || 'Не удалось проверить сохранённый вход');
+      if (identity.remembered) {
+        showRemembered(identity);
+        return;
+      }
       if (identity.verified) showVerified(identity);
       if (identity.verified && identity.method === 'telegram' && app.dataset.telegramVerified === '1') {
         await startQuiz();
@@ -68,15 +73,68 @@
     }
   }
 
+  function showRemembered(identity) {
+    state.rememberedIdentity = identity;
+    const displayName = identity.display_name || 'участник Hi, Jack';
+    app.querySelector('.quiz-remembered-greeting').textContent = `Добрый день, ${displayName}! Это вы?`;
+    app.querySelector('.quiz-remembered-error').textContent = '';
+    show('remembered');
+  }
+
   function showVerified(identity) {
     state.verifiedIdentity = identity;
     const box = app.querySelector('.quiz-verified');
-    const label = identity.method === 'telegram' ? `Telegram подтверждён${identity.username ? `: @${identity.username}` : ''}` : `Email подтверждён${identity.email ? `: ${identity.email}` : ''}`;
+    let label = 'Данные подтверждены';
+    if (identity.method === 'telegram') label = `Telegram подтверждён${identity.username ? `: @${identity.username}` : ''}`;
+    else if (identity.method === 'email') label = `Email подтверждён${identity.email ? `: ${identity.email}` : ''}`;
+    else if (identity.method === 'device') label = `Это вы — ${identity.display_name || 'можно продолжать'}`;
     box.textContent = `✓ ${label}`;
     box.hidden = false;
   }
 
   function setIdentityError(message) { app.querySelector('.quiz-identity-error').textContent = message ? errorText(message) : ''; }
+
+  async function confirmRememberedIdentity() {
+    if (state.submitting) return;
+    state.submitting = true;
+    const buttons = app.querySelectorAll('[data-screen="remembered"] button');
+    buttons.forEach((button) => { button.disabled = true; });
+    app.querySelector('.quiz-remembered-error').textContent = '';
+    try {
+      const data = await jsonRequest('/api/quiz/identity/confirm', { campaign });
+      showVerified(data.identity);
+      state.rememberedIdentity = null;
+      state.submitting = false;
+      await startQuiz();
+    } catch (error) {
+      app.querySelector('.quiz-remembered-error').textContent = errorText(error.message);
+    } finally {
+      state.submitting = false;
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+  }
+
+  async function forgetRememberedIdentity() {
+    if (state.submitting) return;
+    state.submitting = true;
+    const buttons = app.querySelectorAll('[data-screen="remembered"] button');
+    buttons.forEach((button) => { button.disabled = true; });
+    app.querySelector('.quiz-remembered-error').textContent = '';
+    try {
+      await jsonRequest('/api/quiz/identity/forget', {});
+      state.rememberedIdentity = null;
+      state.verifiedIdentity = null;
+      const box = app.querySelector('.quiz-verified');
+      box.hidden = true;
+      box.textContent = '';
+      showIdentityMethods();
+    } catch (error) {
+      app.querySelector('.quiz-remembered-error').textContent = errorText(error.message);
+    } finally {
+      state.submitting = false;
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+  }
 
   function clearTelegramVerifiedFlag() {
     if (app.dataset.telegramVerified !== '1') return;
@@ -277,6 +335,8 @@
   }
 
   app.querySelector('[data-action="identify"]').addEventListener('click', showIdentityMethods);
+  app.querySelector('[data-action="remembered-confirm"]').addEventListener('click', confirmRememberedIdentity);
+  app.querySelector('[data-action="remembered-forget"]').addEventListener('click', forgetRememberedIdentity);
   app.querySelector('[data-action="phone-identity"]').addEventListener('click', showPhoneIdentity);
   app.querySelector('[data-action="identity-methods"]').addEventListener('click', showIdentityMethods);
   identityForm.addEventListener('submit', (event) => { event.preventDefault(); startQuiz(); });

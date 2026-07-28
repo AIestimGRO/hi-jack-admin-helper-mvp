@@ -359,6 +359,18 @@ CREATE TABLE IF NOT EXISTS quiz_reward_events (
 );
 CREATE INDEX IF NOT EXISTS ix_quiz_reward_events_created ON quiz_reward_events(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS quiz_device_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL UNIQUE,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_quiz_device_tokens_client ON quiz_device_tokens(client_id, last_used_at DESC);
+CREATE INDEX IF NOT EXISTS ix_quiz_device_tokens_expiry ON quiz_device_tokens(expires_at);
+
 CREATE TABLE IF NOT EXISTS quiz_email_codes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email_normalized TEXT NOT NULL,

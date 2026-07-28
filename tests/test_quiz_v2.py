@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import json
 import re
 import urllib.parse
+from base64 import b64decode
 from pathlib import Path
 
+import itsdangerous
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.db import connect, transaction
 from app.main import create_app
+from app.services.quiz_device import DEVICE_COOKIE_NAME, device_token_hash
 from app.services.quiz_retention import cleanup_quiz_data
 
 
@@ -188,6 +192,130 @@ def test_public_identity_screen_offers_telegram_or_phone_first(tmp_path):
     assert 'name="name"' in page.text
     assert 'name="nickname"' in page.text
     assert "Получить код" not in page.text
+    assert "Да, продолжить" in page.text
+    assert "Нет, это не я" in page.text
+
+
+def test_verified_client_is_remembered_by_opaque_device_token(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        started = client.post(
+            "/api/quiz/start",
+            json={
+                "campaign": "default",
+                "phone": "9994445566",
+                "username": "remember_me",
+                "name": "Роксана",
+            },
+        )
+        assert started.status_code == 200
+        device_token = client.cookies.get(DEVICE_COOKIE_NAME)
+        assert device_token
+        assert "9994445566" not in device_token
+        assert "Роксана" not in device_token
+        set_cookie = "\n".join(started.headers.get_list("set-cookie")).lower()
+        assert "httponly" in set_cookie
+        assert "samesite=lax" in set_cookie
+
+        with connect(settings.db_path) as conn:
+            stored = conn.execute("SELECT * FROM quiz_device_tokens").fetchone()
+            assert stored["token_hash"] == device_token_hash(settings.secret_key, device_token)
+            assert device_token not in stored["token_hash"]
+
+        client.cookies.delete("hjc_admin_session")
+        remembered = client.get("/api/quiz/identity?campaign=default")
+        assert remembered.status_code == 200
+        assert remembered.json() == {
+            "verified": False,
+            "remembered": True,
+            "display_name": "Роксана",
+        }
+
+        confirmed = client.post("/api/quiz/identity/confirm", json={"campaign": "default"})
+        assert confirmed.status_code == 200
+        assert confirmed.json()["identity"] == {
+            "verified": True,
+            "method": "device",
+            "display_name": "Роксана",
+        }
+        signed_session = client.cookies.get("hjc_admin_session")
+        session_payload = json.loads(
+            b64decode(itsdangerous.TimestampSigner(settings.secret_key).unsign(signed_session))
+        )
+        assert session_payload["quiz_verified_identity"] == {
+            "campaign": "default",
+            "method": "device",
+            "client_id": 1,
+        }
+        assert "9994445566" not in json.dumps(session_payload, ensure_ascii=False)
+        assert "Роксана" not in json.dumps(session_payload, ensure_ascii=False)
+        resumed = client.post("/api/quiz/start", json={"campaign": "default"})
+        assert resumed.status_code == 200
+        assert resumed.json()["resumed"] is True
+
+    with connect(settings.db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM quiz_attempts").fetchone()[0] == 1
+
+
+def test_remembered_client_can_forget_only_this_browser(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        started = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9994445577", "nickname": "Rocky"},
+        )
+        assert started.status_code == 200
+        assert client.cookies.get(DEVICE_COOKIE_NAME)
+
+        forgotten = client.post("/api/quiz/identity/forget", json={})
+        assert forgotten.status_code == 200
+        assert DEVICE_COOKIE_NAME not in client.cookies
+        identity = client.get("/api/quiz/identity?campaign=default").json()
+        assert identity["remembered"] is False
+        assert identity["verified"] is False
+        assert client.post("/api/quiz/start", json={"campaign": "default"}).status_code == 422
+
+    with connect(settings.db_path) as conn:
+        assert conn.execute(
+            "SELECT revoked_at IS NOT NULL FROM quiz_device_tokens"
+        ).fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM quiz_attempts").fetchone()[0] == 1
+
+
+def test_remembered_identity_survives_new_quiz_version(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        first = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9994445588", "name": "Олег"},
+        )
+        assert first.status_code == 200
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                "UPDATE quiz_campaigns SET current_version=2 WHERE code='default'"
+            )
+
+        client.cookies.delete("hjc_admin_session")
+        remembered = client.get("/api/quiz/identity?campaign=default")
+        assert remembered.json()["display_name"] == "Олег"
+        assert client.post(
+            "/api/quiz/identity/confirm", json={"campaign": "default"}
+        ).status_code == 200
+        second = client.post("/api/quiz/start", json={"campaign": "default"})
+        assert second.status_code == 200
+        assert second.json()["resumed"] is False
+        assert second.json()["attempt_number"] == 1
+
+    with connect(settings.db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 1
+        versions = {
+            row[0] for row in conn.execute(
+                "SELECT campaign_version FROM quiz_attempts ORDER BY campaign_version"
+            )
+        }
+        assert versions == {1, 2}
 
 
 def test_verified_telegram_identity_can_start_required_campaign(tmp_path, monkeypatch):
@@ -274,6 +402,7 @@ def test_custom_result_text_reward_redemption_and_retention(tmp_path):
             conn.execute(
                 """
                 UPDATE quiz_campaigns SET bonus_preference_code='free_entry', bonus_amount=1,
+                    reward_delivery_mode='code',
                     victory_title='Победа!', victory_text='Баллы: {score}; попытка {attempts_used} из {max_attempts}',
                     reward_validity_mode='days', reward_validity_value=2
                 WHERE code='default'
@@ -302,3 +431,57 @@ def test_custom_result_text_reward_redemption_and_retention(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM quiz_reward_codes").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM quiz_participation_summary").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM preference_log").fetchone()[0] == 1
+
+
+def test_automatic_reward_and_visual_question_block(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        login(client)
+        with transaction(settings.db_path) as conn:
+            campaign = conn.execute("SELECT id FROM quiz_campaigns WHERE code='default'").fetchone()
+            conn.execute(
+                """
+                UPDATE quiz_campaigns SET bonus_preference_code='free_entry', bonus_amount=1,
+                    reward_delivery_mode='automatic', pass_score=0 WHERE id=?
+                """,
+                (campaign["id"],),
+            )
+            section_id = conn.execute(
+                "INSERT INTO quiz_sections(campaign_code,title,theme,position) VALUES ('default','Фотораздачи','photo',10)"
+            ).lastrowid
+            conn.execute(
+                """
+                UPDATE quiz_questions SET visual_type='photo', image_path='/quiz-media/default/hand.webp',
+                    section_id=? WHERE campaign_code='default' AND id=(SELECT MIN(id) FROM quiz_questions WHERE campaign_code='default')
+                """,
+                (section_id,),
+            )
+        builder = client.get(f"/master/quiz-builder/{campaign['id']}")
+        assert "Тематические блоки" in builder.text
+        assert "Фотораздачи" in builder.text
+        started = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9997779900", "username": "automatic_user"},
+        )
+        assert started.status_code == 200
+        visual = next(item for item in started.json()["questions"] if item["visual_type"] == "photo")
+        assert visual["visual_type"] == "photo"
+        assert visual["image_path"] == "/quiz-media/default/hand.webp"
+        assert visual["section"]["theme"] == "photo"
+        result = answer_all(client, started.json())
+        assert result["bonus_granted"] is True
+        assert result["reward_code"] is None
+        assert "начислен" in result["bonus_message"]
+    with connect(settings.db_path) as conn:
+        balance = conn.execute(
+            """
+            SELECT cp.balance_int FROM client_preferences cp
+            JOIN preference_types pt ON pt.id=cp.preference_type_id
+            JOIN clients c ON c.id=cp.client_id
+            WHERE c.username='automatic_user' AND pt.code='free_entry'
+            """
+        ).fetchone()[0]
+        assert balance == 1
+        reward = conn.execute("SELECT status, code FROM quiz_reward_codes ORDER BY id DESC LIMIT 1").fetchone()
+        assert reward["status"] == "used"
+        assert reward["code"].startswith("AUTO-")

@@ -60,6 +60,13 @@ def cleanup_quiz_data(
     email_codes = conn.execute(
         "DELETE FROM quiz_email_codes WHERE expires_at < datetime('now', '-1 day') OR used_at < datetime('now', '-1 day')"
     ).rowcount
+    device_tokens = conn.execute(
+        """
+        DELETE FROM quiz_device_tokens
+        WHERE datetime(expires_at)<CURRENT_TIMESTAMP
+           OR (revoked_at IS NOT NULL AND revoked_at<datetime('now', '-31 days'))
+        """
+    ).rowcount
     conn.execute(
         """
         INSERT INTO maintenance_log(task, last_run_at) VALUES ('quiz_cleanup', CURRENT_TIMESTAMP)
@@ -72,4 +79,5 @@ def cleanup_quiz_data(
         "rewards": rewards,
         "reward_events": reward_events,
         "email_codes": email_codes,
+        "device_tokens": device_tokens,
     }

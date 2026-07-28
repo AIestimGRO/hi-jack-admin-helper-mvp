@@ -52,6 +52,14 @@ from app.services.quiz_identity import (
     identity_json,
     normalize_email,
 )
+from app.services.quiz_device import (
+    DEVICE_COOKIE_NAME,
+    DEVICE_MAX_AGE_SECONDS,
+    forget_device,
+    issue_or_refresh_device,
+    remembered_client,
+    remembered_display_name,
+)
 from app.services.quiz_mail import send_quiz_email_code
 from app.services.quiz_retention import cleanup_quiz_data
 from app.services.quiz_rewards import issue_referral_reward, issue_reward, redeem_reward, render_campaign_text
@@ -361,6 +369,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def quiz_timestamp(value: datetime) -> str:
         return value.isoformat(timespec="milliseconds")
 
+    def quiz_device_cookie(request: Request) -> str:
+        return str(request.cookies.get(DEVICE_COOKIE_NAME, "")).strip()
+
+    def set_quiz_device_cookie(response: Response, token: str) -> None:
+        response.set_cookie(
+            DEVICE_COOKIE_NAME,
+            token,
+            max_age=DEVICE_MAX_AGE_SECONDS,
+            path="/",
+            secure=settings.secure_cookie,
+            httponly=True,
+            samesite="lax",
+        )
+
+    def clear_quiz_device_cookie(response: Response) -> None:
+        response.delete_cookie(
+            DEVICE_COOKIE_NAME,
+            path="/",
+            secure=settings.secure_cookie,
+            httponly=True,
+            samesite="lax",
+        )
+
     def parse_quiz_payload(payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="Некорректные данные")
@@ -381,13 +412,78 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/quiz/identity")
     async def quiz_identity_status(request: Request, campaign: str = "default"):
         campaign = normalize_campaign(campaign)
+        quiz_campaign_or_404(campaign)
+        device_token = quiz_device_cookie(request)
+        if device_token:
+            with transaction(settings.db_path) as conn:
+                client = remembered_client(
+                    conn,
+                    secret_key=settings.secret_key,
+                    token=device_token,
+                    touch=True,
+                )
+            if client:
+                response = JSONResponse(
+                    {
+                        "verified": False,
+                        "remembered": True,
+                        "display_name": remembered_display_name(client),
+                    }
+                )
+                set_quiz_device_cookie(response, device_token)
+                return response
         identity = verified_identity(request, campaign)
         return {
             "verified": bool(identity),
+            "remembered": False,
             "method": identity.get("method"),
             "username": identity.get("username"),
             "email": identity.get("email"),
         }
+
+    @app.post("/api/quiz/identity/confirm")
+    async def quiz_identity_confirm(request: Request):
+        payload = await request_json(request)
+        campaign = normalize_campaign(payload.get("campaign"))
+        quiz_campaign_or_404(campaign)
+        device_token = quiz_device_cookie(request)
+        with transaction(settings.db_path) as conn:
+            client = remembered_client(
+                conn,
+                secret_key=settings.secret_key,
+                token=device_token,
+                touch=True,
+            )
+        if not client:
+            raise HTTPException(status_code=401, detail="Сохранённый вход устарел. Подтвердите данные заново")
+        request.session["quiz_verified_identity"] = {
+            "campaign": campaign,
+            "method": "device",
+            "client_id": int(client["client_id"]),
+        }
+        response = JSONResponse(
+            {
+                "ok": True,
+                "identity": {
+                    "verified": True,
+                    "method": "device",
+                    "display_name": remembered_display_name(client),
+                },
+            }
+        )
+        set_quiz_device_cookie(response, device_token)
+        return response
+
+    @app.post("/api/quiz/identity/forget")
+    async def quiz_identity_forget(request: Request):
+        device_token = quiz_device_cookie(request)
+        if device_token:
+            with transaction(settings.db_path) as conn:
+                forget_device(conn, secret_key=settings.secret_key, token=device_token)
+        request.session.pop("quiz_verified_identity", None)
+        response = JSONResponse({"ok": True})
+        clear_quiz_device_cookie(response)
+        return response
 
     @app.get("/quiz/telegram/start")
     async def quiz_telegram_start(
@@ -592,10 +688,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user_agent = request.headers.get("user-agent", "")[:300]
         try:
             with transaction(settings.db_path) as conn:
-                client_id, is_new_client, _ = find_or_create_quiz_client(
-                    conn, campaign=campaign, phone_raw=phone, username=username, name=name, nickname=nickname,
-                    email=email, telegram_user_id=telegram_user_id, source=source, referrer_id=referrer_id,
-                )
+                verified_client_id = verified.get("client_id")
+                if verified_client_id is not None:
+                    client = conn.execute(
+                        "SELECT id FROM clients WHERE id=?",
+                        (int(verified_client_id),),
+                    ).fetchone()
+                    if not client:
+                        raise HTTPException(
+                            status_code=401,
+                            detail="Сохранённый вход устарел. Подтвердите данные заново",
+                        )
+                    client_id = int(client["id"])
+                    is_new_client = False
+                    conn.execute(
+                        """
+                        INSERT INTO client_quiz_campaigns(
+                            client_id, campaign_code, first_source, first_referrer_id
+                        ) VALUES (?, ?, ?, ?)
+                        ON CONFLICT(client_id, campaign_code)
+                        DO UPDATE SET last_seen_at=CURRENT_TIMESTAMP
+                        """,
+                        (
+                            client_id,
+                            campaign,
+                            source or f"quiz:{campaign}",
+                            referrer_id or None,
+                        ),
+                    )
+                else:
+                    client_id, is_new_client, _ = find_or_create_quiz_client(
+                        conn, campaign=campaign, phone_raw=phone, username=username, name=name, nickname=nickname,
+                        email=email, telegram_user_id=telegram_user_id, source=source, referrer_id=referrer_id,
+                    )
                 active = conn.execute(
                     "SELECT * FROM quiz_attempts WHERE client_id=? AND campaign_code=? AND campaign_version=? AND status='in_progress' ORDER BY id DESC LIMIT 1",
                     (client_id, campaign, campaign_version),
@@ -608,7 +733,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if active:
                     conn.execute("UPDATE quiz_attempts SET token_hash=?, last_activity_at=? WHERE id=?", (token_hash, quiz_timestamp(now), active["id"]))
                     active = conn.execute("SELECT * FROM quiz_attempts WHERE id=?", (active["id"],)).fetchone()
-                    return attempt_response(active, token, resumed=True)
+                    device_token = issue_or_refresh_device(
+                        conn,
+                        secret_key=settings.secret_key,
+                        client_id=client_id,
+                        current_token=quiz_device_cookie(request),
+                    )
+                    if verified:
+                        request.session["quiz_verified_identity"] = {
+                            "campaign": campaign,
+                            "method": identity_method,
+                            "client_id": client_id,
+                        }
+                    api_response = JSONResponse(attempt_response(active, token, resumed=True))
+                    set_quiz_device_cookie(api_response, device_token)
+                    return api_response
                 summary = conn.execute(
                     "SELECT * FROM quiz_participation_versions WHERE client_id=? AND campaign_code=? AND campaign_version=?",
                     (client_id, campaign, campaign_version),
@@ -664,7 +803,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 response["time_limit_seconds"] = seconds
                 response["max_attempts"] = max_attempts
                 response["attempts_left"] = max_attempts - attempts_used - 1
-                return response
+                device_token = issue_or_refresh_device(
+                    conn,
+                    secret_key=settings.secret_key,
+                    client_id=client_id,
+                    current_token=quiz_device_cookie(request),
+                )
+                if verified:
+                    request.session["quiz_verified_identity"] = {
+                        "campaign": campaign,
+                        "method": identity_method,
+                        "client_id": client_id,
+                    }
+                api_response = JSONResponse(response)
+                set_quiz_device_cookie(api_response, device_token)
+                return api_response
         except ValueError as exc:
             messages = {
                 "phone_invalid": "Проверьте номер телефона",

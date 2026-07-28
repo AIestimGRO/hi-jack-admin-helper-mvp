@@ -130,3 +130,9 @@ def test_v18_quiz_tables_are_migrated_without_data_loss(tmp_path):
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(quiz_attempts)")}
         assert {"client_id", "attempt_number", "last_activity_at"}.issubset(columns)
         assert conn.execute("SELECT COUNT(*) FROM quiz_reward_codes").fetchone()[0] == 0
+        device_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(quiz_device_tokens)")
+        }
+        assert {
+            "token_hash", "client_id", "expires_at", "last_used_at", "revoked_at"
+        }.issubset(device_columns)

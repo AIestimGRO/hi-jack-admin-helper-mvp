@@ -23,6 +23,17 @@
       <button class="quiz-primary" type="button" data-action="identify">Начать</button>
     </section>
 
+    <section class="quiz-screen" data-screen="remembered">
+      <p class="quiz-kicker">С возвращением!</p>
+      <h2 class="quiz-remembered-greeting">Добрый день! Это вы?</h2>
+      <p class="quiz-lead small">Мы запомнили вас на этом устройстве. Повторно вводить данные не нужно.</p>
+      <div class="quiz-remembered-actions">
+        <button class="quiz-primary" type="button" data-action="remembered-confirm">Да, продолжить</button>
+        <button class="quiz-secondary" type="button" data-action="remembered-forget">Нет, это не я</button>
+      </div>
+      <p class="quiz-validation quiz-remembered-error" role="alert"></p>
+    </section>
+
     <section class="quiz-screen" data-screen="identity">
       <p class="quiz-kicker">Перед началом</p>
       <h2>Как подтвердить данные?</h2>
