@@ -9,10 +9,29 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/quiz-theme.css') }}?v={{ asset_version }}">
 </head>
 <body>
-  <main class="quiz-shell" id="quiz-app" data-campaign="{{ campaign }}" data-referrer="{{ referrer_id }}" data-source="{{ source }}" data-telegram-verified="{{ '1' if telegram_verified else '0' }}">
+  <main class="quiz-shell" id="quiz-app" data-campaign="{{ campaign }}" data-referrer="{{ referrer_id }}" data-source="{{ source }}" data-telegram-verified="{{ '1' if telegram_verified else '0' }}" data-schedule-state="{{ schedule_state }}" data-active-from="{{ active_from_iso }}" data-active-until="{{ active_until_iso }}" data-server-now="{{ server_now_iso }}" data-campaign-background="{{ campaign_background }}">
     <header class="quiz-brand"><img class="quiz-logo" src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="Hi, Jack!"><strong>Hi, Jack!</strong><small>SPORT POKER CLUB</small></header>
 
     <section class="quiz-screen active" data-screen="loading"><div class="quiz-loader"></div><p>Загружаем квиз…</p></section>
+
+    <section class="quiz-screen quiz-schedule-screen" data-screen="countdown">
+      <p class="quiz-kicker">Скоро начинаем</p>
+      <h1>{{ campaign_title }}</h1>
+      <p class="quiz-lead">До начала турнира осталось</p>
+      <div class="quiz-countdown" aria-live="polite">
+        <span><strong data-countdown-days>00</strong><small>дней</small></span>
+        <span><strong data-countdown-hours>00</strong><small>часов</small></span>
+        <span><strong data-countdown-minutes>00</strong><small>минут</small></span>
+        <span><strong data-countdown-seconds>00</strong><small>секунд</small></span>
+      </div>
+      <p class="quiz-schedule-time"></p>
+    </section>
+
+    <section class="quiz-screen quiz-schedule-screen" data-screen="ended">
+      <p class="quiz-kicker">Турнир завершён</p>
+      <h1>{{ campaign_title }}</h1>
+      <p class="quiz-lead quiz-ended-message">Время участия в этом турнире закончилось.</p>
+    </section>
 
     <section class="quiz-screen" data-screen="welcome">
       <p class="quiz-kicker" data-content="welcome-kicker">Короткий опрос клуба</p>

@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
     image_path TEXT,
     section_id INTEGER REFERENCES quiz_sections(id) ON DELETE SET NULL,
     placeholder TEXT,
+    accepted_text_answers_json TEXT NOT NULL DEFAULT '[]',
     required INTEGER NOT NULL DEFAULT 1,
     points INTEGER NOT NULL DEFAULT 1 CHECK(points >= 0),
     time_limit_seconds INTEGER,
@@ -470,6 +471,7 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_questions", "visual_type TEXT NOT NULL DEFAULT 'standard'")
         _ensure_column(conn, "quiz_questions", "image_path TEXT")
         _ensure_column(conn, "quiz_questions", "section_id INTEGER REFERENCES quiz_sections(id) ON DELETE SET NULL")
+        _ensure_column(conn, "quiz_questions", "accepted_text_answers_json TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(conn, "quiz_attempts", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_submissions", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_reward_codes", "campaign_version INTEGER NOT NULL DEFAULT 1")

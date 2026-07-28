@@ -39,6 +39,7 @@ from app.services.quiz import (
     load_builder_questions,
     load_db_questions,
     normalize_campaign,
+    normalize_text_answer,
     parse_quick_questions,
     public_questions,
     score_answers,
@@ -286,7 +287,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def format_campaign_datetime(value: str) -> str:
         return datetime.fromisoformat(value).strftime("%d.%m.%Y в %H:%M")
 
-    def quiz_campaign_or_404(code: str):
+    def quiz_campaign_row(code: str):
         with connect(settings.db_path) as conn:
             row = conn.execute(
                 """
@@ -299,12 +300,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
         if not row or campaign_schedule_state(row) == "disabled":
             raise HTTPException(status_code=404, detail="Кампания квиза не найдена или отключена")
+        return row
+
+    def quiz_campaign_or_404(code: str):
+        row = quiz_campaign_row(code)
         state = campaign_schedule_state(row)
         if state == "upcoming":
             raise HTTPException(status_code=403, detail=f"Квиз начнётся {format_campaign_datetime(row['active_from'])}")
         if state == "ended":
             raise HTTPException(status_code=410, detail=f"Квиз завершён {format_campaign_datetime(row['active_until'])}")
         return row
+
+    def campaign_datetime_iso(value: str | None) -> str:
+        if not value:
+            return ""
+        return datetime.fromisoformat(value).replace(tzinfo=campaign_timezone).isoformat()
+
+    def campaign_background(code: str) -> str:
+        with connect(settings.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT background_image FROM quiz_sections
+                WHERE campaign_code=? AND background_image IS NOT NULL AND background_image <> ''
+                ORDER BY position, id LIMIT 1
+                """,
+                (code,),
+            ).fetchone()
+        return str(row["background_image"]) if row else ""
 
     @app.get("/quiz", response_class=HTMLResponse)
     async def quiz_page(
@@ -317,7 +339,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         telegram_verified: bool = False,
     ):
         campaign = normalize_campaign(campaign)
-        campaign_row = quiz_campaign_or_404(campaign)
+        campaign_row = quiz_campaign_row(campaign)
+        schedule_state = campaign_schedule_state(campaign_row)
         return templates.TemplateResponse(
             request,
             "quiz.html",
@@ -331,6 +354,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "email_auth_available": bool(settings.smtp_host and settings.smtp_from),
                 "telegram_error": telegram_error[:300],
                 "telegram_verified": telegram_verified,
+                "schedule_state": schedule_state,
+                "active_from_iso": campaign_datetime_iso(campaign_row["active_from"]),
+                "active_until_iso": campaign_datetime_iso(campaign_row["active_until"]),
+                "server_now_iso": datetime.now(campaign_timezone).isoformat(),
+                "campaign_background": campaign_background(campaign),
             },
         )
 
@@ -1846,11 +1874,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         active_questions = [question for question in questions if question["is_active"]]
         max_score = sum(
             question["points"] for question in active_questions
-            if question["type"] != "text" and any(option["correct"] and option["is_active"] for option in question["options"])
+            if (
+                question["type"] == "text" and question["accepted_text_answers"]
+            ) or (
+                question["type"] != "text"
+                and any(option["correct"] and option["is_active"] for option in question["options"])
+            )
         )
         max_correct = sum(
             1 for question in active_questions
-            if question["type"] != "text" and any(option["correct"] and option["is_active"] for option in question["options"])
+            if (
+                question["type"] == "text" and question["accepted_text_answers"]
+            ) or (
+                question["type"] != "text"
+                and any(option["correct"] and option["is_active"] for option in question["options"])
+            )
         )
         return templates.TemplateResponse(
             request,
@@ -1888,6 +1926,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if time_limit_seconds < 0 or time_limit_seconds > 600:
             raise ValueError("Таймер должен быть от 0 до 600 секунд")
         options: list[dict[str, Any]] = []
+        accepted_text_answers: list[str] = []
         if question_type != "text":
             raw_options = payload.get("options")
             if not isinstance(raw_options, list):
@@ -1910,6 +1949,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise ValueError("Отметьте один правильный вариант")
             if question_type == "multi_choice" and correct_count < 1:
                 raise ValueError("Отметьте хотя бы один правильный вариант")
+        else:
+            raw_accepted = payload.get("accepted_text_answers", [])
+            if isinstance(raw_accepted, str):
+                raw_accepted = raw_accepted.splitlines()
+            if not isinstance(raw_accepted, list):
+                raise ValueError("Проверьте правильные текстовые ответы")
+            for raw_answer in raw_accepted:
+                answer = str(raw_answer).strip()
+                if not answer:
+                    continue
+                if len(answer) > 300:
+                    raise ValueError("Правильный текстовый ответ не должен быть длиннее 300 символов")
+                accepted_text_answers.append(answer)
+            normalized_answers = [normalize_text_answer(answer) for answer in accepted_text_answers]
+            if len(set(normalized_answers)) != len(normalized_answers):
+                raise ValueError("Одинаковые варианты текстового ответа достаточно указать один раз")
+            if points > 0 and not accepted_text_answers:
+                raise ValueError("Для начисления баллов укажите правильный текстовый ответ")
         return {
             "title": title,
             "question_type": question_type,
@@ -1917,10 +1974,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "image_path": image_path,
             "section_id": section_id,
             "required": bool(payload.get("required", True)),
-            "points": points if question_type != "text" else 0,
+            "points": points,
             "time_limit_seconds": time_limit_seconds or None,
             "placeholder": str(payload.get("placeholder", "")).strip()[:200] or None,
             "options": options,
+            "accepted_text_answers": accepted_text_answers,
             "publish": True,
         }
 
@@ -1939,14 +1997,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             """
             INSERT INTO quiz_questions(
                 campaign_code, code, type, title, visual_type, image_path, section_id,
-                placeholder, required, points, time_limit_seconds,
+                placeholder, accepted_text_answers_json, required, points, time_limit_seconds,
                 position, is_active, created_by_admin_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 campaign_code, f"q_{uuid.uuid4().hex[:10]}", question["question_type"], question["title"],
                 question["visual_type"], question["image_path"], question["section_id"],
-                question["placeholder"], int(question["required"]), question["points"],
+                question["placeholder"],
+                json.dumps(question["accepted_text_answers"], ensure_ascii=False),
+                int(question["required"]), question["points"],
                 question["time_limit_seconds"], position, int(question["publish"]), admin_id,
             ),
         )
@@ -2025,13 +2085,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             conn.execute(
                 """
                 UPDATE quiz_questions SET type=?, title=?, placeholder=?, required=?, points=?,
-                    visual_type=?, image_path=?, section_id=?,
+                    visual_type=?, image_path=?, section_id=?, accepted_text_answers_json=?,
                     time_limit_seconds=NULL, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?
                 """,
                 (
                     question["question_type"], question["title"], question["placeholder"],
                     int(question["required"]), question["points"], question["visual_type"],
-                    question["image_path"], question["section_id"], question_id,
+                    question["image_path"], question["section_id"],
+                    json.dumps(question["accepted_text_answers"], ensure_ascii=False),
+                    question_id,
                 ),
             )
             conn.execute("DELETE FROM quiz_options WHERE question_id=?", (question_id,))
@@ -2446,13 +2508,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cursor = conn.execute(
                 """
                 INSERT INTO quiz_questions(
-                    campaign_code, code, type, title, placeholder, required, points, time_limit_seconds,
+                    campaign_code, code, type, title, visual_type, image_path, section_id,
+                    placeholder, accepted_text_answers_json, required, points, time_limit_seconds,
                     position, is_active, created_by_admin_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     row["campaign_code"], f"q_{uuid.uuid4().hex[:10]}", row["type"], title,
-                    row["placeholder"], row["required"], row["points"], row["time_limit_seconds"],
+                    row["visual_type"], row["image_path"], row["section_id"],
+                    row["placeholder"], row["accepted_text_answers_json"], row["required"],
+                    row["points"], row["time_limit_seconds"],
                     position, request.session["admin_id"],
                 ),
             )

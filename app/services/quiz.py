@@ -5,6 +5,7 @@ import hmac
 import json
 import re
 import sqlite3
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,13 @@ QUESTION_TYPES = {"single_choice", "multi_choice", "text"}
 def normalize_campaign(value: Any) -> str:
     campaign = str(value or "default").strip().lower()
     return campaign if CAMPAIGN_RE.fullmatch(campaign) else "default"
+
+
+def normalize_text_answer(value: Any) -> str:
+    """Normalize harmless writing differences without guessing the answer."""
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold().replace("ё", "е")
+    text = re.sub(r"[^\w\s]+", "", text, flags=re.UNICODE).replace("_", " ")
+    return "".join(text.split())
 
 
 def parse_quick_questions(value: str) -> list[dict[str, Any]]:
@@ -190,6 +198,7 @@ def _db_questions(
                 "background_image": row["section_background_image"],
             },
             "placeholder": row["placeholder"],
+            "accepted_text_answers": _accepted_text_answers(row["accepted_text_answers_json"]),
             "required": bool(row["required"]),
             "points": int(row["points"]),
             "time_limit_seconds": row["time_limit_seconds"],
@@ -208,6 +217,16 @@ def _db_questions(
             ],
         })
     return result
+
+
+def _accepted_text_answers(value: Any) -> list[str]:
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item).strip() for item in parsed if str(item).strip()]
 
 
 def load_db_questions(conn: sqlite3.Connection, campaign: str) -> list[dict[str, Any]]:
@@ -266,13 +285,25 @@ def score_answers(questions: list[dict[str, Any]], answers: dict[str, Any]) -> d
     correct_count = 0
     max_correct_count = 0
     for question in questions:
+        points = max(0, int(question.get("points", 1)))
         if question["type"] == "text":
+            accepted = {
+                normalize_text_answer(item)
+                for item in question.get("accepted_text_answers", [])
+                if normalize_text_answer(item)
+            }
+            if not accepted:
+                continue
+            max_correct_count += 1
+            max_score += points
+            if normalize_text_answer(answers.get(question["id"])) in accepted:
+                correct_count += 1
+                score += points
             continue
         correct = {str(option["id"]) for option in question.get("options", []) if option.get("correct")}
         if not correct:
             continue
         max_correct_count += 1
-        points = max(0, int(question.get("points", 1)))
         max_score += points
         value = answers.get(question["id"])
         selected = set(str(item) for item in value) if isinstance(value, list) else ({str(value)} if value else set())
@@ -374,6 +405,14 @@ def answer_summary(questions: list[dict[str, Any]], answers_json: str) -> list[t
         correct_options = {
             str(option.get("id")) for option in question.get("options", []) if option.get("correct")
         }
-        is_correct = selected == correct_options if correct_options else None
+        accepted_text = {
+            normalize_text_answer(item)
+            for item in question.get("accepted_text_answers", [])
+            if normalize_text_answer(item)
+        }
+        if question.get("type") == "text" and accepted_text:
+            is_correct = normalize_text_answer(value) in accepted_text
+        else:
+            is_correct = selected == correct_options if correct_options else None
         result.append((question["title"], display, is_correct))
     return result

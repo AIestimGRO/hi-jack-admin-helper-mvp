@@ -71,6 +71,10 @@
       <p class="correct-help">Выберите правильный вариант.</p>
       <div class="quick-options hj-answer-list" aria-label="Варианты ответа"></div>
       <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
+      <label class="wide hj-text-answer-field" data-text-answers hidden>Правильные текстовые ответы
+        <textarea name="accepted_text_answers" maxlength="5000" rows="4" placeholder="По одному допустимому варианту на строке"></textarea>
+        <small>Регистр, точки, запятые, лишние пробелы и «ё/е» при проверке не учитываются.</small>
+      </label>
       <details class="hj-advanced">
         <summary>Дополнительные настройки</summary>
         <div>
@@ -118,6 +122,10 @@
             {% endfor %}
             </div>
             <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
+            <label class="wide hj-text-answer-field" data-text-answers {% if question.type!='text' %}hidden{% endif %}>Правильные текстовые ответы
+              <textarea name="accepted_text_answers" maxlength="5000" rows="4" placeholder="По одному допустимому варианту на строке">{{ question.accepted_text_answers|join('\n') }}</textarea>
+              <small>Регистр, точки, запятые, лишние пробелы и «ё/е» при проверке не учитываются.</small>
+            </label>
             <details class="hj-advanced">
               <summary>Дополнительные настройки</summary>
               <div>

@@ -137,9 +137,10 @@ if (quizBuilder) {
       const isText = type === 'text';
       optionsBox.hidden = isText;
       addOptionButton.hidden = isText;
+      form.querySelector('[data-text-answers]').hidden = !isText;
       form.querySelector('.correct-help').textContent = type === 'multi_choice'
         ? 'Можно отметить несколько правильных ответов.'
-        : type === 'text' ? 'Участник введёт ответ текстом.' : 'Выберите правильный вариант.';
+        : type === 'text' ? 'Укажите один или несколько допустимых правильных ответов.' : 'Выберите правильный вариант.';
       if (!isText && optionsBox.children.length < 2) {
         while (optionsBox.children.length < 2) addOption('', false, true);
       }
@@ -199,6 +200,7 @@ if (quizBuilder) {
           image_path: imagePath,
           section_id: form.elements.section_id.value,
           options,
+          accepted_text_answers: form.elements.accepted_text_answers.value,
           points: form.elements.points.value,
           time_limit_seconds: 0,
           required: form.elements.required.checked,

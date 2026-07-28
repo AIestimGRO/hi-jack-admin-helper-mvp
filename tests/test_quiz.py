@@ -9,7 +9,13 @@ from app.config import Settings
 from app.db import connect, transaction
 from app.main import create_app
 from app.services.clients import upsert_client
-from app.services.quiz import load_questions, parse_quick_questions, score_answers, validate_answers
+from app.services.quiz import (
+    load_questions,
+    normalize_text_answer,
+    parse_quick_questions,
+    score_answers,
+    validate_answers,
+)
 
 
 def make_client(tmp_path: Path) -> tuple[TestClient, Settings]:
@@ -111,6 +117,23 @@ def test_scoring_requires_exact_match_for_multiple_choice():
     partial = score_answers(questions, {"single": "a", "multi": ["x"]})
     assert partial["score"] == 2
     assert partial["correct_count"] == 1
+
+
+def test_text_answers_ignore_case_punctuation_spaces_and_yo() -> None:
+    question = {
+        "id": "rebus",
+        "type": "text",
+        "points": 4,
+        "options": [],
+        "accepted_text_answers": ["Флеш-рояль", "Королевский флеш"],
+    }
+    assert normalize_text_answer("  ФЛЕШ-РОЯЛЬ... ") == "флешрояль"
+    assert normalize_text_answer("флеш рояль") == "флешрояль"
+    assert normalize_text_answer("Всё.") == normalize_text_answer("все")
+    result = score_answers([question], {"rebus": "флеш-РОЯЛЬ."})
+    assert result == {"score": 4, "max_score": 4, "correct_count": 1, "max_correct_count": 1}
+    wrong = score_answers([question], {"rebus": "стрит"})
+    assert wrong == {"score": 0, "max_score": 4, "correct_count": 0, "max_correct_count": 1}
 
 
 def test_quick_question_parser_supports_single_and_multiple_correct_answers():
@@ -362,8 +385,9 @@ def test_quiz_campaign_schedule_blocks_early_and_late_starts(tmp_path):
                 "UPDATE quiz_campaigns SET active_from='2999-01-01T12:00', active_until=NULL WHERE code='default'"
             )
         early_page = client.get("/quiz?campaign=default")
-        assert early_page.status_code == 403
-        assert "Квиз начнётся" in early_page.text
+        assert early_page.status_code == 200
+        assert 'data-schedule-state="upcoming"' in early_page.text
+        assert "До начала турнира осталось" in early_page.text
         assert client.post("/api/quiz/start", json={"campaign": "default"}).status_code == 403
 
         with transaction(settings.db_path) as conn:
@@ -371,8 +395,9 @@ def test_quiz_campaign_schedule_blocks_early_and_late_starts(tmp_path):
                 "UPDATE quiz_campaigns SET active_from=NULL, active_until='2000-01-01T12:00' WHERE code='default'"
             )
         late_page = client.get("/quiz?campaign=default")
-        assert late_page.status_code == 410
-        assert "Квиз завершён" in late_page.text
+        assert late_page.status_code == 200
+        assert 'data-schedule-state="ended"' in late_page.text
+        assert "Время участия в этом турнире закончилось" in late_page.text
         assert client.post("/api/quiz/start", json={"campaign": "default"}).status_code == 410
 
         with transaction(settings.db_path) as conn:
@@ -447,6 +472,69 @@ def test_master_can_create_complete_question_in_one_action(tmp_path):
         changed = conn.execute("SELECT title, points, is_active FROM quiz_questions WHERE id=?", (question["id"],)).fetchone()
         assert tuple(changed) == ("Сколько общих карт открывают на флопе?", 3.0, 1)
         assert conn.execute("SELECT COUNT(*) FROM quiz_options WHERE question_id=?", (question["id"],)).fetchone()[0] == 2
+
+
+def test_master_can_score_rebus_with_normalized_text_answers(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        login(client)
+        with connect(settings.db_path) as conn:
+            campaign_id = conn.execute("SELECT id FROM quiz_campaigns WHERE code='default'").fetchone()[0]
+        page = client.get(f"/master/quiz-builder/{campaign_id}")
+        token = re.search(r'data-csrf-token="([^"]+)"', page.text).group(1)
+        created = client.post(
+            f"/api/master/quiz-campaigns/{campaign_id}/questions/create-complete",
+            json={
+                "csrf_token": token,
+                "title": "Разгадайте ребус",
+                "question_type": "text",
+                "visual_type": "rebus",
+                "image_path": "/quiz-media/default/rebus.webp",
+                "points": 5,
+                "required": True,
+                "accepted_text_answers": "Флеш-рояль\nКоролевский флеш",
+                "options": [],
+            },
+        )
+        assert created.status_code == 200
+        builder = client.get(f"/master/quiz-builder/{campaign_id}")
+        assert "Флеш-рояль" in builder.text
+        assert "Регистр, точки, запятые" in builder.text
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                "UPDATE quiz_questions SET is_active=(title='Разгадайте ребус') WHERE campaign_code='default'"
+            )
+            conn.execute("UPDATE quiz_campaigns SET pass_score=5 WHERE code='default'")
+        started = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9992223344", "username": "rebus_player"},
+        )
+        assert started.status_code == 200
+        public_rebus = next(item for item in started.json()["questions"] if item["title"] == "Разгадайте ребус")
+        assert "accepted_text_answers" not in public_rebus
+        saved = client.post(
+            "/api/quiz/answer",
+            json={
+                "attempt_token": started.json()["attempt_token"],
+                "question_id": public_rebus["id"],
+                "answer": "  ФЛЕШ-РОЯЛЬ... ",
+            },
+        )
+        assert saved.status_code == 200
+        finished = client.post(
+            "/api/quiz/finish",
+            json={"attempt_token": started.json()["attempt_token"]},
+        )
+        assert finished.status_code == 200
+        assert finished.json()["score"] == 5
+        assert finished.json()["passed"] is True
+
+    with connect(settings.db_path) as conn:
+        row = conn.execute(
+            "SELECT points, accepted_text_answers_json FROM quiz_questions WHERE title='Разгадайте ребус'"
+        ).fetchone()
+        assert row["points"] == 5
+        assert json.loads(row["accepted_text_answers_json"]) == ["Флеш-рояль", "Королевский флеш"]
 
 
 def test_master_bulk_creation_is_atomic_and_detects_question_types(tmp_path):

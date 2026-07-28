@@ -3,17 +3,94 @@
   if (!app) return;
 
   const campaign = app.dataset.campaign || 'default';
-  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, submitting: false, finishing: false, shareUrl: null };
+  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, scheduleTimer: null, serverOffset: 0, submitting: false, finishing: false, shareUrl: null };
   const screens = [...app.querySelectorAll('[data-screen]')];
   const show = (name) => screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
   const errorText = (message) => typeof message === 'string' ? message : 'Попробуй ещё раз чуть позже.';
   const identityForm = app.querySelector('.quiz-identity');
 
+  async function readJson(response, fallbackMessage) {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(fallbackMessage || 'Сервис временно недоступен. Обнови страницу и попробуй ещё раз.');
+    }
+    try {
+      return await response.json();
+    } catch (_) {
+      throw new Error(fallbackMessage || 'Не удалось прочитать ответ сервера. Попробуй ещё раз.');
+    }
+  }
+
   async function jsonRequest(url, body) {
     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
-    const data = await response.json();
+    const data = await readJson(response, 'Не удалось выполнить действие. Обнови страницу и попробуй ещё раз.');
     if (!response.ok) throw new Error(data.error || 'Не удалось выполнить действие');
     return data;
+  }
+
+  function setBackground(url) {
+    if (url) {
+      app.style.setProperty('--quiz-background', `url("${url}")`);
+      document.documentElement.style.setProperty('--quiz-background', `url("${url}")`);
+      app.classList.add('has-quiz-background');
+    } else {
+      app.style.removeProperty('--quiz-background');
+      document.documentElement.style.removeProperty('--quiz-background');
+      app.classList.remove('has-quiz-background');
+    }
+  }
+
+  function scheduledNow() { return Date.now() + state.serverOffset; }
+
+  function showEnded() {
+    if (state.scheduleTimer) window.clearInterval(state.scheduleTimer);
+    state.scheduleTimer = null;
+    const end = Date.parse(app.dataset.activeUntil || '');
+    if (Number.isFinite(end)) {
+      app.querySelector('.quiz-ended-message').textContent = `Время участия закончилось ${new Date(end).toLocaleString('ru-RU')}.`;
+    }
+    show('ended');
+  }
+
+  function startCountdown() {
+    const start = Date.parse(app.dataset.activeFrom || '');
+    if (!Number.isFinite(start)) {
+      loadMeta();
+      return;
+    }
+    const output = {
+      days: app.querySelector('[data-countdown-days]'),
+      hours: app.querySelector('[data-countdown-hours]'),
+      minutes: app.querySelector('[data-countdown-minutes]'),
+      seconds: app.querySelector('[data-countdown-seconds]'),
+    };
+    app.querySelector('.quiz-schedule-time').textContent = `Старт: ${new Date(start).toLocaleString('ru-RU')}`;
+    const tick = () => {
+      const remaining = Math.max(0, start - scheduledNow());
+      const totalSeconds = Math.ceil(remaining / 1000);
+      output.days.textContent = String(Math.floor(totalSeconds / 86400)).padStart(2, '0');
+      output.hours.textContent = String(Math.floor((totalSeconds % 86400) / 3600)).padStart(2, '0');
+      output.minutes.textContent = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+      output.seconds.textContent = String(totalSeconds % 60).padStart(2, '0');
+      if (remaining <= 0) {
+        window.clearInterval(state.scheduleTimer);
+        state.scheduleTimer = null;
+        app.dataset.scheduleState = 'active';
+        loadMeta();
+      }
+    };
+    show('countdown');
+    tick();
+    state.scheduleTimer = window.setInterval(tick, 250);
+  }
+
+  function initialize() {
+    const serverNow = Date.parse(app.dataset.serverNow || '');
+    if (Number.isFinite(serverNow)) state.serverOffset = serverNow - Date.now();
+    setBackground(app.dataset.campaignBackground || '');
+    if (app.dataset.scheduleState === 'upcoming') startCountdown();
+    else if (app.dataset.scheduleState === 'ended') showEnded();
+    else loadMeta();
   }
 
   function identityValues() {
@@ -44,7 +121,7 @@
     show('loading');
     try {
       const response = await fetch(`/api/quiz/questions?campaign=${encodeURIComponent(campaign)}`, { headers: { Accept: 'application/json' } });
-      const data = await response.json();
+      const data = await readJson(response, 'Не удалось загрузить квиз. Обнови страницу и попробуй ещё раз.');
       if (!response.ok) throw new Error(data.error || 'Не удалось загрузить квиз');
       state.meta = data;
       const countLabel = data.questions_count === 1 ? '1 вопрос' : `${data.questions_count} вопросов`;
@@ -55,7 +132,7 @@
       app.querySelector('[data-content="identity-text"]').textContent = data.content.identity_text;
       app.querySelector('[data-action="identify"]').textContent = data.content.start_button_text;
       const identityResponse = await fetch(`/api/quiz/identity?campaign=${encodeURIComponent(campaign)}`, { headers: { Accept: 'application/json' } });
-      const identity = await identityResponse.json();
+      const identity = await readJson(identityResponse, 'Не удалось проверить сохранённый вход.');
       if (!identityResponse.ok) throw new Error(identity.error || 'Не удалось проверить сохранённый вход');
       if (identity.remembered) {
         showRemembered(identity);
@@ -68,6 +145,15 @@
       }
       show('welcome');
     } catch (error) {
+      if (/Квиз завершён/.test(error.message)) {
+        showEnded();
+        return;
+      }
+      if (/Квиз начнётся/.test(error.message)) {
+        app.dataset.scheduleState = 'upcoming';
+        startCountdown();
+        return;
+      }
       app.querySelector('.quiz-error-message').textContent = errorText(error.message);
       show('error');
     }
@@ -146,6 +232,11 @@
 
   async function startQuiz() {
     if (state.submitting) return;
+    const activeUntil = Date.parse(app.dataset.activeUntil || '');
+    if (Number.isFinite(activeUntil) && scheduledNow() >= activeUntil) {
+      showEnded();
+      return;
+    }
     const values = identityValues();
     try { validateIdentity(values); } catch (error) { setIdentityError(error.message); return; }
     state.submitting = true;
@@ -172,7 +263,12 @@
       startTimer();
     } catch (error) {
       setIdentityError(error.message);
-      if (/исчерпан|успешно пройден/.test(error.message)) {
+      if (/Квиз завершён/.test(error.message)) {
+        showEnded();
+      } else if (/Квиз начнётся/.test(error.message)) {
+        app.dataset.scheduleState = 'upcoming';
+        startCountdown();
+      } else if (/исчерпан|успешно пройден/.test(error.message)) {
         app.querySelector('.quiz-error-message').textContent = errorText(error.message);
         show('error');
       } else {
@@ -197,7 +293,9 @@
     const screen = app.querySelector('[data-screen="question"]');
     const section = question.section || {};
     screen.dataset.theme = section.theme || 'theory';
-    if (section.background_image) screen.style.setProperty('--section-background', `url("${section.background_image}")`);
+    const questionBackground = section.background_image || app.dataset.campaignBackground || '';
+    setBackground(questionBackground);
+    if (questionBackground) screen.style.setProperty('--section-background', `url("${questionBackground}")`);
     else screen.style.removeProperty('--section-background');
     const sectionLabel = app.querySelector('.quiz-section-label');
     sectionLabel.hidden = !section.title;
@@ -346,6 +444,9 @@
   app.querySelector('[data-action="new-attempt"]').addEventListener('click', () => { state.finishing = false; startQuiz(); });
   app.querySelector('[data-action="share"]').addEventListener('click', shareQuiz);
   app.querySelector('[data-action="copy-share"]').addEventListener('click', copyShareLink);
-  window.addEventListener('beforeunload', stopTimer);
-  loadMeta();
+  window.addEventListener('beforeunload', () => {
+    stopTimer();
+    if (state.scheduleTimer) window.clearInterval(state.scheduleTimer);
+  });
+  initialize();
 })();

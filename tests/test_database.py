@@ -80,6 +80,28 @@ def test_quiz_campaign_schedule_columns_are_migrated(tmp_path):
         assert conn.execute("SELECT title FROM quiz_campaigns WHERE code='legacy'").fetchone()[0] == "Старый квиз"
 
 
+def test_text_answer_column_is_migrated_without_rebuilding_questions(tmp_path):
+    path = tmp_path / "legacy-questions.sqlite3"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE quiz_questions (
+                id INTEGER PRIMARY KEY, campaign_code TEXT, code TEXT, type TEXT, title TEXT,
+                position INTEGER NOT NULL DEFAULT 100
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO quiz_questions VALUES (7, 'default', 'legacy_text', 'text', 'Старый вопрос', 100)"
+        )
+    init_db(path)
+    with connect(path) as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(quiz_questions)")}
+        assert "accepted_text_answers_json" in columns
+        row = conn.execute("SELECT id, title, accepted_text_answers_json FROM quiz_questions WHERE id=7").fetchone()
+        assert tuple(row) == (7, "Старый вопрос", "[]")
+
+
 def test_v18_quiz_tables_are_migrated_without_data_loss(tmp_path):
     path = tmp_path / "legacy-v18.sqlite3"
     with sqlite3.connect(path) as conn:
