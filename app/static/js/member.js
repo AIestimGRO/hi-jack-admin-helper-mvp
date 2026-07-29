@@ -22,10 +22,9 @@ document.querySelectorAll("[data-registration-form]").forEach((form) => {
     const passwordsMatch =
       !confirmation.value || password.value === confirmation.value;
     const passwordMeetsRules =
-      password.value.length >= 10 &&
+      password.value.length >= 6 &&
       password.value.length <= 128 &&
-      /\p{L}/u.test(password.value) &&
-      /\d/.test(password.value);
+      /\p{L}/u.test(password.value);
     submit.disabled =
       !form.checkValidity() || !passwordsMatch || !passwordMeetsRules;
     if (mismatch) {

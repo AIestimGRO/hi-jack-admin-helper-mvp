@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -28,7 +30,9 @@ def make_member_client(
         telegram_client_secret="telegram-secret",
         member_portal_enabled=enabled,
     )
-    return TestClient(create_app(settings)), settings
+    return TestClient(
+        create_app(settings), base_url=settings.public_base_url
+    ), settings
 
 
 def csrf_from(response) -> str:
@@ -145,11 +149,15 @@ def request_registration_code(
 
 
 def test_password_hash_is_salted_and_verifiable() -> None:
-    first = hash_password("PokerPlayer2026")
-    second = hash_password("PokerPlayer2026")
+    first = hash_password("abcdef")
+    second = hash_password("abcdef")
     assert first != second
-    assert verify_password("PokerPlayer2026", first)
+    assert verify_password("abcdef", first)
     assert not verify_password("wrong-password", first)
+    with pytest.raises(ValueError, match="от 6 до 128"):
+        hash_password("abcde")
+    with pytest.raises(ValueError, match="хотя бы одну букву"):
+        hash_password("123456")
 
 
 def test_member_portal_is_hidden_by_default(tmp_path: Path) -> None:
@@ -172,7 +180,8 @@ def test_registration_consents_account_session_and_profile(
     with client:
         accept_registration_documents(client)
         profile = client.get("/account/register")
-        assert "Telegram можно будет подключить следующим отдельным шагом" in profile.text
+        assert "Минимум 6 символов и хотя бы одна буква" in profile.text
+        assert "привязанный к вашей карточке участника Hi Jack UP!" in profile.text
         assert "Подтвердить через Telegram" not in profile.text
         submit = re.search(
             r"<button[^>]+data-registration-submit[^>]*>", profile.text
@@ -210,7 +219,31 @@ def test_registration_consents_account_session_and_profile(
         telegram_step = client.get("/account/telegram")
         assert telegram_step.status_code == 200
         assert "Подключить Telegram?" in telegram_step.text
+        assert (
+            "Telegram необходим чтобы объединить Ваши достижения "
+            "из приложения Hi Jack UP!"
+        ) in telegram_step.text
+        assert "Дополнительный шаг" not in telegram_step.text
+        assert "Это необязательно" not in telegram_step.text
         assert "Пропустить и перейти в кабинет" in telegram_step.text
+
+        telegram_start = client.get(
+            "/account/telegram/start", follow_redirects=False
+        )
+        assert telegram_start.status_code == 302
+        authorization = urlparse(telegram_start.headers["location"])
+        assert authorization.scheme == "https"
+        assert authorization.netloc == "oauth.telegram.org"
+        parameters = parse_qs(authorization.query)
+        assert parameters["client_id"] == ["telegram-client"]
+        assert parameters["redirect_uri"] == [
+            "https://club.example.test/account/telegram/callback"
+        ]
+        assert parameters["response_type"] == ["code"]
+        assert parameters["scope"] == ["openid profile"]
+        assert parameters["state"]
+        assert parameters["code_challenge"]
+        assert parameters["code_challenge_method"] == ["S256"]
 
         skipped_profile = client.get("/account")
         assert skipped_profile.status_code == 200

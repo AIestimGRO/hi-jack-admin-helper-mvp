@@ -441,6 +441,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             flow["accepted"] = {}
         return flow
 
+    def member_telegram_redirect_uri(request: Request) -> str:
+        return str(request.url_for("member_telegram_callback"))
+
     def missing_member_documents(account_id: int) -> list[sqlite3.Row]:
         with connect(settings.db_path) as conn:
             return conn.execute(
@@ -476,10 +479,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         verifier, challenge = new_pkce()
         state = secrets.token_urlsafe(32)
-        redirect_uri = (
-            settings.public_base_url.rstrip("/")
-            + "/account/telegram/callback"
-        )
+        redirect_uri = member_telegram_redirect_uri(request)
         request.session["member_telegram_oauth"] = {
             "state": state,
             "verifier": verifier,
@@ -533,10 +533,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "Подключение Telegram устарело. Попробуйте ещё раз",
                 error=True,
             )
-        redirect_uri = (
-            settings.public_base_url.rstrip("/")
-            + "/account/telegram/callback"
-        )
+        redirect_uri = member_telegram_redirect_uri(request)
         try:
             claims = await run_in_threadpool(
                 exchange_telegram_code,
@@ -620,6 +617,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 step=step,
                 documents=documents,
                 email_available=bool(settings.smtp_host and settings.smtp_from),
+                email_code_minutes=settings.email_code_minutes,
                 ok=ok,
                 error=error,
             ),
@@ -681,13 +679,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 error=True,
             )
         try:
-            normalized_email = normalize_email(email)
-            phone_local = normalize_phone(phone)
-            flow = member_registration_flow(request)
-            if not normalized_email or not phone_local:
+            try:
+                normalized_email = normalize_email(email)
+            except ValueError as exc:
                 raise ValueError(
-                    "Заполните почту и укажите корректный номер телефона"
+                    "Укажите корректный адрес электронной почты, например name@example.com"
+                ) from exc
+            phone_local = normalize_phone(phone)
+            if not normalized_email:
+                raise ValueError(
+                    "Укажите адрес электронной почты — на него придёт код подтверждения"
                 )
+            if not phone_local:
+                raise ValueError(
+                    "Укажите российский номер телефона из 10 цифр, например +7 999 123-45-67"
+                )
+            flow = member_registration_flow(request)
             if password != password_confirmation:
                 raise ValueError("Пароли не совпадают")
             password_hash = hash_password(password)

@@ -15,7 +15,7 @@ from app.services.quiz_identity import normalize_email
 
 MEMBER_COOKIE_NAME = "hjc_member_session"
 PASSWORD_ITERATIONS = 600_000
-MIN_PASSWORD_LENGTH = 10
+MIN_PASSWORD_LENGTH = 6
 MAX_PASSWORD_LENGTH = 128
 
 
@@ -26,11 +26,9 @@ def _timestamp(value: datetime) -> str:
 def validate_password(password: str) -> str:
     value = str(password or "")
     if not MIN_PASSWORD_LENGTH <= len(value) <= MAX_PASSWORD_LENGTH:
-        raise ValueError("Пароль должен содержать от 10 до 128 символов")
-    if not any(character.isalpha() for character in value) or not any(
-        character.isdigit() for character in value
-    ):
-        raise ValueError("Добавьте в пароль хотя бы одну букву и одну цифру")
+        raise ValueError("Пароль должен содержать от 6 до 128 символов")
+    if not any(character.isalpha() for character in value):
+        raise ValueError("Добавьте в пароль хотя бы одну букву")
     return value
 
 
