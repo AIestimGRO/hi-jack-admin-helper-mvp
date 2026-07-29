@@ -96,6 +96,15 @@ server {
         proxy_pass http://127.0.0.1:8090;
     }
 
+    location = /account {
+        proxy_pass http://127.0.0.1:8090;
+    }
+
+    location ^~ /account/ {
+        limit_req zone=hjc_quiz_submit burst=8 nodelay;
+        proxy_pass http://127.0.0.1:8090;
+    }
+
     location /static/ {
         proxy_pass http://127.0.0.1:8090;
         expires 1h;

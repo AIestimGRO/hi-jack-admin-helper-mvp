@@ -55,6 +55,8 @@ def find_or_create_quiz_client(
     telegram_user_id: str = "",
     source: str = "",
     referrer_id: str = "",
+    match_username: bool = True,
+    match_email: bool = True,
 ) -> tuple[int, bool, dict[str, str | None]]:
     phone_value = str(phone_raw or "").strip()[:80]
     phone_local = normalize_phone(phone_value) if phone_value else None
@@ -72,9 +74,9 @@ def find_or_create_quiz_client(
         lookups.append(("telegram_user_id = ?", telegram_user_id))
     if phone_local:
         lookups.append(("phone_local = ?", phone_local))
-    if normalized_username:
+    if normalized_username and match_username:
         lookups.append(("username = ? COLLATE NOCASE", normalized_username))
-    if normalized_email:
+    if normalized_email and match_email:
         lookups.append(("email_normalized = ?", normalized_email))
     for clause, value in lookups:
         candidate_ids.update(int(row[0]) for row in conn.execute(f"SELECT id FROM clients WHERE {clause}", (value,)))

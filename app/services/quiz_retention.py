@@ -67,6 +67,20 @@ def cleanup_quiz_data(
            OR (revoked_at IS NOT NULL AND revoked_at<datetime('now', '-31 days'))
         """
     ).rowcount
+    member_email_codes = conn.execute(
+        """
+        DELETE FROM member_email_codes
+        WHERE expires_at < datetime('now', '-1 day')
+           OR used_at < datetime('now', '-1 day')
+        """
+    ).rowcount
+    member_sessions = conn.execute(
+        """
+        DELETE FROM member_sessions
+        WHERE datetime(expires_at)<CURRENT_TIMESTAMP
+           OR (revoked_at IS NOT NULL AND revoked_at<datetime('now', '-31 days'))
+        """
+    ).rowcount
     conn.execute(
         """
         INSERT INTO maintenance_log(task, last_run_at) VALUES ('quiz_cleanup', CURRENT_TIMESTAMP)
@@ -80,4 +94,6 @@ def cleanup_quiz_data(
         "reward_events": reward_events,
         "email_codes": email_codes,
         "device_tokens": device_tokens,
+        "member_email_codes": member_email_codes,
+        "member_sessions": member_sessions,
     }

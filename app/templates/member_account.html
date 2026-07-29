@@ -1,0 +1,93 @@
+{% extends "member_base.html" %}
+{% block title %}Личный кабинет — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="member-hero">
+  <div>
+    <p class="member-eyebrow">Личный кабинет</p>
+    <h1>{{ member.first_name or member.nickname or ('@' ~ member.username if member.username else 'Участник клуба') }}</h1>
+  </div>
+  <div class="jackcoin-balance"><span>Баланс</span><strong>{{ balance }} <small>JC</small></strong></div>
+</section>
+
+{% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+
+<nav class="account-tabs">
+  <a class="{{ 'active' if current_tab == 'personal' else '' }}" href="/account?tab=personal">Личные данные</a>
+  <a class="{{ 'active' if current_tab == 'stats' else '' }}" href="/account?tab=stats">Статистика</a>
+  <a class="{{ 'active' if current_tab == 'rewards' else '' }}" href="/account?tab=rewards">Награды</a>
+</nav>
+
+{% if current_tab == 'personal' %}
+<section class="member-card account-panel">
+  <h2>Личные данные</h2>
+  <dl class="profile-data">
+    <div><dt>Почта</dt><dd>{{ member.email }}</dd></div>
+    <div><dt>Telegram</dt><dd>{{ '@' ~ member.username if member.username else 'Не указан' }}</dd></div>
+    <div><dt>Телефон</dt><dd>{{ display_phone(member.phone_local) if member.phone_local else 'Не указан' }}</dd></div>
+  </dl>
+  <div class="consent-list">
+    <h3>Принятые документы</h3>
+    {% for consent in consents %}
+    <p><span>{{ consent.title }}</span><small>Редакция {{ consent.document_version }} · {{ consent.accepted_at[:10] }}</small></p>
+    {% endfor %}
+  </div>
+</section>
+{% elif current_tab == 'stats' %}
+<section class="account-grid">
+  <article class="member-card rating-card">
+    <p class="member-eyebrow">Рейтинг HI, JACK CLUB!</p>
+    {% if rating %}
+      <strong class="rating-place">#{{ rating.place or '—' }}</strong>
+      <p>{{ rating.points }} очков</p>
+      <small>Состояние на {{ rating.snapshot_date }}</small>
+    {% else %}
+      <h2>Пока нет данных</h2>
+      <p class="member-muted">Рейтинг появится после первой синхронизации с клубной системой.</p>
+    {% endif %}
+  </article>
+  <article class="member-card rating-card">
+    <p class="member-eyebrow">JACKCOIN</p>
+    <strong class="rating-place">{{ balance }}</strong>
+    <p>Доступно JC</p>
+  </article>
+</section>
+
+<section class="member-card account-panel">
+  <h2>История участия в квизах</h2>
+  <div class="member-history">
+    {% for item in history %}
+    <article>
+      <div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div>
+      <span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span>
+      <span>{{ item.score|int if item.score is not none else 0 }} балл.</span>
+    </article>
+    {% else %}
+    <p class="member-empty">Завершённых квизов пока нет.</p>
+    {% endfor %}
+  </div>
+</section>
+
+{% if ledger %}
+<section class="member-card account-panel">
+  <h2>История JACKCOIN</h2>
+  <div class="member-history">
+    {% for item in ledger %}
+    <article>
+      <div><strong>{{ item.comment or item.operation_type }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div>
+      <span class="{{ 'jc-plus' if item.amount > 0 else 'jc-minus' }}">{{ '+' if item.amount > 0 else '' }}{{ item.amount }} JC</span>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% else %}
+<section class="member-card account-panel reward-placeholder">
+  <div class="reward-placeholder-icon">♠</div>
+  <p class="member-eyebrow">Каталог наград</p>
+  <h2>Награды за JACKCOIN</h2>
+  <p class="member-muted">Здесь появятся карточки наград, доступных для обмена, и ваши активные купоны. Механика безопасного QR-погашения подключается отдельным следующим этапом.</p>
+  <div class="reward-tabs-preview"><span class="active">Каталог</span><span>Активные награды</span></div>
+</section>
+{% endif %}
+{% endblock %}

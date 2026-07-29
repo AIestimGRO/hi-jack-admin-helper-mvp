@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>{% block title %}Hi, Jack Club{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member-extra.css') }}?v={{ asset_version }}">
+</head>
+<body>
+  <header class="member-topbar">
+    <a class="member-brand" href="{{ '/account' if member else '/account/login' }}">
+      <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="">
+      <span><strong>HI, JACK CLUB!</strong><small>Личный кабинет</small></span>
+    </a>
+    {% if member %}
+    <form action="/account/logout" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="member-link" type="submit">Выйти</button>
+    </form>
+    {% endif %}
+  </header>
+  <main class="member-shell">{% block content %}{% endblock %}</main>
+  <script src="{{ url_for('static', path='/js/member.js') }}?v={{ asset_version }}" defer></script>
+</body>
+</html>

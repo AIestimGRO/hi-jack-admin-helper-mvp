@@ -56,6 +56,8 @@ sudo cp /opt/hi-jack-admin-helper/.env /opt/hi-jack-admin-helper-v2/.env
 sudo sed -i 's/^HJC_PORT=.*/HJC_PORT=8091/' /opt/hi-jack-admin-helper-v2/.env
 sudo sed -i 's|^HJC_PUBLIC_BASE_URL=.*|HJC_PUBLIC_BASE_URL=https://club-v2.hijackpoker.ru|' /opt/hi-jack-admin-helper-v2/.env
 sudo sed -i 's|^HJC_QUIZ_PUBLIC_BASE_URL=.*|HJC_QUIZ_PUBLIC_BASE_URL=https://quiz-v2.hijackpoker.ru|' /opt/hi-jack-admin-helper-v2/.env
+# Личный кабинет оставьте закрытым до отдельного smoke-test:
+echo 'HJC_MEMBER_PORTAL_ENABLED=false' | sudo tee -a /opt/hi-jack-admin-helper-v2/.env
 sudo chown -R www-data:www-data /opt/hi-jack-admin-helper-v2/data
 sudo chown root:www-data /opt/hi-jack-admin-helper-v2/.env
 sudo chmod 640 /opt/hi-jack-admin-helper-v2/.env
@@ -134,6 +136,7 @@ Telegram Login потребует добавить в BotFather тестовые
 
 - `https://quiz-v2.hijackpoker.ru`;
 - `https://quiz-v2.hijackpoker.ru/quiz/telegram/callback`.
+- `https://quiz-v2.hijackpoker.ru/account/telegram/callback`.
 
 Рабочие Telegram URL при этом не удаляются.
 

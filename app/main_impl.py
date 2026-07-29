@@ -29,7 +29,7 @@ from app.db import connect, init_db, transaction
 from app.services.clients import ensure_preferences
 from app.services.auth import audit, authenticate, bootstrap_master, hash_pin, validate_username
 from app.services.import_clients import FIELD_LABELS, detect_mapping, import_rows, read_tabular
-from app.services.phone import display_phone
+from app.services.phone import display_phone, normalize_phone
 from app.services.preferences import change_counter, set_percent
 from app.services.quiz import (
     CAMPAIGN_RE,
@@ -52,6 +52,7 @@ from app.services.quiz_identity import (
     generate_email_code,
     identity_json,
     normalize_email,
+    normalize_username,
 )
 from app.services.quiz_device import (
     DEVICE_COOKIE_NAME,
@@ -61,7 +62,20 @@ from app.services.quiz_device import (
     remembered_client,
     remembered_display_name,
 )
-from app.services.quiz_mail import send_quiz_email_code
+from app.services.quiz_mail import send_member_email_code, send_quiz_email_code
+from app.services.member_accounts import (
+    MEMBER_COOKIE_NAME,
+    active_legal_documents,
+    authenticate_account,
+    authenticated_member,
+    consent_payload,
+    generate_email_code as generate_member_email_code,
+    hash_password,
+    issue_session as issue_member_session,
+    jackcoin_balance,
+    member_code_hash,
+    revoke_session as revoke_member_session,
+)
 from app.services.quiz_retention import cleanup_quiz_data
 from app.services.quiz_rewards import issue_referral_reward, issue_reward, redeem_reward, render_campaign_text
 from app.services.telegram_oidc import authorization_url, exchange_telegram_code, new_pkce
@@ -300,6 +314,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
         if not row or campaign_schedule_state(row) == "disabled":
             raise HTTPException(status_code=404, detail="Кампания квиза не найдена или отключена")
+        if row["campaign_type"] == "daily_414":
+            if not settings.member_portal_enabled:
+                raise HTTPException(status_code=404, detail="Режим 4:14 пока отключён")
+            raise HTTPException(
+                status_code=503,
+                detail="Режим 4:14 создан отдельно и пока закрыт для внутреннего тестирования",
+            )
         return row
 
     def quiz_campaign_or_404(code: str):
@@ -327,6 +348,898 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (code,),
             ).fetchone()
         return str(row["background_image"]) if row else ""
+
+    def member_portal_or_404() -> None:
+        if not settings.member_portal_enabled:
+            raise HTTPException(status_code=404, detail="Личный кабинет пока недоступен")
+
+    def member_cookie(request: Request) -> str:
+        return str(request.cookies.get(MEMBER_COOKIE_NAME, "")).strip()
+
+    def member_ip_hash(request: Request) -> str:
+        client_ip = request.client.host if request.client else "unknown"
+        return ip_fingerprint(settings.secret_key, client_ip)
+
+    def set_member_cookie(response: Response, token: str) -> None:
+        max_age = settings.member_session_days * 24 * 3600
+        response.set_cookie(
+            MEMBER_COOKIE_NAME,
+            token,
+            max_age=max_age,
+            path="/",
+            secure=settings.secure_cookie,
+            httponly=True,
+            samesite="lax",
+        )
+
+    def clear_member_cookie(response: Response) -> None:
+        response.delete_cookie(
+            MEMBER_COOKIE_NAME,
+            path="/",
+            secure=settings.secure_cookie,
+            httponly=True,
+            samesite="lax",
+        )
+
+    def current_member(request: Request, *, required: bool = False):
+        token = member_cookie(request)
+        member = None
+        if token:
+            with transaction(settings.db_path) as conn:
+                member = authenticated_member(
+                    conn,
+                    secret_key=settings.secret_key,
+                    token=token,
+                    touch=True,
+                )
+        if required and not member:
+            raise HTTPException(
+                status_code=303,
+                detail="member_login_required",
+                headers={"Location": "/account/login"},
+            )
+        return member
+
+    def member_context(request: Request, **values: Any) -> dict[str, Any]:
+        return {
+            "request": request,
+            "csrf_token": csrf(request),
+            "member": current_member(request),
+            "member_portal_enabled": settings.member_portal_enabled,
+            **values,
+        }
+
+    def member_redirect(
+        path: str, message: str = "", *, error: bool = False
+    ) -> RedirectResponse:
+        if message:
+            parameter = "error" if error else "ok"
+            path = f"{path}?{urlencode({parameter: message})}"
+        return RedirectResponse(path, status_code=303)
+
+    def member_registration_flow(request: Request) -> dict[str, Any]:
+        flow = request.session.get("member_registration_flow")
+        if not isinstance(flow, dict):
+            flow = {"accepted": {}}
+            request.session["member_registration_flow"] = flow
+        if not isinstance(flow.get("accepted"), dict):
+            flow["accepted"] = {}
+        return flow
+
+    def missing_member_documents(account_id: int) -> list[sqlite3.Row]:
+        with connect(settings.db_path) as conn:
+            return conn.execute(
+                """
+                SELECT ld.* FROM legal_documents ld
+                WHERE ld.is_active=1
+                  AND NOT EXISTS (
+                    SELECT 1 FROM member_consents mc
+                    WHERE mc.account_id=? AND mc.document_code=ld.code
+                      AND mc.document_version=ld.version
+                  )
+                ORDER BY CASE ld.code
+                    WHEN 'privacy' THEN 1 WHEN 'rewards' THEN 2 ELSE 99 END, ld.id
+                """,
+                (account_id,),
+            ).fetchall()
+
+    @app.get("/account/telegram/start")
+    async def member_telegram_start(request: Request):
+        member_portal_or_404()
+        if not settings.telegram_client_id or not settings.telegram_client_secret:
+            return member_redirect(
+                "/account/register",
+                "Подтверждение Telegram пока не настроено",
+                error=True,
+            )
+        flow = member_registration_flow(request)
+        if not {"privacy", "rewards"}.issubset(flow["accepted"]):
+            return member_redirect(
+                "/account/register",
+                "Сначала ознакомьтесь с условиями участия",
+                error=True,
+            )
+        verifier, challenge = new_pkce()
+        state = secrets.token_urlsafe(32)
+        redirect_uri = (
+            settings.quiz_public_base_url.rstrip("/")
+            + "/account/telegram/callback"
+        )
+        request.session["member_telegram_oauth"] = {
+            "state": state,
+            "verifier": verifier,
+            "created_at": int(utc_now().timestamp()),
+        }
+        return RedirectResponse(
+            authorization_url(
+                client_id=settings.telegram_client_id,
+                redirect_uri=redirect_uri,
+                state=state,
+                code_challenge=challenge,
+            ),
+            status_code=302,
+        )
+
+    @app.get("/account/telegram/callback")
+    async def member_telegram_callback(
+        request: Request, code: str = "", state: str = "", error: str = ""
+    ):
+        member_portal_or_404()
+        oauth = request.session.pop("member_telegram_oauth", None)
+        if error or not code or not state or not isinstance(oauth, dict):
+            return member_redirect(
+                "/account/register",
+                "Не удалось подтвердить Telegram. Попробуйте ещё раз",
+                error=True,
+            )
+        if not hmac.compare_digest(state, str(oauth.get("state", ""))):
+            return member_redirect(
+                "/account/register",
+                "Проверка Telegram не совпала с начатым входом. Попробуйте ещё раз",
+                error=True,
+            )
+        if int(utc_now().timestamp()) - int(oauth.get("created_at", 0)) > 900:
+            return member_redirect(
+                "/account/register",
+                "Подтверждение Telegram устарело. Попробуйте ещё раз",
+                error=True,
+            )
+        redirect_uri = (
+            settings.quiz_public_base_url.rstrip("/")
+            + "/account/telegram/callback"
+        )
+        try:
+            claims = await run_in_threadpool(
+                exchange_telegram_code,
+                code=code,
+                client_id=settings.telegram_client_id,
+                client_secret=settings.telegram_client_secret,
+                redirect_uri=redirect_uri,
+                code_verifier=str(oauth["verifier"]),
+            )
+            username = normalize_username(claims.get("preferred_username"))
+            telegram_user_id = str(claims.get("sub") or "").strip()
+            if not username or not telegram_user_id:
+                raise ValueError("telegram_username_required")
+        except Exception:
+            return member_redirect(
+                "/account/register",
+                "В Telegram должен быть настроен username. Проверьте профиль и повторите вход",
+                error=True,
+            )
+        name = str(
+            claims.get("name")
+            or " ".join(
+                filter(
+                    None,
+                    [claims.get("given_name"), claims.get("family_name")],
+                )
+            )
+        )
+        flow = member_registration_flow(request)
+        flow["telegram_identity"] = {
+            "telegram_user_id": telegram_user_id[:80],
+            "username": username,
+            "name": name.strip()[:100],
+            "verified_at": quiz_timestamp(utc_now()),
+        }
+        request.session["member_registration_flow"] = flow
+        return member_redirect(
+            "/account/register", "Telegram успешно подтверждён"
+        )
+
+    @app.get("/account/register", response_class=HTMLResponse)
+    async def member_register_page(
+        request: Request, ok: str = "", error: str = ""
+    ):
+        member_portal_or_404()
+        if current_member(request):
+            return RedirectResponse("/account", status_code=303)
+        flow = member_registration_flow(request)
+        with connect(settings.db_path) as conn:
+            documents = active_legal_documents(conn)
+        accepted = flow["accepted"]
+        pending_id = request.session.get("member_registration_code_id")
+        if "privacy" not in accepted:
+            step = "privacy"
+        elif "rewards" not in accepted:
+            step = "rewards"
+        elif pending_id:
+            step = "verify"
+        else:
+            step = "profile"
+        return templates.TemplateResponse(
+            request,
+            "member_register.html",
+            member_context(
+                request,
+                step=step,
+                documents=documents,
+                email_available=bool(settings.smtp_host and settings.smtp_from),
+                telegram_available=bool(
+                    settings.telegram_client_id
+                    and settings.telegram_client_secret
+                ),
+                telegram_identity=flow.get("telegram_identity"),
+                ok=ok,
+                error=error,
+            ),
+        )
+
+    @app.post("/account/register/consent")
+    async def member_register_consent(
+        request: Request,
+        document_code: str = Form(...),
+        accepted: bool = Form(False),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        if document_code not in {"privacy", "rewards"} or not accepted:
+            return member_redirect(
+                "/account/register",
+                "Для продолжения необходимо принять условия",
+                error=True,
+            )
+        flow = member_registration_flow(request)
+        expected = "privacy" if "privacy" not in flow["accepted"] else "rewards"
+        if document_code != expected:
+            request.session.pop("member_registration_flow", None)
+            return member_redirect(
+                "/account/register",
+                "Последовательность регистрации устарела. Начните заново",
+                error=True,
+            )
+        with connect(settings.db_path) as conn:
+            document = active_legal_documents(conn).get(document_code)
+        if not document:
+            return member_redirect(
+                "/account/register", "Документ временно недоступен", error=True
+            )
+        flow["accepted"][document_code] = {
+            "version": str(document["version"]),
+            "accepted_at": quiz_timestamp(utc_now()),
+        }
+        request.session["member_registration_flow"] = flow
+        return RedirectResponse("/account/register", status_code=303)
+
+    @app.post("/account/register/request-code")
+    async def member_register_request_code(
+        request: Request,
+        email: str = Form(...),
+        password: str = Form(...),
+        password_confirmation: str = Form(...),
+        phone: str = Form(...),
+        first_name: str = Form(""),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        if not settings.smtp_host or not settings.smtp_from:
+            return member_redirect(
+                "/account/register",
+                "Отправка писем пока не настроена",
+                error=True,
+            )
+        try:
+            normalized_email = normalize_email(email)
+            phone_local = normalize_phone(phone)
+            flow = member_registration_flow(request)
+            telegram_identity = flow.get("telegram_identity")
+            if not isinstance(telegram_identity, dict):
+                raise ValueError("Сначала подтвердите Telegram")
+            normalized_username = normalize_username(
+                telegram_identity.get("username")
+            )
+            telegram_user_id = str(
+                telegram_identity.get("telegram_user_id") or ""
+            ).strip()
+            if (
+                not normalized_email
+                or not normalized_username
+                or not telegram_user_id
+                or not phone_local
+            ):
+                raise ValueError(
+                    "Заполните почту, подтвердите Telegram и укажите корректный телефон"
+                )
+            if password != password_confirmation:
+                raise ValueError("Пароли не совпадают")
+            password_hash = hash_password(password)
+            with connect(settings.db_path) as conn:
+                documents = active_legal_documents(conn)
+                consents_json = consent_payload(documents, flow["accepted"])
+                if conn.execute(
+                    "SELECT 1 FROM member_accounts WHERE email_normalized=?",
+                    (normalized_email,),
+                ).fetchone():
+                    raise ValueError("Аккаунт с такой почтой уже существует")
+            code = generate_member_email_code()
+            expires_at = quiz_timestamp(
+                utc_now() + timedelta(minutes=settings.email_code_minutes)
+            )
+            payload = json.dumps(
+                {
+                    "email": normalized_email,
+                    "password_hash": password_hash,
+                    "phone": phone.strip()[:80],
+                    "phone_local": phone_local,
+                    "telegram_username": normalized_username,
+                    "telegram_user_id": telegram_user_id,
+                    "first_name": (
+                        first_name.strip()
+                        or str(telegram_identity.get("name") or "").strip()
+                    )[:100],
+                    "consents": json.loads(consents_json),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            with transaction(settings.db_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP
+                    WHERE email_normalized=? AND purpose='register' AND used_at IS NULL
+                    """,
+                    (normalized_email,),
+                )
+                cursor = conn.execute(
+                    """
+                    INSERT INTO member_email_codes(
+                        email_normalized, purpose, code_hash, payload_json, expires_at
+                    ) VALUES (?, 'register', ?, ?, ?)
+                    """,
+                    (
+                        normalized_email,
+                        member_code_hash(
+                            settings.secret_key, "register", normalized_email, code
+                        ),
+                        payload,
+                        expires_at,
+                    ),
+                )
+                code_id = int(cursor.lastrowid)
+            try:
+                await run_in_threadpool(
+                    send_member_email_code,
+                    host=settings.smtp_host,
+                    port=settings.smtp_port,
+                    username=settings.smtp_username,
+                    password=settings.smtp_password,
+                    sender=settings.smtp_from,
+                    starttls=settings.smtp_starttls,
+                    recipient=normalized_email,
+                    code=code,
+                    purpose="register",
+                    expires_minutes=settings.email_code_minutes,
+                )
+            except Exception:
+                with transaction(settings.db_path) as conn:
+                    conn.execute(
+                        "UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (code_id,),
+                    )
+                return member_redirect(
+                    "/account/register",
+                    "Не удалось отправить письмо. Попробуйте позже",
+                    error=True,
+                )
+            request.session["member_registration_code_id"] = code_id
+            return member_redirect(
+                "/account/register", "Код отправлен на указанную почту"
+            )
+        except ValueError as exc:
+            return member_redirect("/account/register", str(exc), error=True)
+
+    @app.post("/account/register/verify")
+    async def member_register_verify(
+        request: Request,
+        code: str = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        code_id = request.session.get("member_registration_code_id")
+        if not code_id:
+            return member_redirect(
+                "/account/register", "Запросите новый код", error=True
+            )
+        try:
+            invalid_code = False
+            with transaction(settings.db_path) as conn:
+                row = conn.execute(
+                    "SELECT * FROM member_email_codes WHERE id=? AND purpose='register'",
+                    (int(code_id),),
+                ).fetchone()
+                if (
+                    not row
+                    or row["used_at"]
+                    or row["expires_at"] <= quiz_timestamp(utc_now())
+                    or int(row["attempts_left"]) <= 0
+                ):
+                    raise ValueError("Код истёк. Запросите новый")
+                expected = member_code_hash(
+                    settings.secret_key,
+                    "register",
+                    row["email_normalized"],
+                    code.strip(),
+                )
+                if not hmac.compare_digest(expected, row["code_hash"]):
+                    conn.execute(
+                        "UPDATE member_email_codes SET attempts_left=attempts_left-1 WHERE id=?",
+                        (row["id"],),
+                    )
+                    invalid_code = True
+                else:
+                    payload = json.loads(row["payload_json"])
+                    if conn.execute(
+                        "SELECT 1 FROM member_accounts WHERE email_normalized=?",
+                        (row["email_normalized"],),
+                    ).fetchone():
+                        raise ValueError("Аккаунт с такой почтой уже существует")
+                    client_id, _, _ = find_or_create_quiz_client(
+                        conn,
+                        campaign="member_account",
+                        phone_raw=payload["phone"],
+                        username=payload["telegram_username"],
+                        telegram_user_id=payload["telegram_user_id"],
+                        name=payload.get("first_name", ""),
+                        email=payload["email"],
+                        source="member_portal",
+                        match_username=False,
+                    )
+                    cursor = conn.execute(
+                        """
+                        INSERT INTO member_accounts(
+                            client_id, email, email_normalized, password_hash, email_verified_at
+                        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        """,
+                        (
+                            client_id,
+                            payload["email"],
+                            payload["email"],
+                            payload["password_hash"],
+                        ),
+                    )
+                    account_id = int(cursor.lastrowid)
+                    for consent in payload["consents"]:
+                        document = conn.execute(
+                            """
+                            SELECT id FROM legal_documents
+                            WHERE id=? AND code=? AND version=? AND is_active=1
+                            """,
+                            (
+                                consent["document_id"],
+                                consent["code"],
+                                consent["version"],
+                            ),
+                        ).fetchone()
+                        if not document:
+                            raise ValueError(
+                                "Условия изменились. Начните регистрацию заново"
+                            )
+                        conn.execute(
+                            """
+                            INSERT INTO member_consents(
+                                account_id, document_id, document_code, document_version,
+                                accepted_at, ip_hash, user_agent
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                account_id,
+                                document["id"],
+                                consent["code"],
+                                consent["version"],
+                                consent["accepted_at"] or quiz_timestamp(utc_now()),
+                                member_ip_hash(request),
+                                request.headers.get("user-agent", "")[:500],
+                            ),
+                        )
+                    conn.execute(
+                        "UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (row["id"],),
+                    )
+                    member_token = issue_member_session(
+                        conn,
+                        secret_key=settings.secret_key,
+                        account_id=account_id,
+                        session_version=1,
+                        days=settings.member_session_days,
+                        ip_hash=member_ip_hash(request),
+                        user_agent=request.headers.get("user-agent", ""),
+                    )
+            if invalid_code:
+                raise ValueError("Неверный код")
+            request.session.pop("member_registration_code_id", None)
+            request.session.pop("member_registration_flow", None)
+            response = RedirectResponse("/account", status_code=303)
+            set_member_cookie(response, member_token)
+            return response
+        except (ValueError, sqlite3.IntegrityError) as exc:
+            message = (
+                str(exc)
+                if isinstance(exc, ValueError)
+                else "Эти данные уже связаны с другим аккаунтом"
+            )
+            return member_redirect("/account/register", message, error=True)
+
+    @app.get("/account/login", response_class=HTMLResponse)
+    async def member_login_page(request: Request, error: str = "", ok: str = ""):
+        member_portal_or_404()
+        if current_member(request):
+            return RedirectResponse("/account", status_code=303)
+        return templates.TemplateResponse(
+            request,
+            "member_login.html",
+            member_context(request, error=error, ok=ok, mode="login"),
+        )
+
+    @app.post("/account/login")
+    async def member_login(
+        request: Request,
+        email: str = Form(...),
+        password: str = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            account = authenticate_account(conn, email=email, password=password)
+            if not account:
+                return member_redirect(
+                    "/account/login", "Неверная почта или пароль", error=True
+                )
+            token = issue_member_session(
+                conn,
+                secret_key=settings.secret_key,
+                account_id=int(account["id"]),
+                session_version=int(account["session_version"]),
+                days=settings.member_session_days,
+                ip_hash=member_ip_hash(request),
+                user_agent=request.headers.get("user-agent", ""),
+            )
+        response = RedirectResponse("/account", status_code=303)
+        set_member_cookie(response, token)
+        return response
+
+    @app.get("/account/consents", response_class=HTMLResponse)
+    async def member_consents_page(
+        request: Request, error: str = "", ok: str = ""
+    ):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        missing = missing_member_documents(int(member["id"]))
+        if not missing:
+            return RedirectResponse("/account", status_code=303)
+        return templates.TemplateResponse(
+            request,
+            "member_consent.html",
+            member_context(
+                request,
+                member=member,
+                document=missing[0],
+                error=error,
+                ok=ok,
+            ),
+        )
+
+    @app.post("/account/consents")
+    async def member_accept_updated_consent(
+        request: Request,
+        document_id: int = Form(...),
+        accepted: bool = Form(False),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        member = current_member(request, required=True)
+        if not accepted:
+            return member_redirect(
+                "/account/consents",
+                "Для продолжения необходимо принять обновлённые условия",
+                error=True,
+            )
+        with transaction(settings.db_path) as conn:
+            document = conn.execute(
+                "SELECT * FROM legal_documents WHERE id=? AND is_active=1",
+                (document_id,),
+            ).fetchone()
+            if not document:
+                return member_redirect(
+                    "/account/consents",
+                    "Документ изменился. Ознакомьтесь с новой редакцией",
+                    error=True,
+                )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO member_consents(
+                    account_id, document_id, document_code, document_version,
+                    ip_hash, user_agent
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    member["id"],
+                    document["id"],
+                    document["code"],
+                    document["version"],
+                    member_ip_hash(request),
+                    request.headers.get("user-agent", "")[:500],
+                ),
+            )
+        return RedirectResponse("/account/consents", status_code=303)
+
+    @app.post("/account/logout")
+    async def member_logout(request: Request, csrf_token: str = Form(...)):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        token = member_cookie(request)
+        with transaction(settings.db_path) as conn:
+            revoke_member_session(
+                conn, secret_key=settings.secret_key, token=token
+            )
+        response = RedirectResponse("/account/login", status_code=303)
+        clear_member_cookie(response)
+        return response
+
+    @app.get("/account/forgot-password", response_class=HTMLResponse)
+    async def member_forgot_page(request: Request, error: str = "", ok: str = ""):
+        member_portal_or_404()
+        return templates.TemplateResponse(
+            request,
+            "member_login.html",
+            member_context(request, error=error, ok=ok, mode="forgot"),
+        )
+
+    @app.post("/account/forgot-password")
+    async def member_forgot_password(
+        request: Request,
+        email: str = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        if not settings.smtp_host or not settings.smtp_from:
+            return member_redirect(
+                "/account/forgot-password",
+                "Отправка писем пока не настроена",
+                error=True,
+            )
+        try:
+            normalized = normalize_email(email)
+        except ValueError:
+            normalized = None
+        account = None
+        if normalized:
+            with connect(settings.db_path) as conn:
+                account = conn.execute(
+                    "SELECT id FROM member_accounts WHERE email_normalized=? AND is_active=1",
+                    (normalized,),
+                ).fetchone()
+        if account and normalized:
+            code = generate_member_email_code()
+            with transaction(settings.db_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP
+                    WHERE email_normalized=? AND purpose='reset_password' AND used_at IS NULL
+                    """,
+                    (normalized,),
+                )
+                cursor = conn.execute(
+                    """
+                    INSERT INTO member_email_codes(
+                        email_normalized, purpose, code_hash, payload_json, expires_at
+                    ) VALUES (?, 'reset_password', ?, ?, ?)
+                    """,
+                    (
+                        normalized,
+                        member_code_hash(
+                            settings.secret_key, "reset_password", normalized, code
+                        ),
+                        json.dumps({"account_id": int(account["id"])}),
+                        quiz_timestamp(
+                            utc_now()
+                            + timedelta(minutes=settings.email_code_minutes)
+                        ),
+                    ),
+                )
+                code_id = int(cursor.lastrowid)
+            try:
+                await run_in_threadpool(
+                    send_member_email_code,
+                    host=settings.smtp_host,
+                    port=settings.smtp_port,
+                    username=settings.smtp_username,
+                    password=settings.smtp_password,
+                    sender=settings.smtp_from,
+                    starttls=settings.smtp_starttls,
+                    recipient=normalized,
+                    code=code,
+                    purpose="reset_password",
+                    expires_minutes=settings.email_code_minutes,
+                )
+                request.session["member_reset_code_id"] = code_id
+            except Exception:
+                with transaction(settings.db_path) as conn:
+                    conn.execute(
+                        "UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (code_id,),
+                    )
+        return member_redirect(
+            "/account/reset-password",
+            "Если аккаунт найден, код отправлен на почту",
+        )
+
+    @app.get("/account/reset-password", response_class=HTMLResponse)
+    async def member_reset_page(request: Request, error: str = "", ok: str = ""):
+        member_portal_or_404()
+        return templates.TemplateResponse(
+            request,
+            "member_login.html",
+            member_context(request, error=error, ok=ok, mode="reset"),
+        )
+
+    @app.post("/account/reset-password")
+    async def member_reset_password(
+        request: Request,
+        code: str = Form(...),
+        password: str = Form(...),
+        password_confirmation: str = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        code_id = request.session.get("member_reset_code_id")
+        if not code_id:
+            return member_redirect(
+                "/account/forgot-password", "Запросите новый код", error=True
+            )
+        try:
+            if password != password_confirmation:
+                raise ValueError("Пароли не совпадают")
+            password_hash = hash_password(password)
+            invalid_code = False
+            with transaction(settings.db_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT * FROM member_email_codes
+                    WHERE id=? AND purpose='reset_password'
+                    """,
+                    (int(code_id),),
+                ).fetchone()
+                if (
+                    not row
+                    or row["used_at"]
+                    or row["expires_at"] <= quiz_timestamp(utc_now())
+                    or int(row["attempts_left"]) <= 0
+                ):
+                    raise ValueError("Код истёк. Запросите новый")
+                expected = member_code_hash(
+                    settings.secret_key,
+                    "reset_password",
+                    row["email_normalized"],
+                    code.strip(),
+                )
+                if not hmac.compare_digest(expected, row["code_hash"]):
+                    conn.execute(
+                        "UPDATE member_email_codes SET attempts_left=attempts_left-1 WHERE id=?",
+                        (row["id"],),
+                    )
+                    invalid_code = True
+                else:
+                    payload = json.loads(row["payload_json"])
+                    conn.execute(
+                        """
+                        UPDATE member_accounts
+                        SET password_hash=?, session_version=session_version+1,
+                            updated_at=CURRENT_TIMESTAMP
+                        WHERE id=?
+                        """,
+                        (password_hash, int(payload["account_id"])),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE member_sessions SET revoked_at=CURRENT_TIMESTAMP
+                        WHERE account_id=? AND revoked_at IS NULL
+                        """,
+                        (int(payload["account_id"]),),
+                    )
+                    conn.execute(
+                        "UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (row["id"],),
+                    )
+            if invalid_code:
+                raise ValueError("Неверный код")
+            request.session.pop("member_reset_code_id", None)
+            return member_redirect(
+                "/account/login", "Пароль обновлён. Войдите в аккаунт"
+            )
+        except ValueError as exc:
+            return member_redirect("/account/reset-password", str(exc), error=True)
+
+    @app.get("/account", response_class=HTMLResponse)
+    async def member_account_page(
+        request: Request, tab: str = "personal", ok: str = "", error: str = ""
+    ):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        if missing_member_documents(int(member["id"])):
+            return RedirectResponse("/account/consents", status_code=303)
+        if tab not in {"personal", "stats", "rewards"}:
+            tab = "personal"
+        with connect(settings.db_path) as conn:
+            balance = jackcoin_balance(conn, int(member["client_id"]))
+            history = conn.execute(
+                """
+                SELECT qs.*, qc.title AS campaign_title
+                FROM quiz_submissions qs
+                LEFT JOIN quiz_campaigns qc ON qc.code=qs.campaign_code
+                WHERE qs.client_id=?
+                ORDER BY qs.created_at DESC LIMIT 50
+                """,
+                (member["client_id"],),
+            ).fetchall()
+            rating = conn.execute(
+                """
+                SELECT cre.*, crs.snapshot_date
+                FROM club_rating_entries cre
+                JOIN club_rating_snapshots crs ON crs.id=cre.snapshot_id
+                WHERE cre.client_id=?
+                ORDER BY crs.snapshot_date DESC, crs.id DESC LIMIT 1
+                """,
+                (member["client_id"],),
+            ).fetchone()
+            ledger = conn.execute(
+                """
+                SELECT * FROM jackcoin_ledger WHERE client_id=?
+                ORDER BY created_at DESC, id DESC LIMIT 50
+                """,
+                (member["client_id"],),
+            ).fetchall()
+            consents = conn.execute(
+                """
+                SELECT mc.*, ld.title FROM member_consents mc
+                JOIN legal_documents ld ON ld.id=mc.document_id
+                WHERE mc.account_id=? ORDER BY mc.accepted_at
+                """,
+                (member["id"],),
+            ).fetchall()
+        return templates.TemplateResponse(
+            request,
+            "member_account.html",
+            member_context(
+                request,
+                member=member,
+                current_tab=tab,
+                balance=balance,
+                history=history,
+                rating=rating,
+                ledger=ledger,
+                consents=consents,
+                ok=ok,
+                error=error,
+            ),
+        )
 
     @app.get("/quiz", response_class=HTMLResponse)
     async def quiz_page(
@@ -1354,7 +2267,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "SELECT id, username, display_name, role, is_active, last_login_at, created_at FROM admins ORDER BY role DESC, display_name"
             ).fetchall()
             campaign_rows = conn.execute(
-                "SELECT * FROM quiz_campaigns ORDER BY title"
+                """
+                SELECT * FROM quiz_campaigns
+                ORDER BY CASE campaign_type WHEN 'daily_414' THEN 0 ELSE 1 END, title
+                """
             ).fetchall()
             quiz_campaigns = []
             for campaign_row in campaign_rows:
@@ -1610,6 +2526,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         code: str = Form(...),
         title: str = Form(...),
+        campaign_type: str = Form("classic"),
         bonus_preference_code: str = Form(""),
         bonus_amount: int = Form(0),
         reward_delivery_mode: str = Form("automatic"),
@@ -1636,6 +2553,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         check_csrf(request, csrf_token)
         code = code.strip().lower()
         title = title.strip()
+        if campaign_type not in {"classic", "daily_414"}:
+            return master_redirect(
+                "Проверьте тип кампании", error=True, tab="campaigns"
+            )
+        if campaign_type == "daily_414":
+            quiz_time_limit_seconds = 254
+            max_attempts = 1
+            verification_required = True
         if not CAMPAIGN_RE.fullmatch(code) or len(title) < 2 or len(title) > 80:
             return master_redirect("Проверьте код и название кампании", error=True, tab="campaigns")
         if pass_score < 0 or pass_score > 10_000:
@@ -1646,7 +2571,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
         if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
             return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
-        if verification_required and not (
+        if campaign_type == "classic" and verification_required and not (
             (settings.telegram_client_id and settings.telegram_client_secret) or (settings.smtp_host and settings.smtp_from)
         ):
             return master_redirect("Сначала настройте Telegram или email в .env", error=True, tab="campaigns")
@@ -1668,15 +2593,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 cursor = conn.execute(
                     """
                     INSERT INTO quiz_campaigns(
-                        code, title, bonus_preference_code, bonus_amount, reward_delivery_mode,
+                        code, title, campaign_type, bonus_preference_code, bonus_amount, reward_delivery_mode,
                         pass_score, quiz_time_limit_seconds,
                         max_attempts, verification_required, reward_validity_mode, reward_validity_value,
                         reward_valid_from, reward_valid_until, referral_enabled, referral_preference_code,
                         referral_amount, referral_delivery_mode, referral_threshold, referral_repeatable, referral_max_rewards,
                         active_from, active_until
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (code, title, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
+                    (code, title, campaign_type, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
                      int(verification_required), reward_mode, reward_value, reward_from, reward_until,
                      int(referral_enabled), referral_code, referral_amount, referral_delivery_mode, referral_threshold,
                      int(referral_repeatable), referral_max_rewards,
@@ -1685,7 +2610,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
                     action="create", entity_type="quiz_campaign", entity_id=int(cursor.lastrowid),
-                    details={"code": code, "title": title, "bonus": bonus_code, "amount": bonus_amount, "pass_score": pass_score, "quiz_timer": quiz_time_limit_seconds, "active_from": active_from_value, "active_until": active_until_value},
+                    details={"code": code, "title": title, "campaign_type": campaign_type, "bonus": bonus_code, "amount": bonus_amount, "pass_score": pass_score, "quiz_timer": quiz_time_limit_seconds, "active_from": active_from_value, "active_until": active_until_value},
                 )
         except sqlite3.IntegrityError:
             return master_redirect("Кампания с таким кодом уже существует", error=True, tab="campaigns")
@@ -1733,6 +2658,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         require_master(request, api=True)
         check_csrf(request, csrf_token)
         title = title.strip()
+        with connect(settings.db_path) as conn:
+            existing_campaign = conn.execute(
+                "SELECT campaign_type FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
+        if not existing_campaign:
+            return master_redirect(
+                "Кампания не найдена", error=True, tab="campaigns"
+            )
+        if existing_campaign["campaign_type"] == "daily_414":
+            quiz_time_limit_seconds = 254
+            max_attempts = 1
+            verification_required = True
         if len(title) < 2 or len(title) > 80:
             return master_redirect("Проверьте название кампании", error=True, tab="campaigns")
         if pass_score < 0 or pass_score > 10_000:
@@ -1743,8 +2681,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
         if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
             return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
-        if verification_required and not (
+        if (
+            existing_campaign["campaign_type"] == "classic"
+            and verification_required
+            and not (
             (settings.telegram_client_id and settings.telegram_client_secret) or (settings.smtp_host and settings.smtp_from)
+            )
         ):
             return master_redirect("Сначала настройте Telegram или email в .env", error=True, tab="campaigns")
         try:

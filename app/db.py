@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL,
+    campaign_type TEXT NOT NULL DEFAULT 'classic' CHECK(campaign_type IN ('classic', 'daily_414')),
     is_active INTEGER NOT NULL DEFAULT 1,
     bonus_preference_code TEXT,
     bonus_amount INTEGER NOT NULL DEFAULT 0 CHECK(bonus_amount >= 0),
@@ -389,6 +390,112 @@ CREATE TABLE IF NOT EXISTS maintenance_log (
     task TEXT PRIMARY KEY,
     last_run_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS member_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL UNIQUE REFERENCES clients(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    email_normalized TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    email_verified_at TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    session_version INTEGER NOT NULL DEFAULT 1,
+    last_login_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_member_accounts_client ON member_accounts(client_id);
+
+CREATE TABLE IF NOT EXISTS member_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES member_accounts(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    session_version INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TEXT,
+    ip_hash TEXT NOT NULL,
+    user_agent TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_member_sessions_account ON member_sessions(account_id, last_used_at DESC);
+CREATE INDEX IF NOT EXISTS ix_member_sessions_expiry ON member_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS member_email_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_normalized TEXT NOT NULL,
+    purpose TEXT NOT NULL CHECK(purpose IN ('register', 'reset_password')),
+    code_hash TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    expires_at TEXT NOT NULL,
+    attempts_left INTEGER NOT NULL DEFAULT 5,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_member_email_codes_lookup
+    ON member_email_codes(email_normalized, purpose, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS legal_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    version TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(code, version)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_legal_documents_active
+    ON legal_documents(code) WHERE is_active = 1;
+
+CREATE TABLE IF NOT EXISTS member_consents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES member_accounts(id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES legal_documents(id),
+    document_code TEXT NOT NULL,
+    document_version TEXT NOT NULL,
+    accepted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip_hash TEXT NOT NULL,
+    user_agent TEXT,
+    UNIQUE(account_id, document_code, document_version)
+);
+CREATE INDEX IF NOT EXISTS ix_member_consents_account ON member_consents(account_id, accepted_at DESC);
+
+CREATE TABLE IF NOT EXISTS jackcoin_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    amount INTEGER NOT NULL CHECK(amount <> 0),
+    operation_type TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id TEXT,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    comment TEXT NOT NULL DEFAULT '',
+    created_by_admin_id INTEGER REFERENCES admins(id),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_client ON jackcoin_ledger(client_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS club_rating_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_date TEXT NOT NULL UNIQUE,
+    source_file TEXT,
+    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS club_rating_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id INTEGER NOT NULL REFERENCES club_rating_snapshots(id) ON DELETE CASCADE,
+    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+    external_user_id TEXT,
+    display_name TEXT NOT NULL,
+    points REAL NOT NULL DEFAULT 0,
+    place INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(snapshot_id, external_user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_club_rating_entries_client
+    ON club_rating_entries(client_id, snapshot_id DESC);
 """
 
 PREFERENCE_TYPES = (
@@ -405,6 +512,31 @@ QUIZ_CAMPAIGNS = (
     ("ladies", "Hi, Ladies!"),
     ("badbeat", "Bad Beat"),
     ("new_player", "Новый игрок"),
+)
+
+LEGAL_DOCUMENTS = (
+    (
+        "privacy",
+        "1.0",
+        "Политика конфиденциальности и обработки персональных данных",
+        "Для создания аккаунта и участия в играх Hi, Jack Club обрабатывает адрес электронной "
+        "почты, номер телефона, Telegram username, сведения об участии, результатах и полученных "
+        "наградах. Эти данные используются для идентификации участника, работы личного кабинета, "
+        "ведения статистики, начисления JACKCOIN и связи по вопросам участия. Данные не публикуются "
+        "без отдельного основания. Участник может обратиться к клубу для уточнения, исправления или "
+        "удаления данных в пределах, допускаемых правилами хранения и применимым законодательством.",
+    ),
+    (
+        "rewards",
+        "1.0",
+        "Условия безденежных вознаграждений и рейтинговой мотивации",
+        "JACKCOIN является внутренней безденежной единицей программы лояльности Hi, Jack Club. "
+        "JACKCOIN не является деньгами, платёжным средством или ставкой, не продаётся и не "
+        "обменивается на денежные средства. Начисления зависят от правил конкретной игры или "
+        "активности. Награды имеют собственную стоимость, срок и условия использования. Один "
+        "участник может иметь только один аккаунт; передача аккаунта и злоупотребление механикой "
+        "могут привести к отмене ошибочных начислений и блокировке участия.",
+    ),
 )
 
 
@@ -439,6 +571,7 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_submissions", "max_correct_count INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_submissions", "passed INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "pass_score INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_campaigns", "campaign_type TEXT NOT NULL DEFAULT 'classic'")
         _ensure_column(conn, "quiz_campaigns", "reward_delivery_mode TEXT NOT NULL DEFAULT 'automatic'")
         _ensure_column(conn, "quiz_campaigns", "referral_delivery_mode TEXT NOT NULL DEFAULT 'automatic'")
         _ensure_column(conn, "quiz_campaigns", "question_time_limit_seconds INTEGER NOT NULL DEFAULT 20")
@@ -521,6 +654,13 @@ def init_db(db_path: str | Path) -> None:
         conn.executemany(
             "INSERT OR IGNORE INTO quiz_campaigns(code, title) VALUES (?, ?)",
             QUIZ_CAMPAIGNS,
+        )
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO legal_documents(code, version, title, content)
+            VALUES (?, ?, ?, ?)
+            """,
+            LEGAL_DOCUMENTS,
         )
         conn.execute(
             """

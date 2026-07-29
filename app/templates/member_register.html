@@ -1,0 +1,66 @@
+{% extends "member_base.html" %}
+{% block title %}Регистрация — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="member-card registration-card">
+  <div class="registration-progress" aria-label="Этап регистрации">
+    <span class="{{ 'active' if step == 'privacy' else 'done' }}">1</span>
+    <i></i>
+    <span class="{{ 'active' if step == 'rewards' else ('done' if step in ['profile','verify'] else '') }}">2</span>
+    <i></i>
+    <span class="{{ 'active' if step in ['profile','verify'] else '' }}">3</span>
+  </div>
+
+  {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+
+  {% if step in ['privacy', 'rewards'] %}
+    {% set document = documents[step] %}
+    <p class="member-eyebrow">Первый вход · шаг {{ 1 if step == 'privacy' else 2 }} из 3</p>
+    <h1>{{ document.title }}</h1>
+    <p class="document-version">Редакция {{ document.version }}</p>
+    <div class="legal-copy">{{ document.content }}</div>
+    <form class="member-form consent-form" action="/account/register/consent" method="post" data-consent-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="document_code" value="{{ step }}">
+      <label class="member-check">
+        <input name="accepted" type="checkbox" value="true" required data-consent-checkbox>
+        <span>Я ознакомился(-ась) и согласен(-на) с документом</span>
+      </label>
+      <button class="member-primary" type="submit" disabled data-consent-submit>Далее</button>
+    </form>
+  {% elif step == 'profile' %}
+    <p class="member-eyebrow">Создание аккаунта · шаг 3 из 3</p>
+    <h1>Личные данные</h1>
+    <p class="member-muted">Почта станет логином. Подтверждённый Telegram и телефон нужны для безопасной связи с вашей карточкой участника клуба.</p>
+    {% if not email_available %}
+      <div class="member-alert error">Регистрация откроется после настройки отправки писем.</div>
+    {% endif %}
+    {% if telegram_identity %}
+      <div class="telegram-confirmed"><span>Telegram подтверждён</span><strong>@{{ telegram_identity.username }}</strong></div>
+    {% else %}
+      <a class="telegram-button {{ '' if telegram_available else 'disabled' }}" href="{{ '/account/telegram/start' if telegram_available else '#' }}">Подтвердить через Telegram</a>
+      {% if not telegram_available %}<p class="member-muted">Вход через Telegram пока не настроен.</p>{% endif %}
+    {% endif %}
+    <form class="member-form" action="/account/register/request-code" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Имя <small>необязательно</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться"></label>
+      <label>Электронная почта<input name="email" type="email" maxlength="254" autocomplete="email" required></label>
+      <label>Номер телефона<input name="phone" type="tel" maxlength="80" autocomplete="tel" placeholder="+7 999 123-45-67" required></label>
+      <label>Пароль<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required><small>Не менее 10 символов, хотя бы одна буква и цифра</small></label>
+      <label>Повторите пароль<input name="password_confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
+      <button class="member-primary" type="submit" {% if not email_available or not telegram_identity %}disabled{% endif %}>Получить код на почту</button>
+    </form>
+  {% else %}
+    <p class="member-eyebrow">Подтверждение почты</p>
+    <h1>Введите код</h1>
+    <p class="member-muted">Мы отправили шестизначный код. Он действует ограниченное время.</p>
+    <form class="member-form" action="/account/register/verify" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Код из письма<input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+      <button class="member-primary" type="submit">Подтвердить и создать аккаунт</button>
+    </form>
+  {% endif %}
+
+  <p class="member-switch">Уже есть аккаунт? <a href="/account/login">Войти</a></p>
+</section>
+{% endblock %}

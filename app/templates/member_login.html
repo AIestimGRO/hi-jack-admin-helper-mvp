@@ -1,0 +1,41 @@
+{% extends "member_base.html" %}
+{% block title %}Вход — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="member-card auth-card">
+  {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+
+  {% if mode == 'forgot' %}
+    <p class="member-eyebrow">Восстановление доступа</p>
+    <h1>Забыли пароль?</h1>
+    <p class="member-muted">Укажите почту аккаунта. Если она найдена, мы отправим код.</p>
+    <form class="member-form" action="/account/forgot-password" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Электронная почта<input name="email" type="email" maxlength="254" autocomplete="email" required></label>
+      <button class="member-primary" type="submit">Отправить код</button>
+    </form>
+    <p class="member-switch"><a href="/account/login">← Вернуться ко входу</a></p>
+  {% elif mode == 'reset' %}
+    <p class="member-eyebrow">Новый пароль</p>
+    <h1>Подтвердите почту</h1>
+    <form class="member-form" action="/account/reset-password" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Код из письма<input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+      <label>Новый пароль<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
+      <label>Повторите пароль<input name="password_confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
+      <button class="member-primary" type="submit">Сохранить новый пароль</button>
+    </form>
+  {% else %}
+    <p class="member-eyebrow">HI, JACK CLUB!</p>
+    <h1>Вход в личный кабинет</h1>
+    <p class="member-muted">Используйте подтверждённую почту и пароль.</p>
+    <form class="member-form" action="/account/login" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Электронная почта<input name="email" type="email" maxlength="254" autocomplete="email" required></label>
+      <label>Пароль<input name="password" type="password" maxlength="128" autocomplete="current-password" required></label>
+      <button class="member-primary" type="submit">Войти</button>
+    </form>
+    <div class="auth-links"><a href="/account/forgot-password">Забыли пароль?</a><a href="/account/register">Создать аккаунт</a></div>
+  {% endif %}
+</section>
+{% endblock %}

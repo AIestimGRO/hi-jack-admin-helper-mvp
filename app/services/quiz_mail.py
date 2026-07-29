@@ -32,3 +32,34 @@ def send_quiz_email_code(
         if username:
             smtp.login(username, password)
         smtp.send_message(message)
+
+
+def send_member_email_code(
+    *,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    sender: str,
+    starttls: bool,
+    recipient: str,
+    code: str,
+    purpose: str,
+    expires_minutes: int,
+) -> None:
+    action = "создания аккаунта" if purpose == "register" else "восстановления пароля"
+    message = EmailMessage()
+    message["Subject"] = f"Код Hi, Jack Club: {code}"
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(
+        f"Код для {action}: {code}\n\n"
+        f"Код действует {expires_minutes} минут. Никому не сообщайте его. "
+        "Если вы не запрашивали код, просто проигнорируйте письмо."
+    )
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        if starttls:
+            smtp.starttls()
+        if username:
+            smtp.login(username, password)
+        smtp.send_message(message)

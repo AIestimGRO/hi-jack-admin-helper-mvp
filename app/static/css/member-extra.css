@@ -1,0 +1,38 @@
+.telegram-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin: 20px 0 4px;
+  border: 1px solid #4496e8;
+  border-radius: 13px;
+  background: rgba(68, 150, 232, .13);
+  color: #9acbff;
+  font-weight: 850;
+}
+
+.telegram-button.disabled {
+  opacity: .45;
+  pointer-events: none;
+}
+
+.telegram-confirmed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 20px 0 4px;
+  padding: 15px 17px;
+  border: 1px solid rgba(50, 211, 140, .35);
+  border-radius: 14px;
+  background: rgba(50, 211, 140, .1);
+}
+
+.telegram-confirmed span {
+  color: #87e8ba;
+  font-size: 13px;
+}
+
+.telegram-confirmed strong {
+  overflow-wrap: anywhere;
+}

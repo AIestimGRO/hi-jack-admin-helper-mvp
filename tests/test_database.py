@@ -80,6 +80,47 @@ def test_quiz_campaign_schedule_columns_are_migrated(tmp_path):
         assert conn.execute("SELECT title FROM quiz_campaigns WHERE code='legacy'").fetchone()[0] == "Старый квиз"
 
 
+def test_414_and_member_tables_are_added_without_changing_legacy_campaign(tmp_path):
+    path = tmp_path / "legacy-before-member-portal.sqlite3"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE quiz_campaigns (
+                id INTEGER PRIMARY KEY, code TEXT UNIQUE, title TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO quiz_campaigns(id, code, title) VALUES (7, 'legacy', 'Старый квиз')"
+        )
+    init_db(path)
+    with connect(path) as conn:
+        campaign = conn.execute(
+            "SELECT id, title, campaign_type FROM quiz_campaigns WHERE id=7"
+        ).fetchone()
+        assert tuple(campaign) == (7, "Старый квиз", "classic")
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert {
+            "member_accounts",
+            "member_sessions",
+            "member_email_codes",
+            "legal_documents",
+            "member_consents",
+            "jackcoin_ledger",
+            "club_rating_snapshots",
+            "club_rating_entries",
+        }.issubset(tables)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM legal_documents WHERE is_active=1"
+        ).fetchone()[0] == 2
+
+
 def test_text_answer_column_is_migrated_without_rebuilding_questions(tmp_path):
     path = tmp_path / "legacy-questions.sqlite3"
     with sqlite3.connect(path) as conn:
