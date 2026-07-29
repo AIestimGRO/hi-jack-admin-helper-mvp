@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import sqlite3
+from datetime import date, datetime, timedelta
+from typing import Any
+
+
+DAILY_414_TIME_LIMIT_SECONDS = 254
+DAILY_414_QUESTION_COUNT = 10
+DAILY_414_ON_TIME_GRACE_SECONDS = 30
+
+JACKCOIN_PER_CORRECT = 5
+JACKCOIN_COMPLETION_BONUS = 10
+JACKCOIN_PERFECT_BONUS = 20
+JACKCOIN_STREAK_BONUSES = {
+    3: 10,
+    7: 30,
+    14: 70,
+    30: 150,
+}
+
+
+def stage_for_question(index: int) -> str:
+    if index < 2:
+        return "preflop"
+    if index < 5:
+        return "flop"
+    if index < 8:
+        return "turn"
+    return "river"
+
+
+def public_daily_questions(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for index, question in enumerate(questions):
+        item = dict(question)
+        item["game_stage"] = stage_for_question(index)
+        item["river_reveal"] = index == DAILY_414_QUESTION_COUNT - 1
+        result.append(item)
+    return result
+
+
+def validate_daily_questions(
+    questions: list[dict[str, Any]], campaign_code: str
+) -> None:
+    if len(questions) != DAILY_414_QUESTION_COUNT:
+        raise ValueError("daily_414_requires_ten_questions")
+    if any(str(question.get("campaign")) != campaign_code for question in questions):
+        raise ValueError("daily_414_requires_own_questions")
+
+
+def issue_date(
+    campaign: sqlite3.Row | dict[str, Any], *, local_finished_at: datetime
+) -> date:
+    active_from = campaign["active_from"]
+    if active_from:
+        return datetime.fromisoformat(str(active_from)).date()
+    return local_finished_at.date()
+
+
+def main_prize_eligible(
+    campaign: sqlite3.Row | dict[str, Any], *, started_at: datetime
+) -> bool:
+    active_from = campaign["active_from"]
+    if not active_from:
+        return False
+    start = datetime.fromisoformat(str(active_from))
+    cutoff = start + timedelta(seconds=DAILY_414_ON_TIME_GRACE_SECONDS)
+    return start <= started_at <= cutoff
+
+
+def elapsed_milliseconds(*, started_at: datetime, finished_at: datetime) -> int:
+    return max(0, int((finished_at - started_at).total_seconds() * 1000))
+
+
+def _next_streak(
+    *,
+    previous_date: date | None,
+    previous_streak: int,
+    current_date: date,
+) -> int:
+    if previous_date == current_date:
+        return max(1, previous_streak)
+    if previous_date == current_date - timedelta(days=1):
+        return max(1, previous_streak + 1)
+    return 1
+
+
+def award_daily_jackcoin(
+    conn: sqlite3.Connection,
+    *,
+    client_id: int,
+    submission_id: int,
+    issue_day: date,
+    correct_count: int,
+    max_correct_count: int,
+) -> dict[str, int]:
+    progress = conn.execute(
+        "SELECT * FROM daily_414_progress WHERE client_id=?",
+        (client_id,),
+    ).fetchone()
+    previous_date = (
+        date.fromisoformat(str(progress["last_issue_date"]))
+        if progress and progress["last_issue_date"]
+        else None
+    )
+    previous_streak = int(progress["current_streak"]) if progress else 0
+    streak = _next_streak(
+        previous_date=previous_date,
+        previous_streak=previous_streak,
+        current_date=issue_day,
+    )
+    best_streak = max(streak, int(progress["best_streak"]) if progress else 0)
+    streak_bonus = JACKCOIN_STREAK_BONUSES.get(streak, 0)
+    answer_amount = max(0, int(correct_count)) * JACKCOIN_PER_CORRECT
+    completion_amount = JACKCOIN_COMPLETION_BONUS
+    perfect_amount = (
+        JACKCOIN_PERFECT_BONUS
+        if (
+            max_correct_count == DAILY_414_QUESTION_COUNT
+            and correct_count == DAILY_414_QUESTION_COUNT
+        )
+        else 0
+    )
+    total = answer_amount + completion_amount + perfect_amount + streak_bonus
+
+    conn.execute(
+        """
+        INSERT INTO daily_414_progress(
+            client_id, current_streak, best_streak, last_issue_date, updated_at
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(client_id) DO UPDATE SET
+            current_streak=excluded.current_streak,
+            best_streak=MAX(daily_414_progress.best_streak, excluded.best_streak),
+            last_issue_date=excluded.last_issue_date,
+            updated_at=CURRENT_TIMESTAMP
+        """,
+        (client_id, streak, best_streak, issue_day.isoformat()),
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO jackcoin_ledger(
+            client_id, amount, operation_type, source_type, source_id,
+            idempotency_key, comment
+        ) VALUES (?, ?, 'earn', 'daily_414', ?, ?, ?)
+        """,
+        (
+            client_id,
+            total,
+            str(submission_id),
+            f"daily_414:submission:{submission_id}",
+            (
+                f"4:14: {correct_count} правильных × {JACKCOIN_PER_CORRECT} JC"
+                f" + {completion_amount} JC за завершение"
+                f"{f' + {perfect_amount} JC за 10/10' if perfect_amount else ''}"
+                f"{f' + {streak_bonus} JC за серию {streak} дней' if streak_bonus else ''}"
+            ),
+        ),
+    )
+    return {
+        "total": total,
+        "answers": answer_amount,
+        "completion": completion_amount,
+        "perfect": perfect_amount,
+        "streak_bonus": streak_bonus,
+        "streak_days": streak,
+        "best_streak": best_streak,
+    }

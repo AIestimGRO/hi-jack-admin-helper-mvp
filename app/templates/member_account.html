@@ -69,7 +69,7 @@
     <article>
       <div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div>
       <span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span>
-      <span>{{ item.score|int if item.score is not none else 0 }} балл.</span>
+      <span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int if item.score is not none else 0 }} балл.{% endif %}</span>
     </article>
     {% else %}
     <p class="member-empty">Завершённых квизов пока нет.</p>

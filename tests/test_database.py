@@ -113,6 +113,7 @@ def test_414_and_member_tables_are_added_without_changing_legacy_campaign(tmp_pa
             "legal_documents",
             "member_consents",
             "jackcoin_ledger",
+            "daily_414_progress",
             "club_rating_snapshots",
             "club_rating_entries",
         }.issubset(tables)

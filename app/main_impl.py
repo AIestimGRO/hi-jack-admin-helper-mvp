@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 import qrcode
@@ -61,6 +61,16 @@ from app.services.quiz_device import (
     issue_or_refresh_device,
     remembered_client,
     remembered_display_name,
+)
+from app.services.daily_414 import (
+    DAILY_414_QUESTION_COUNT,
+    DAILY_414_TIME_LIMIT_SECONDS,
+    award_daily_jackcoin,
+    elapsed_milliseconds,
+    issue_date as daily_issue_date,
+    main_prize_eligible,
+    public_daily_questions,
+    validate_daily_questions,
 )
 from app.services.quiz_mail import send_member_email_code, send_quiz_email_code
 from app.services.member_accounts import (
@@ -301,6 +311,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ValueError("Окончание активности должно быть позже начала")
         return start, end
 
+    def default_daily_414_period(
+        active_from: str | None, active_until: str | None
+    ) -> tuple[str, str]:
+        if active_from:
+            start = datetime.fromisoformat(active_from)
+        else:
+            now = datetime.now(campaign_timezone).replace(tzinfo=None)
+            start = now.replace(hour=18, minute=14, second=0, microsecond=0)
+            if start <= now:
+                start += timedelta(days=1)
+        if active_until:
+            end = datetime.fromisoformat(active_until)
+        else:
+            end = (start + timedelta(days=1)).replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+        if end <= start:
+            raise ValueError("Окончание выпуска 4:14 должно быть позже старта")
+        return (
+            start.strftime("%Y-%m-%dT%H:%M"),
+            end.strftime("%Y-%m-%dT%H:%M"),
+        )
+
     def campaign_schedule_state(campaign_row: sqlite3.Row | dict[str, Any]) -> str:
         if not campaign_row["is_active"]:
             return "disabled"
@@ -332,10 +368,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if row["campaign_type"] == "daily_414":
             if not settings.member_portal_enabled:
                 raise HTTPException(status_code=404, detail="Режим 4:14 пока отключён")
-            raise HTTPException(
-                status_code=503,
-                detail="Режим 4:14 создан отдельно и пока закрыт для внутреннего тестирования",
-            )
         return row
 
     def quiz_campaign_or_404(code: str):
@@ -415,6 +447,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return member
 
+    def daily_member(
+        request: Request,
+        campaign_row: sqlite3.Row | dict[str, Any],
+        *,
+        required: bool = True,
+    ):
+        if campaign_row["campaign_type"] != "daily_414":
+            return None
+        member = current_member(request)
+        if required and not member:
+            raise HTTPException(
+                status_code=401,
+                detail="Войдите в аккаунт JACKSIDE, чтобы участвовать в 4:14",
+            )
+        if member and missing_member_documents(int(member["id"])):
+            raise HTTPException(
+                status_code=403,
+                detail="Примите актуальные условия участия в личном кабинете",
+            )
+        return member
+
     def member_context(request: Request, **values: Any) -> dict[str, Any]:
         return {
             "request": request,
@@ -431,6 +484,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             parameter = "error" if error else "ok"
             path = f"{path}?{urlencode({parameter: message})}"
         return RedirectResponse(path, status_code=303)
+
+    def safe_member_next(value: str) -> str:
+        candidate = str(value or "").strip()
+        parsed = urlsplit(candidate)
+        if (
+            not candidate.startswith("/")
+            or candidate.startswith("//")
+            or parsed.scheme
+            or parsed.netloc
+        ):
+            return ""
+        return candidate[:1000]
+
+    def remember_member_next(request: Request, value: str) -> str:
+        candidate = safe_member_next(value)
+        if candidate:
+            request.session["member_next"] = candidate
+        return candidate
+
+    def member_continue_path(request: Request, *, consume: bool = False) -> str:
+        value = safe_member_next(str(request.session.get("member_next", "")))
+        if consume:
+            request.session.pop("member_next", None)
+        return value or "/account"
 
     def member_registration_flow(request: Request) -> dict[str, Any]:
         flow = request.session.get("member_registration_flow")
@@ -591,11 +668,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/account/register", response_class=HTMLResponse)
     async def member_register_page(
-        request: Request, ok: str = "", error: str = ""
+        request: Request, ok: str = "", error: str = "", next: str = ""
     ):
         member_portal_or_404()
+        remember_member_next(request, next)
         if current_member(request):
-            return RedirectResponse("/account", status_code=303)
+            return RedirectResponse(
+                member_continue_path(request, consume=True), status_code=303
+            )
         flow = member_registration_flow(request)
         with connect(settings.db_path) as conn:
             documents = active_legal_documents(conn)
@@ -911,14 +991,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return member_redirect("/account/register", message, error=True)
 
     @app.get("/account/login", response_class=HTMLResponse)
-    async def member_login_page(request: Request, error: str = "", ok: str = ""):
+    async def member_login_page(
+        request: Request, error: str = "", ok: str = "", next: str = ""
+    ):
         member_portal_or_404()
+        next_path = remember_member_next(request, next)
         if current_member(request):
-            return RedirectResponse("/account", status_code=303)
+            return RedirectResponse(
+                member_continue_path(request, consume=True), status_code=303
+            )
         return templates.TemplateResponse(
             request,
             "member_login.html",
-            member_context(request, error=error, ok=ok, mode="login"),
+            member_context(
+                request,
+                error=error,
+                ok=ok,
+                mode="login",
+                next_path=next_path or member_continue_path(request),
+            ),
         )
 
     @app.post("/account/login")
@@ -945,7 +1036,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ip_hash=member_ip_hash(request),
                 user_agent=request.headers.get("user-agent", ""),
             )
-        response = RedirectResponse("/account", status_code=303)
+        response = RedirectResponse(
+            member_continue_path(request, consume=True), status_code=303
+        )
         set_member_cookie(response, token)
         return response
 
@@ -957,7 +1050,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         member = current_member(request, required=True)
         missing = missing_member_documents(int(member["id"]))
         if not missing:
-            return RedirectResponse("/account", status_code=303)
+            return RedirectResponse(
+                member_continue_path(request, consume=True), status_code=303
+            )
         return templates.TemplateResponse(
             request,
             "member_consent.html",
@@ -1284,9 +1379,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     settings.telegram_client_id
                     and settings.telegram_client_secret
                 ),
+                continue_path=member_continue_path(request),
                 ok=ok,
                 error=error,
             ),
+        )
+
+    @app.get("/account/continue")
+    async def member_continue(request: Request):
+        member_portal_or_404()
+        current_member(request, required=True)
+        return RedirectResponse(
+            member_continue_path(request, consume=True), status_code=303
         )
 
     @app.get("/quiz", response_class=HTMLResponse)
@@ -1301,6 +1405,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         campaign = normalize_campaign(campaign)
         campaign_row = quiz_campaign_row(campaign)
+        if campaign_row["campaign_type"] == "daily_414":
+            current_path = request.url.path
+            if request.url.query:
+                current_path += f"?{request.url.query}"
+            member = current_member(request)
+            if not member:
+                return RedirectResponse(
+                    f"/account/login?{urlencode({'next': current_path})}",
+                    status_code=303,
+                )
+            if missing_member_documents(int(member["id"])):
+                remember_member_next(request, current_path)
+                return RedirectResponse("/account/consents", status_code=303)
         schedule_state = campaign_schedule_state(campaign_row)
         return templates.TemplateResponse(
             request,
@@ -1309,6 +1426,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "request": request,
                 "campaign": campaign,
                 "campaign_title": campaign_row["title"],
+                "campaign_type": campaign_row["campaign_type"],
                 "referrer_id": (ref or referrer_id).strip()[:80],
                 "source": source.strip()[:80],
                 "telegram_available": bool(settings.telegram_client_id and settings.telegram_client_secret),
@@ -1320,6 +1438,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "active_until_iso": campaign_datetime_iso(campaign_row["active_until"]),
                 "server_now_iso": datetime.now(campaign_timezone).isoformat(),
                 "campaign_background": campaign_background(campaign),
+                "daily_prize_title": campaign_row["bonus_title"] or "Главный приз дня",
+                "daily_prize_amount": int(campaign_row["bonus_amount"] or 0),
             },
         )
 
@@ -1330,18 +1450,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             with connect(settings.db_path) as conn:
                 questions = load_db_questions(conn, campaign)
+                if campaign_row["campaign_type"] == "daily_414":
+                    validate_daily_questions(questions, campaign)
         except ValueError as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
+            messages = {
+                "daily_414_requires_ten_questions": (
+                    "Для выпуска 4:14 нужно опубликовать ровно 10 вопросов"
+                ),
+                "daily_414_requires_own_questions": (
+                    "Добавьте 10 собственных вопросов выпуска 4:14"
+                ),
+            }
+            raise HTTPException(
+                status_code=409,
+                detail=messages.get(str(exc), str(exc)),
+            )
+        member = daily_member(
+            request,
+            campaign_row,
+            required=campaign_row["campaign_type"] == "daily_414",
+        )
         return {
             "campaign": campaign,
             "campaign_version": int(campaign_row["current_version"] or 1),
             "title": campaign_row["title"],
+            "campaign_type": campaign_row["campaign_type"],
             "questions": [],
             "questions_count": len(questions),
             "timed": campaign_row["quiz_time_limit_seconds"] > 0,
             "time_limit_seconds": campaign_row["quiz_time_limit_seconds"],
             "max_attempts": campaign_row["max_attempts"],
             "verification_required": bool(campaign_row["verification_required"]),
+            "member_authenticated": bool(member),
             "telegram_available": bool(settings.telegram_client_id and settings.telegram_client_secret),
             "email_available": bool(settings.smtp_host and settings.smtp_from),
             "content": {
@@ -1350,6 +1490,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "start_button_text": campaign_row["start_button_text"],
                 "identity_text": campaign_row["identity_text"],
             },
+            "daily_414": (
+                {
+                    "question_count": DAILY_414_QUESTION_COUNT,
+                    "time_limit_seconds": DAILY_414_TIME_LIMIT_SECONDS,
+                    "one_attempt": True,
+                    "jackcoin_per_correct": 5,
+                    "completion_jackcoin": 10,
+                    "perfect_jackcoin": 20,
+                    "prize_title": campaign_row["bonus_title"]
+                    or "Главный приз дня",
+                    "prize_amount": int(campaign_row["bonus_amount"] or 0),
+                }
+                if campaign_row["campaign_type"] == "daily_414"
+                else None
+            ),
         }
 
     def utc_now() -> datetime:
@@ -1401,7 +1556,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/quiz/identity")
     async def quiz_identity_status(request: Request, campaign: str = "default"):
         campaign = normalize_campaign(campaign)
-        quiz_campaign_or_404(campaign)
+        campaign_row = quiz_campaign_or_404(campaign)
+        if campaign_row["campaign_type"] == "daily_414":
+            member = daily_member(request, campaign_row)
+            return {
+                "verified": True,
+                "remembered": False,
+                "method": "member",
+                "display_name": (
+                    member["first_name"]
+                    or member["nickname"]
+                    or (
+                        f"@{member['username']}"
+                        if member["username"]
+                        else "участник JACKSIDE"
+                    )
+                ),
+            }
         device_token = quiz_device_cookie(request)
         if device_token:
             with transaction(settings.db_path) as conn:
@@ -1636,15 +1807,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.session["quiz_verified_identity"] = identity
         return {"ok": True, "identity": {"method": "email", "email": email}}
 
-    def attempt_response(attempt: sqlite3.Row, token: str, *, resumed: bool) -> dict[str, Any]:
+    def attempt_response(
+        attempt: sqlite3.Row,
+        token: str,
+        *,
+        resumed: bool,
+        campaign_type: str = "classic",
+    ) -> dict[str, Any]:
         questions = json.loads(attempt["questions_snapshot_json"])
         answers = json.loads(attempt["answers_json"] or "{}")
+        public = public_questions(questions)
+        if campaign_type == "daily_414":
+            public = public_daily_questions(public)
         return {
             "ok": True,
             "resumed": resumed,
+            "campaign_type": campaign_type,
             "attempt_token": token,
             "attempt_number": int(attempt["attempt_number"]),
-            "questions": public_questions(questions),
+            "questions": public,
             "answers": answers,
             "current_index": min(max(0, int(attempt["current_index"] or 0)), max(0, len(questions) - 1)),
             "total": len(questions),
@@ -1657,7 +1838,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         payload = await request_json(request)
         campaign = normalize_campaign(payload.get("campaign"))
         campaign_row = quiz_campaign_or_404(campaign)
-        verified = verified_identity(request, campaign)
+        member = daily_member(
+            request,
+            campaign_row,
+            required=campaign_row["campaign_type"] == "daily_414",
+        )
+        if member:
+            verified = {
+                "campaign": campaign,
+                "method": "member",
+                "client_id": int(member["client_id"]),
+            }
+        else:
+            verified = verified_identity(request, campaign)
         if campaign_row["verification_required"] and not verified:
             raise HTTPException(status_code=403, detail="Подтвердите вход через Telegram или email")
         phone = str(verified.get("phone") or payload.get("phone") or "").strip()[:80]
@@ -1734,7 +1927,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             "method": identity_method,
                             "client_id": client_id,
                         }
-                    api_response = JSONResponse(attempt_response(active, token, resumed=True))
+                    api_response = JSONResponse(
+                        attempt_response(
+                            active,
+                            token,
+                            resumed=True,
+                            campaign_type=campaign_row["campaign_type"],
+                        )
+                    )
                     set_quiz_device_cookie(api_response, device_token)
                     return api_response
                 summary = conn.execute(
@@ -1754,6 +1954,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if recent_attempts >= 10:
                     raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже")
                 questions = load_db_questions(conn, campaign)
+                if campaign_row["campaign_type"] == "daily_414":
+                    try:
+                        validate_daily_questions(questions, campaign)
+                    except ValueError as exc:
+                        messages = {
+                            "daily_414_requires_ten_questions": (
+                                "Для выпуска 4:14 нужно опубликовать ровно 10 вопросов"
+                            ),
+                            "daily_414_requires_own_questions": (
+                                "Добавьте 10 собственных вопросов выпуска 4:14"
+                            ),
+                        }
+                        raise HTTPException(
+                            status_code=409,
+                            detail=messages.get(str(exc), "Выпуск 4:14 не готов"),
+                        ) from exc
                 deadline = now + timedelta(seconds=seconds) if seconds > 0 else None
                 cursor = conn.execute(
                 """
@@ -1788,7 +2004,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     (client_id, campaign, quiz_timestamp(now)),
                 )
                 attempt = conn.execute("SELECT * FROM quiz_attempts WHERE id=?", (cursor.lastrowid,)).fetchone()
-                response = attempt_response(attempt, token, resumed=False)
+                response = attempt_response(
+                    attempt,
+                    token,
+                    resumed=False,
+                    campaign_type=campaign_row["campaign_type"],
+                )
                 response["time_limit_seconds"] = seconds
                 response["max_attempts"] = max_attempts
                 response["attempts_left"] = max_attempts - attempts_used - 1
@@ -1828,11 +2049,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             attempt = conn.execute("SELECT * FROM quiz_attempts WHERE token_hash=?", (token_hash,)).fetchone()
             if not attempt or attempt["status"] != "in_progress":
                 raise HTTPException(status_code=409, detail="Эта попытка уже завершена")
+            campaign_type = conn.execute(
+                "SELECT campaign_type FROM quiz_campaigns WHERE code=?",
+                (attempt["campaign_code"],),
+            ).fetchone()
+            is_daily_414 = bool(
+                campaign_type and campaign_type["campaign_type"] == "daily_414"
+            )
             questions = json.loads(attempt["questions_snapshot_json"])
             question_id = str(payload.get("question_id", ""))
             question = next((item for item in questions if item["id"] == question_id), None)
             if not question:
                 raise HTTPException(status_code=422, detail="Вопрос не найден в этой попытке")
+            question_index = next(
+                index
+                for index, item in enumerate(questions)
+                if item["id"] == question_id
+            )
+            if is_daily_414 and question_index != int(attempt["current_index"] or 0):
+                raise HTTPException(
+                    status_code=409,
+                    detail="В 4:14 вопросы проходят только по порядку",
+                )
             now = utc_now()
             deadline = datetime.fromisoformat(attempt["attempt_deadline_at"]) if attempt["attempt_deadline_at"] else None
             if deadline and now > deadline + timedelta(seconds=1):
@@ -1842,8 +2080,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail="Выберите ответ") from exc
             answers = json.loads(attempt["answers_json"])
+            if is_daily_414 and question["id"] in answers:
+                if answers[question["id"]] != value:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="В 4:14 сохранённый ответ нельзя изменить",
+                    )
+                return {
+                    "ok": True,
+                    "question_id": question_id,
+                    "saved": True,
+                }
             answers[question["id"]] = value
-            question_index = next(index for index, item in enumerate(questions) if item["id"] == question_id)
             conn.execute(
                 "UPDATE quiz_attempts SET answers_json=?, current_index=MAX(current_index, ?), last_activity_at=? WHERE id=?",
                 (json.dumps(answers, ensure_ascii=False, sort_keys=True), min(question_index + 1, len(questions) - 1), quiz_timestamp(now), attempt["id"]),
@@ -1883,15 +2131,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             timed_out = bool(deadline and now > deadline + timedelta(seconds=1))
             passed = bool(not timed_out and (pass_score <= 0 or scoring["score"] >= pass_score))
             client_row = conn.execute("SELECT * FROM clients WHERE id=?", (attempt["client_id"],)).fetchone()
-            bonus_eligible = bool(passed and campaign_row["bonus_preference_code"] and int(campaign_row["bonus_amount"] or 0) > 0)
+            is_daily_414 = campaign_row["campaign_type"] == "daily_414"
+            started_at = datetime.fromisoformat(
+                attempt["question_started_at"] or attempt["created_at"]
+            )
+            completion_time_ms = (
+                elapsed_milliseconds(started_at=started_at, finished_at=now)
+                if is_daily_414
+                else None
+            )
+            started_local = started_at.astimezone(campaign_timezone).replace(
+                tzinfo=None
+            )
+            local_finished_at = now.astimezone(campaign_timezone).replace(
+                tzinfo=None
+            )
+            prize_eligible = bool(
+                is_daily_414
+                and not timed_out
+                and main_prize_eligible(
+                    campaign_row,
+                    started_at=started_local,
+                )
+            )
+            bonus_eligible = bool(
+                not is_daily_414
+                and passed
+                and campaign_row["bonus_preference_code"]
+                and int(campaign_row["bonus_amount"] or 0) > 0
+            )
             cursor = conn.execute(
                 """
                 INSERT INTO quiz_submissions(
                     attempt_id, campaign_code, campaign_version, client_id, phone_raw, phone_local, name, username, nickname,
                     answers_json, questions_snapshot_json, score, max_score, correct_count, max_correct_count, passed,
                     bonus_granted, bonus_pending, bonus_type, is_duplicate, is_new_client,
-                    quiz_referrer_id, source, user_agent, ip_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?)
+                    quiz_referrer_id, source, completion_time_ms, main_prize_eligible,
+                    user_agent, ip_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     attempt["id"], attempt["campaign_code"], attempt["campaign_version"], attempt["client_id"], client_row["phone_raw"] or "",
@@ -1900,10 +2177,70 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     json.dumps(questions, ensure_ascii=False, sort_keys=True), scoring["score"], scoring["max_score"],
                     scoring["correct_count"], scoring["max_correct_count"], int(passed), int(bonus_eligible),
                     campaign_row["bonus_preference_code"], attempt["is_new_client"], attempt["quiz_referrer_id"],
-                    attempt["source"], attempt["user_agent"], attempt["ip_hash"],
+                    attempt["source"], completion_time_ms, int(prize_eligible),
+                    attempt["user_agent"], attempt["ip_hash"],
                 ),
             )
             submission_id = int(cursor.lastrowid)
+            daily_award = None
+            daily_place = None
+            if is_daily_414:
+                daily_award = award_daily_jackcoin(
+                    conn,
+                    client_id=int(attempt["client_id"]),
+                    submission_id=submission_id,
+                    issue_day=daily_issue_date(
+                        campaign_row,
+                        local_finished_at=local_finished_at,
+                    ),
+                    correct_count=int(scoring["correct_count"]),
+                    max_correct_count=int(scoring["max_correct_count"]),
+                )
+                conn.execute(
+                    """
+                    UPDATE quiz_submissions
+                    SET jackcoin_awarded=?, streak_days=?
+                    WHERE id=?
+                    """,
+                    (
+                        daily_award["total"],
+                        daily_award["streak_days"],
+                        submission_id,
+                    ),
+                )
+                if prize_eligible:
+                    daily_place = int(
+                        conn.execute(
+                            """
+                            SELECT COUNT(*) + 1
+                            FROM quiz_submissions
+                            WHERE campaign_code=? AND campaign_version=?
+                              AND main_prize_eligible=1
+                              AND (
+                                correct_count > ?
+                                OR (
+                                  correct_count = ?
+                                  AND (
+                                    completion_time_ms < ?
+                                    OR (
+                                      completion_time_ms = ?
+                                      AND id < ?
+                                    )
+                                  )
+                                )
+                              )
+                            """,
+                            (
+                                attempt["campaign_code"],
+                                attempt["campaign_version"],
+                                scoring["correct_count"],
+                                scoring["correct_count"],
+                                completion_time_ms,
+                                completion_time_ms,
+                                submission_id,
+                            ),
+                        ).fetchone()[0]
+                    )
             reward = issue_reward(
                 conn, client_id=int(attempt["client_id"]), campaign=campaign_row,
                 submission_id=submission_id, timezone_name=settings.timezone_name,
@@ -2005,7 +2342,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "correct_count": scoring["correct_count"], "max_correct_count": scoring["max_correct_count"],
             "attempts_used": attempts_used, "max_attempts": max_attempts,
         }
-        if reward:
+        if is_daily_414:
+            outcome = "completed"
+            title = "Раздача завершена"
+            message = (
+                f"{scoring['correct_count']} из {scoring['max_correct_count']} "
+                f"правильно · +{daily_award['total']} JACKCOIN"
+            )
+        elif reward:
             outcome = "won"
             title = render_campaign_text(campaign_row["victory_title"], values)
             message = render_campaign_text(campaign_row["victory_text"], values)
@@ -2036,8 +2380,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if reward else None
             ),
             "bonus_granted": bool(reward and campaign_row["reward_delivery_mode"] == "automatic"),
+            "campaign_type": campaign_row["campaign_type"],
+            "completion_time_ms": completion_time_ms,
+            "main_prize_eligible": prize_eligible,
+            "daily_place": daily_place,
+            "jackcoin_awarded": daily_award["total"] if daily_award else 0,
+            "jackcoin_breakdown": daily_award,
+            "streak_days": daily_award["streak_days"] if daily_award else 0,
             "share_url": (
-                f"{settings.quiz_public_base_url.rstrip('/')}/quiz?campaign={quote(attempt['campaign_code'])}&ref={quote(own_referral['code'])}"
+                f"{(settings.public_base_url if is_daily_414 else settings.quiz_public_base_url).rstrip('/')}/quiz?campaign={quote(attempt['campaign_code'])}&ref={quote(own_referral['code'])}"
                 if own_referral else None
             ),
             "referral_count": referral_count,
@@ -2080,7 +2431,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as conn:
             return conn.execute(
                 f"""
-                SELECT qs.*, qc.title AS campaign_title, qrc.code AS reward_code,
+                SELECT qs.*, qc.title AS campaign_title,
+                       qc.campaign_type AS campaign_type,
+                       qrc.code AS reward_code,
                        qrc.status AS reward_status, qrc.valid_until AS reward_valid_until
                 FROM quiz_submissions qs
                 LEFT JOIN quiz_campaigns qc ON qc.code = qs.campaign_code
@@ -2137,7 +2490,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as conn:
             row = conn.execute(
                 """
-                SELECT qs.*, qc.title AS campaign_title, pt.title AS bonus_title,
+                SELECT qs.*, qc.title AS campaign_title,
+                       qc.campaign_type AS campaign_type,
+                       pt.title AS bonus_title,
                        qrc.code AS reward_code, qrc.status AS reward_status,
                        qrc.valid_from AS reward_valid_from, qrc.valid_until AS reward_valid_until,
                        qrc.used_at AS reward_used_at
@@ -2343,6 +2698,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 admin_audit=admin_audit,
                 current_tab=tab,
                 quiz_public_base_url=settings.quiz_public_base_url.rstrip("/"),
+                club_public_base_url=settings.public_base_url.rstrip("/"),
                 campaign_timezone_name=settings.timezone_name,
                 ok=ok,
                 error=error,
@@ -2625,6 +2981,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Сначала настройте Telegram или email в .env", error=True, tab="campaigns")
         try:
             active_from_value, active_until_value = validate_campaign_period(active_from, active_until)
+            if campaign_type == "daily_414":
+                active_from_value, active_until_value = default_daily_414_period(
+                    active_from_value,
+                    active_until_value,
+                )
             reward_mode, reward_value, reward_from, reward_until = campaign_reward_values(
                 reward_validity_mode, reward_validity_value, reward_valid_from, reward_valid_until
             )
@@ -2655,6 +3016,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                      int(referral_repeatable), referral_max_rewards,
                      active_from_value, active_until_value),
                 )
+                if campaign_type == "daily_414":
+                    conn.execute(
+                        """
+                        UPDATE quiz_campaigns
+                        SET welcome_kicker='JACKSIDE 4:14',
+                            welcome_text='10 вопросов. 4 минуты 14 секунд. Одна попытка. Возвращаться к предыдущим вопросам и менять ответы нельзя.',
+                            start_button_text='ПОСМОТРЕТЬ ПРИЗ ДНЯ',
+                            identity_text='Один человек. Один аккаунт. Одна попытка.'
+                        WHERE id=?
+                        """,
+                        (int(cursor.lastrowid),),
+                    )
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
                     action="create", entity_type="quiz_campaign", entity_id=int(cursor.lastrowid),
@@ -2708,7 +3081,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title = title.strip()
         with connect(settings.db_path) as conn:
             existing_campaign = conn.execute(
-                "SELECT campaign_type FROM quiz_campaigns WHERE id=?",
+                """
+                SELECT campaign_type, active_from, active_until
+                FROM quiz_campaigns WHERE id=?
+                """,
                 (campaign_id,),
             ).fetchone()
         if not existing_campaign:
@@ -2739,6 +3115,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Сначала настройте Telegram или email в .env", error=True, tab="campaigns")
         try:
             active_from_value, active_until_value = validate_campaign_period(active_from, active_until)
+            if existing_campaign["campaign_type"] == "daily_414":
+                active_from_value, active_until_value = default_daily_414_period(
+                    active_from_value or existing_campaign["active_from"],
+                    active_until_value or existing_campaign["active_until"],
+                )
             reward_mode, reward_value, reward_from, reward_until = campaign_reward_values(
                 reward_validity_mode, reward_validity_value, reward_valid_from, reward_valid_until
             )
@@ -3983,15 +4364,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "submission_id", "created_at", "campaign", "client_id", "name", "username",
             "nickname", "phone_local", "answers", "score", "max_score", "correct_count",
             "max_correct_count", "passed", "bonus_granted", "bonus_pending",
-            "bonus_type", "duplicate", "new_or_existing", "quiz_referrer_id", "source",
+            "bonus_type", "completion_time_ms", "main_prize_eligible",
+            "jackcoin_awarded", "streak_days", "duplicate", "new_or_existing",
+            "quiz_referrer_id", "source",
         ]
         values = (
             (
                 row["id"], row["created_at"], row["campaign_code"], row["client_id"], row["name"],
                 row["username"], row["nickname"], row["phone_local"], row["answers_json"], row["score"],
                 row["max_score"], row["correct_count"], row["max_correct_count"], row["passed"],
-                row["bonus_granted"], row["bonus_pending"], row["bonus_type"], row["is_duplicate"],
-                "new" if row["is_new_client"] else "existing", row["quiz_referrer_id"], row["source"],
+                row["bonus_granted"], row["bonus_pending"], row["bonus_type"],
+                row["completion_time_ms"], row["main_prize_eligible"],
+                row["jackcoin_awarded"], row["streak_days"], row["is_duplicate"],
+                "new" if row["is_new_client"] else "existing",
+                row["quiz_referrer_id"], row["source"],
             )
             for row in rows
         )

@@ -3,7 +3,8 @@
   if (!app) return;
 
   const campaign = app.dataset.campaign || 'default';
-  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, scheduleTimer: null, serverOffset: 0, submitting: false, finishing: false, shareUrl: null };
+  const isDaily414 = app.dataset.campaignType === 'daily_414';
+  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, scheduleTimer: null, serverOffset: 0, submitting: false, finishing: false, shareUrl: null, riverShown: false };
   const screens = [...app.querySelectorAll('[data-screen]')];
   const show = (name) => screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
   const errorText = (message) => typeof message === 'string' ? message : 'Попробуй ещё раз чуть позже.';
@@ -174,6 +175,7 @@
     if (identity.method === 'telegram') label = `Telegram подтверждён${identity.username ? `: @${identity.username}` : ''}`;
     else if (identity.method === 'email') label = `Email подтверждён${identity.email ? `: ${identity.email}` : ''}`;
     else if (identity.method === 'device') label = `Это вы — ${identity.display_name || 'можно продолжать'}`;
+    else if (identity.method === 'member') label = `Аккаунт JACKSIDE подтверждён${identity.display_name ? `: ${identity.display_name}` : ''}`;
     box.textContent = `✓ ${label}`;
     box.hidden = false;
   }
@@ -240,7 +242,9 @@
     const values = identityValues();
     try { validateIdentity(values); } catch (error) { setIdentityError(error.message); return; }
     state.submitting = true;
-    const button = identityForm.querySelector('[data-action="start"]');
+    const button = isDaily414
+      ? app.querySelector('[data-action="daily-start"]')
+      : identityForm.querySelector('[data-action="start"]');
     button.disabled = true;
     button.textContent = 'Открываем…';
     setIdentityError('');
@@ -252,6 +256,7 @@
       state.index = Number(data.current_index || 0);
       state.deadline = data.deadline_at ? new Date(data.deadline_at).getTime() : null;
       state.timeLimit = Number(data.time_limit_seconds || 0);
+      state.riverShown = state.index >= 9;
       if (!state.questions.length) throw new Error('В квизе пока нет опубликованных вопросов');
       if (data.resumed) {
         const box = app.querySelector('.quiz-verified');
@@ -271,13 +276,16 @@
       } else if (/исчерпан|успешно пройден/.test(error.message)) {
         app.querySelector('.quiz-error-message').textContent = errorText(error.message);
         show('error');
+      } else if (isDaily414) {
+        app.querySelector('.quiz-error-message').textContent = errorText(error.message);
+        show('error');
       } else {
         showIdentityMethods();
       }
     } finally {
       state.submitting = false;
       button.disabled = false;
-      button.textContent = 'Продолжить';
+      button.textContent = isDaily414 ? 'СЕСТЬ ЗА СТОЛ' : 'Продолжить';
     }
   }
 
@@ -298,8 +306,10 @@
     if (questionBackground) screen.style.setProperty('--section-background', `url("${questionBackground}")`);
     else screen.style.removeProperty('--section-background');
     const sectionLabel = app.querySelector('.quiz-section-label');
-    sectionLabel.hidden = !section.title;
-    sectionLabel.textContent = section.title || '';
+    const stageNames = { preflop: 'ПРЕФЛОП', flop: 'ФЛОП', turn: 'ТЁРН', river: 'РИВЕР' };
+    const sectionTitle = isDaily414 ? stageNames[question.game_stage] : section.title;
+    sectionLabel.hidden = !sectionTitle;
+    sectionLabel.textContent = sectionTitle || '';
     const questionImage = app.querySelector('.quiz-question-image');
     questionImage.hidden = !question.image_path;
     questionImage.src = question.image_path || '';
@@ -329,7 +339,7 @@
         label.append(input, marker, text); options.append(label);
       });
     }
-    app.querySelector('[data-action="back"]').disabled = state.index === 0;
+    app.querySelector('[data-action="back"]').disabled = isDaily414 || state.index === 0;
     app.querySelector('[data-action="next"]').textContent = state.index === state.questions.length - 1 ? 'Завершить тест' : 'Далее';
     show('question');
   }
@@ -345,17 +355,25 @@
 
   async function navigate(direction) {
     if (state.submitting || state.finishing) return;
+    if (isDaily414 && direction === 'back') return;
     state.submitting = true;
     const validation = app.querySelector('[data-screen="question"] .quiz-validation');
     app.querySelectorAll('[data-screen="question"] .quiz-actions button').forEach((button) => { button.disabled = true; });
     try {
       await saveCurrentAnswer({ requireAnswer: direction === 'next' });
       if (direction === 'back') state.index = Math.max(0, state.index - 1);
-      else if (state.index < state.questions.length - 1) state.index += 1;
+      else if (state.index < state.questions.length - 1) {
+        state.index += 1;
+        if (isDaily414 && state.questions[state.index]?.river_reveal && !state.riverShown) {
+          state.riverShown = true;
+          show('river');
+          return;
+        }
+      }
       else { await finishQuestions(); return; }
       renderQuestion();
     } catch (error) { validation.textContent = errorText(error.message); }
-    finally { state.submitting = false; if (!state.finishing) { app.querySelector('[data-action="back"]').disabled = state.index === 0; app.querySelector('[data-action="next"]').disabled = false; } }
+    finally { state.submitting = false; if (!state.finishing) { app.querySelector('[data-action="back"]').disabled = isDaily414 || state.index === 0; app.querySelector('[data-action="next"]').disabled = false; } }
   }
 
   async function finishQuestions() {
@@ -374,6 +392,23 @@
     app.querySelector('.quiz-success-message').textContent = data.message || 'Твои ответы сохранены.';
     const score = app.querySelector('.quiz-score-message');
     if (data.max_correct_count > 0) { score.textContent = `Правильных ответов: ${data.correct_count} из ${data.max_correct_count}. Баллы: ${data.score} из ${data.max_score}.`; score.hidden = false; score.classList.toggle('passed', Boolean(data.passed)); } else score.hidden = true;
+    const dailyResult = app.querySelector('.daily-result');
+    if (dailyResult) {
+      dailyResult.hidden = data.campaign_type !== 'daily_414';
+      if (!dailyResult.hidden) {
+        dailyResult.querySelector('.daily-result-jackcoin').textContent = `+${data.jackcoin_awarded} JC`;
+        dailyResult.querySelector('.daily-result-streak').textContent = `${data.streak_days} дн.`;
+        dailyResult.querySelector('.daily-result-time').textContent = formatPreciseTime(data.completion_time_ms);
+        const prize = dailyResult.querySelector('.daily-result-prize');
+        if (data.main_prize_eligible) {
+          prize.textContent = data.daily_place
+            ? `Предварительное место за столом: ${data.daily_place}. Ты участвуешь в розыгрыше главного приза.`
+            : 'Ты участвуешь в розыгрыше главного приза.';
+        } else {
+          prize.textContent = 'JACKCOIN и серия сохранены. В розыгрыш главного приза этот результат не входит.';
+        }
+      }
+    }
     const reward = app.querySelector('.quiz-reward'); reward.hidden = !data.reward_code;
     if (data.reward_code) {
       app.querySelector('.quiz-reward-code').textContent = data.reward_code;
@@ -413,6 +448,13 @@
   }
 
   function formatTime(milliseconds) { const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000)); return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`; }
+  function formatPreciseTime(milliseconds) {
+    const value = Math.max(0, Number(milliseconds || 0));
+    const minutes = Math.floor(value / 60000);
+    const seconds = Math.floor((value % 60000) / 1000);
+    const tenths = Math.floor((value % 1000) / 100);
+    return `${minutes}:${String(seconds).padStart(2, '0')}.${tenths}`;
+  }
   function startTimer() {
     stopTimer(); const timer = app.querySelector('.quiz-timer');
     if (!state.deadline || state.timeLimit <= 0) { timer.hidden = true; return; }
@@ -432,7 +474,10 @@
     document.body.append(layer); window.setTimeout(() => layer.remove(), 5000);
   }
 
-  app.querySelector('[data-action="identify"]').addEventListener('click', showIdentityMethods);
+  app.querySelector('[data-action="identify"]').addEventListener('click', () => {
+    if (isDaily414) show('daily-prize');
+    else showIdentityMethods();
+  });
   app.querySelector('[data-action="remembered-confirm"]').addEventListener('click', confirmRememberedIdentity);
   app.querySelector('[data-action="remembered-forget"]').addEventListener('click', forgetRememberedIdentity);
   app.querySelector('[data-action="phone-identity"]').addEventListener('click', showPhoneIdentity);
@@ -444,6 +489,9 @@
   app.querySelector('[data-action="new-attempt"]').addEventListener('click', () => { state.finishing = false; startQuiz(); });
   app.querySelector('[data-action="share"]').addEventListener('click', shareQuiz);
   app.querySelector('[data-action="copy-share"]').addEventListener('click', copyShareLink);
+  app.querySelector('[data-action="daily-prize-next"]')?.addEventListener('click', () => show('daily-jackcoin'));
+  app.querySelector('[data-action="daily-start"]')?.addEventListener('click', startQuiz);
+  app.querySelector('[data-action="river-open"]')?.addEventListener('click', renderQuestion);
   window.addEventListener('beforeunload', () => {
     stopTimer();
     if (state.scheduleTimer) window.clearInterval(state.scheduleTimer);

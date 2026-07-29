@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/quiz-theme.css') }}?v={{ asset_version }}">
 </head>
 <body>
-  <main class="quiz-shell" id="quiz-app" data-campaign="{{ campaign }}" data-referrer="{{ referrer_id }}" data-source="{{ source }}" data-telegram-verified="{{ '1' if telegram_verified else '0' }}" data-schedule-state="{{ schedule_state }}" data-active-from="{{ active_from_iso }}" data-active-until="{{ active_until_iso }}" data-server-now="{{ server_now_iso }}" data-campaign-background="{{ campaign_background }}">
+  <main class="quiz-shell" id="quiz-app" data-campaign="{{ campaign }}" data-campaign-type="{{ campaign_type }}" data-referrer="{{ referrer_id }}" data-source="{{ source }}" data-telegram-verified="{{ '1' if telegram_verified else '0' }}" data-schedule-state="{{ schedule_state }}" data-active-from="{{ active_from_iso }}" data-active-until="{{ active_until_iso }}" data-server-now="{{ server_now_iso }}" data-campaign-background="{{ campaign_background }}">
     <header class="quiz-brand"><img class="quiz-logo" src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="Hi, Jack!"><strong>Hi, Jack!</strong><small>SPORT POKER CLUB</small></header>
 
     <section class="quiz-screen active" data-screen="loading"><div class="quiz-loader"></div><p>Загружаем квиз…</p></section>
@@ -17,7 +17,7 @@
     <section class="quiz-screen quiz-schedule-screen" data-screen="countdown">
       <p class="quiz-kicker">Скоро начинаем</p>
       <h1>{{ campaign_title }}</h1>
-      <p class="quiz-lead">До начала турнира осталось</p>
+      <p class="quiz-lead">До начала {{ 'игры' if campaign_type == 'daily_414' else 'турнира' }} осталось</p>
       <div class="quiz-countdown" aria-live="polite">
         <span><strong data-countdown-days>00</strong><small>дней</small></span>
         <span><strong data-countdown-hours>00</strong><small>часов</small></span>
@@ -41,6 +41,41 @@
       {% if telegram_error %}<p class="quiz-validation">{{ telegram_error }}</p>{% endif %}
       <button class="quiz-primary" type="button" data-action="identify">Начать</button>
     </section>
+
+    {% if campaign_type == 'daily_414' %}
+    <section class="quiz-screen daily-414-screen" data-screen="daily-prize">
+      <p class="quiz-kicker">Сегодня на столе</p>
+      <h2>Главный приз дня</h2>
+      <div class="daily-prize-card">
+        <span>♠</span>
+        <strong>{{ daily_prize_title }}</strong>
+        {% if daily_prize_amount %}<small>Количество: {{ daily_prize_amount }}</small>{% endif %}
+      </div>
+      <p class="quiz-lead small">В основной розыгрыш попадают участники, которые сели за стол вовремя. Опоздавшие всё равно получают JACKCOIN и продолжают серию дней.</p>
+      <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
+    </section>
+
+    <section class="quiz-screen daily-414-screen" data-screen="daily-jackcoin">
+      <p class="quiz-kicker">JACKSIDE 4:14</p>
+      <h2>Ответы превращаются в ценность</h2>
+      <p class="quiz-lead">За каждый правильный ответ — 5 JACKCOIN. За завершение выпуска — ещё 10. За 10/10 — ещё 20.</p>
+      <div class="daily-rule-list">
+        <span>Один человек</span>
+        <span>Один аккаунт</span>
+        <span>Одна попытка</span>
+      </div>
+      <button class="quiz-primary" type="button" data-action="daily-start">СЕСТЬ ЗА СТОЛ</button>
+      <small class="daily-start-time">Игра проходит каждый день в 18:14</small>
+    </section>
+
+    <section class="quiz-screen daily-414-screen river-screen" data-screen="river">
+      <p class="quiz-kicker">Последняя улица</p>
+      <div class="river-mark">RIVER</div>
+      <h2>Решающий вопрос</h2>
+      <p class="quiz-lead">Ответ уже нельзя будет изменить. Время продолжает идти.</p>
+      <button class="quiz-primary" type="button" data-action="river-open">ОТКРЫТЬ РИВЕР</button>
+    </section>
+    {% endif %}
 
     <section class="quiz-screen" data-screen="remembered">
       <p class="quiz-kicker">С возвращением!</p>
@@ -88,12 +123,18 @@
       <h2 class="quiz-question-title"></h2>
       <div class="quiz-options"></div>
       <p class="quiz-validation" role="alert"></p>
-      <div class="quiz-actions"><button class="quiz-secondary" type="button" data-action="back">Назад</button><button class="quiz-primary" type="button" data-action="next">Далее</button></div>
+      <div class="quiz-actions {{ 'daily-actions' if campaign_type == 'daily_414' else '' }}"><button class="quiz-secondary" type="button" data-action="back" {% if campaign_type == 'daily_414' %}hidden{% endif %}>Назад</button><button class="quiz-primary" type="button" data-action="next">Далее</button></div>
     </section>
 
     <section class="quiz-screen" data-screen="success">
       <div class="quiz-success-mark">✓</div><p class="quiz-kicker">Готово</p><h2 class="quiz-success-title">Спасибо!</h2>
       <p class="quiz-lead quiz-success-message"></p><p class="quiz-score-message" hidden></p>
+      <div class="daily-result" hidden>
+        <div><small>JACKCOIN</small><strong class="daily-result-jackcoin"></strong></div>
+        <div><small>Серия</small><strong class="daily-result-streak"></strong></div>
+        <div><small>Время</small><strong class="daily-result-time"></strong></div>
+        <p class="daily-result-prize"></p>
+      </div>
       <div class="quiz-reward" hidden><small>Твой уникальный код</small><strong class="quiz-reward-code"></strong><p class="quiz-reward-validity"></p><p>Покажи код администратору до окончания срока действия.</p></div>
       <p class="quiz-bonus-message" hidden></p>
       <div class="quiz-share" hidden>

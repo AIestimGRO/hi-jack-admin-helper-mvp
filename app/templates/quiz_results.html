@@ -38,9 +38,9 @@
       <tr data-row-href="/admin/quiz-results/{{ row.id }}" tabindex="0" aria-label="Открыть результат #{{ row.id }}">
         <td>{{ display_phone(row.phone_local, row.phone_raw) }}</td>
         <td>{% if row.username %}@{{ row.username }}{% else %}—{% endif %}</td>
-        <td><strong>{{ row.score|int }}</strong></td>
+        <td><strong>{{ row.score|int }}</strong>{% if row.campaign_type == 'daily_414' %}<small>{{ row.correct_count }}/{{ row.max_correct_count }} верно · {{ ((row.completion_time_ms or 0) / 1000)|round(1) }} сек.</small>{% endif %}</td>
         <td><span class="{{ 'status-yes' if row.passed else 'status-no' }}">{{ 'Пройден' if row.passed else 'Не пройден' }}</span></td>
-        <td>{% if row.reward_status=='used' %}<span class="status-yes">Начислен</span><small>{{ row.reward_code }}</small>{% elif row.reward_status=='issued' %}Код выдан<small>{{ row.reward_code }}</small>{% elif row.reward_status %}<span class="status-no">{{ 'Просрочен' if row.reward_status=='expired' else 'Отменён' }}</span><small>{{ row.reward_code }}</small>{% else %}<span class="status-no">Нет</span>{% endif %}</td>
+        <td>{% if row.campaign_type == 'daily_414' %}<span class="status-yes">+{{ row.jackcoin_awarded }} JC</span><small>Серия: {{ row.streak_days }} дн. · {{ 'главный приз' if row.main_prize_eligible else 'вне розыгрыша' }}</small>{% elif row.reward_status=='used' %}<span class="status-yes">Начислен</span><small>{{ row.reward_code }}</small>{% elif row.reward_status=='issued' %}Код выдан<small>{{ row.reward_code }}</small>{% elif row.reward_status %}<span class="status-no">{{ 'Просрочен' if row.reward_status=='expired' else 'Отменён' }}</span><small>{{ row.reward_code }}</small>{% else %}<span class="status-no">Нет</span>{% endif %}</td>
         <td>{{ display_datetime(row.created_at) }}</td>
         <td class="result-name">{{ row.campaign_title or row.campaign_code }}<small>версия {{ row.campaign_version }}</small></td>
         <td><a class="result-action" href="/admin/quiz-results/{{ row.id }}">Открыть →</a></td>

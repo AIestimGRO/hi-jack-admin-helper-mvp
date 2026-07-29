@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +12,12 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db import connect, transaction
 from app.main import create_app
-from app.services.member_accounts import hash_password, verify_password
+from app.services.member_accounts import (
+    MEMBER_COOKIE_NAME,
+    hash_password,
+    issue_session,
+    verify_password,
+)
 
 
 def make_member_client(
@@ -455,7 +462,7 @@ def test_telegram_connect_requires_account_and_accepts_missing_username(
         assert client_row["username"] is None
 
 
-def test_daily_414_campaign_is_isolated_from_classic_quiz(
+def test_daily_414_campaign_requires_member_account(
     tmp_path: Path,
 ) -> None:
     client, settings = make_member_client(tmp_path)
@@ -476,6 +483,10 @@ def test_daily_414_campaign_is_isolated_from_classic_quiz(
         page = client.get("/master?tab=campaigns")
         assert "Новый подраздел" in page.text
         assert "JACKSIDE 4:14" in page.text
+        assert (
+            "https://club.example.test/quiz?campaign=jackside_daily"
+            in page.text
+        )
         with connect(settings.db_path) as conn:
             campaign_id = conn.execute(
                 "SELECT id FROM quiz_campaigns WHERE code='jackside_daily'"
@@ -494,19 +505,13 @@ def test_daily_414_campaign_is_isolated_from_classic_quiz(
 
         classic = client.get("/quiz?campaign=default")
         assert classic.status_code == 200
-        isolated = client.get("/quiz?campaign=jackside_daily")
-        assert isolated.status_code == 503
-        assert (
-            client.get(
-                "/api/quiz/questions?campaign=jackside_daily"
-            ).status_code
-            == 503
+        isolated = client.get(
+            "/quiz?campaign=jackside_daily",
+            follow_redirects=False,
         )
-        assert (
-            client.post(
-                "/api/quiz/start", json={"campaign": "jackside_daily"}
-            ).status_code
-            == 503
+        assert isolated.status_code == 303
+        assert isolated.headers["location"].startswith(
+            "/account/login?next="
         )
 
     with connect(settings.db_path) as conn:
@@ -517,3 +522,244 @@ def test_daily_414_campaign_is_isolated_from_classic_quiz(
         assert row["quiz_time_limit_seconds"] == 254
         assert row["max_attempts"] == 1
         assert row["verification_required"] == 1
+        assert row["active_from"]
+        assert row["active_until"]
+
+
+def seed_daily_member(client: TestClient, settings: Settings) -> int:
+    with transaction(settings.db_path) as conn:
+        client_id = int(
+            conn.execute(
+                """
+                INSERT INTO clients(
+                    first_name, phone_raw, phone_full, phone_local, source
+                ) VALUES ('Алекс', '+7 999 555-44-33', '79995554433',
+                          '9995554433', 'member_portal')
+                """
+            ).lastrowid
+        )
+        account_id = int(
+            conn.execute(
+                """
+                INSERT INTO member_accounts(
+                    client_id, email, email_normalized, password_hash,
+                    email_verified_at
+                ) VALUES (?, 'daily@example.test', 'daily@example.test', ?,
+                          CURRENT_TIMESTAMP)
+                """,
+                (client_id, hash_password("abcdef")),
+            ).lastrowid
+        )
+        for document in conn.execute(
+            "SELECT * FROM legal_documents WHERE is_active=1"
+        ).fetchall():
+            conn.execute(
+                """
+                INSERT INTO member_consents(
+                    account_id, document_id, document_code, document_version,
+                    ip_hash, user_agent
+                ) VALUES (?, ?, ?, ?, 'test-ip', 'pytest')
+                """,
+                (
+                    account_id,
+                    document["id"],
+                    document["code"],
+                    document["version"],
+                ),
+            )
+        token = issue_session(
+            conn,
+            secret_key=settings.secret_key,
+            account_id=account_id,
+            session_version=1,
+            days=30,
+            ip_hash="test-ip",
+            user_agent="pytest",
+        )
+    client.cookies.set(MEMBER_COOKIE_NAME, token)
+    return client_id
+
+
+def seed_daily_campaign(settings: Settings) -> None:
+    local_now = datetime.now(ZoneInfo(settings.timezone_name)).replace(
+        tzinfo=None
+    )
+    with transaction(settings.db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO quiz_campaigns(
+                code, title, campaign_type, quiz_time_limit_seconds,
+                max_attempts, verification_required, current_version,
+                active_from, active_until, welcome_kicker, welcome_text,
+                start_button_text
+            ) VALUES (
+                'daily_test', 'JACKSIDE 4:14', 'daily_414', 254, 1, 1, 1,
+                ?, ?, 'JACKSIDE 4:14',
+                '10 вопросов. Одна попытка.',
+                'ПОСМОТРЕТЬ ПРИЗ ДНЯ'
+            )
+            """,
+            (
+                (local_now - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%S"),
+                (local_now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
+            ),
+        )
+        for index in range(1, 11):
+            question_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO quiz_questions(
+                        campaign_code, code, type, title, required, points,
+                        position, is_active
+                    ) VALUES ('daily_test', ?, 'single_choice', ?, 1, 1, ?, 1)
+                    """,
+                    (f"d{index}", f"Вопрос {index}", index * 10),
+                ).lastrowid
+            )
+            conn.execute(
+                """
+                INSERT INTO quiz_options(
+                    question_id, code, text, is_correct, position
+                ) VALUES (?, ?, 'Верно', 1, 10), (?, ?, 'Неверно', 0, 20)
+                """,
+                (
+                    question_id,
+                    f"d{index}_yes",
+                    question_id,
+                    f"d{index}_no",
+                ),
+            )
+
+
+def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    with client:
+        client_id = seed_daily_member(client, settings)
+        seed_daily_campaign(settings)
+
+        page = client.get("/quiz?campaign=daily_test")
+        assert page.status_code == 200
+        assert 'data-campaign-type="daily_414"' in page.text
+        assert "СЕСТЬ ЗА СТОЛ" in page.text
+        assert "RIVER" in page.text
+
+        meta = client.get(
+            "/api/quiz/questions?campaign=daily_test"
+        ).json()
+        assert meta["campaign_type"] == "daily_414"
+        assert meta["questions_count"] == 10
+        assert meta["time_limit_seconds"] == 254
+        assert meta["max_attempts"] == 1
+        assert meta["member_authenticated"] is True
+
+        started = client.post(
+            "/api/quiz/start",
+            json={"campaign": "daily_test"},
+        )
+        assert started.status_code == 200
+        attempt = started.json()
+        assert attempt["campaign_type"] == "daily_414"
+        assert [item["game_stage"] for item in attempt["questions"]] == [
+            "preflop",
+            "preflop",
+            "flop",
+            "flop",
+            "flop",
+            "turn",
+            "turn",
+            "turn",
+            "river",
+            "river",
+        ]
+        assert attempt["questions"][-1]["river_reveal"] is True
+
+        token = attempt["attempt_token"]
+        first = client.post(
+            "/api/quiz/answer",
+            json={
+                "attempt_token": token,
+                "question_id": "d1",
+                "answer": "d1_yes",
+            },
+        )
+        assert first.status_code == 200
+        changed = client.post(
+            "/api/quiz/answer",
+            json={
+                "attempt_token": token,
+                "question_id": "d1",
+                "answer": "d1_no",
+            },
+        )
+        assert changed.status_code == 409
+        skipped = client.post(
+            "/api/quiz/answer",
+            json={
+                "attempt_token": token,
+                "question_id": "d3",
+                "answer": "d3_yes",
+            },
+        )
+        assert skipped.status_code == 409
+
+        for index in range(2, 11):
+            saved = client.post(
+                "/api/quiz/answer",
+                json={
+                    "attempt_token": token,
+                    "question_id": f"d{index}",
+                    "answer": f"d{index}_yes",
+                },
+            )
+            assert saved.status_code == 200
+
+        finished = client.post(
+            "/api/quiz/finish",
+            json={"attempt_token": token},
+        )
+        assert finished.status_code == 200
+        result = finished.json()
+        assert result["campaign_type"] == "daily_414"
+        assert result["correct_count"] == 10
+        assert result["jackcoin_awarded"] == 80
+        assert result["jackcoin_breakdown"] == {
+            "total": 80,
+            "answers": 50,
+            "completion": 10,
+            "perfect": 20,
+            "streak_bonus": 0,
+            "streak_days": 1,
+            "best_streak": 1,
+        }
+        assert result["main_prize_eligible"] is True
+        assert result["daily_place"] == 1
+        assert result["retry_allowed"] is False
+
+        blocked = client.post(
+            "/api/quiz/start",
+            json={"campaign": "daily_test"},
+        )
+        assert blocked.status_code == 409
+
+        account = client.get("/account?tab=stats")
+        assert "+80 JC" in account.text
+
+    with connect(settings.db_path) as conn:
+        submission = conn.execute(
+            "SELECT * FROM quiz_submissions WHERE campaign_code='daily_test'"
+        ).fetchone()
+        assert submission["jackcoin_awarded"] == 80
+        assert submission["streak_days"] == 1
+        assert submission["main_prize_eligible"] == 1
+        assert submission["completion_time_ms"] >= 0
+        assert conn.execute(
+            "SELECT SUM(amount) FROM jackcoin_ledger WHERE client_id=?",
+            (client_id,),
+        ).fetchone()[0] == 80
+        progress = conn.execute(
+            "SELECT * FROM daily_414_progress WHERE client_id=?",
+            (client_id,),
+        ).fetchone()
+        assert progress["current_streak"] == 1

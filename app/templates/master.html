@@ -114,7 +114,8 @@
     <article class="card master-item {{ '' if campaign.is_active else 'inactive' }}">
       <div class="master-item-head"><div><h3>{{ campaign.title }}</h3><code>{{ campaign.code }}</code></div><div class="campaign-pills">{% if campaign.campaign_type == 'daily_414' %}<span class="type-pill live-414">4:14</span>{% endif %}<span class="type-pill {{ campaign.schedule_state }}">{{ {'active':'Активна','upcoming':'Запланирована','ended':'Завершена','disabled':'Отключена'}[campaign.schedule_state] }}</span></div></div>
       {% if campaign.active_from or campaign.active_until %}<p class="campaign-period">{% if campaign.active_from %}с {{ campaign.active_from|replace('T', ' ') }}{% else %}без даты начала{% endif %} · {% if campaign.active_until %}до {{ campaign.active_until|replace('T', ' ') }}{% else %}без даты окончания{% endif %}</p>{% endif %}
-      <a class="campaign-url" href="{{ quiz_public_base_url }}/quiz?campaign={{ campaign.code }}" target="hj-quiz-preview" rel="noopener noreferrer">{{ quiz_public_base_url }}/quiz?campaign={{ campaign.code }} ↗</a>
+      {% set campaign_base_url = club_public_base_url if campaign.campaign_type == 'daily_414' else quiz_public_base_url %}
+      <a class="campaign-url" href="{{ campaign_base_url }}/quiz?campaign={{ campaign.code }}" target="hj-quiz-preview" rel="noopener noreferrer">{{ campaign_base_url }}/quiz?campaign={{ campaign.code }} ↗</a>
       <a class="primary button" href="/master/quiz-builder/{{ campaign.id }}">Редактор вопросов</a>
       <form class="campaign-edit" action="/api/master/quiz-campaigns/{{ campaign.id }}/update" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

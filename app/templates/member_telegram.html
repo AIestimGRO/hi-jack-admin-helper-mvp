@@ -13,11 +13,11 @@
       <span>Telegram подключён</span>
       <strong>{{ '@' ~ member.username if member.username else 'Аккаунт подтверждён' }}</strong>
     </div>
-    <a class="member-primary member-button-link" href="/account">Перейти в личный кабинет</a>
+    <a class="member-primary member-button-link" href="/account/continue">Перейти в личный кабинет</a>
   {% else %}
     <a class="telegram-button {{ '' if telegram_available else 'disabled' }}" href="{{ '/account/telegram/start' if telegram_available else '#' }}">Подключить Telegram</a>
     {% if not telegram_available %}<p class="member-muted">Подключение Telegram пока не настроено.</p>{% endif %}
-    <a class="member-secondary member-button-link" href="/account">Пропустить и перейти в кабинет</a>
+    <a class="member-secondary member-button-link" href="/account/continue">Пропустить и перейти в кабинет</a>
   {% endif %}
 </section>
 {% endblock %}

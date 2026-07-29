@@ -260,6 +260,10 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
     is_new_client INTEGER NOT NULL DEFAULT 0,
     quiz_referrer_id TEXT,
     source TEXT,
+    completion_time_ms INTEGER,
+    main_prize_eligible INTEGER NOT NULL DEFAULT 0,
+    jackcoin_awarded INTEGER NOT NULL DEFAULT 0,
+    streak_days INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     user_agent TEXT,
     ip_hash TEXT NOT NULL
@@ -476,6 +480,14 @@ CREATE TABLE IF NOT EXISTS jackcoin_ledger (
 );
 CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_client ON jackcoin_ledger(client_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS daily_414_progress (
+    client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+    current_streak INTEGER NOT NULL DEFAULT 0,
+    best_streak INTEGER NOT NULL DEFAULT 0,
+    last_issue_date TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS club_rating_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     snapshot_date TEXT NOT NULL UNIQUE,
@@ -570,6 +582,10 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_submissions", "correct_count INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_submissions", "max_correct_count INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_submissions", "passed INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_submissions", "completion_time_ms INTEGER")
+        _ensure_column(conn, "quiz_submissions", "main_prize_eligible INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_submissions", "jackcoin_awarded INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_submissions", "streak_days INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "pass_score INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "campaign_type TEXT NOT NULL DEFAULT 'classic'")
         _ensure_column(conn, "quiz_campaigns", "reward_delivery_mode TEXT NOT NULL DEFAULT 'automatic'")
