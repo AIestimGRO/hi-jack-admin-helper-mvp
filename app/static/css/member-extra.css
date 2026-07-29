@@ -36,3 +36,38 @@
 .telegram-confirmed strong {
   overflow-wrap: anywhere;
 }
+
+.telegram-step-card {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  padding: clamp(24px, 5vw, 44px);
+}
+
+.member-button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.member-secondary {
+  min-height: 52px;
+  padding: 0 20px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.member-secondary:hover {
+  border-color: #485462;
+  background: rgba(255, 255, 255, .04);
+}
+
+.profile-action {
+  color: #9acbff;
+}
+
+.password-match-message {
+  color: #ff8b9b !important;
+}

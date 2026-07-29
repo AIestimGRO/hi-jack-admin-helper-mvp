@@ -1,0 +1,24 @@
+{% extends "member_base.html" %}
+{% block title %}Подключение Telegram — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="member-card telegram-step-card">
+  <p class="member-eyebrow">Дополнительный шаг</p>
+  <h1>Подключить Telegram?</h1>
+  <p class="member-muted">Telegram поможет быстрее узнавать ваш аккаунт и получать клубные уведомления. Это необязательно: его можно подключить сейчас или позже в личном кабинете.</p>
+
+  {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+
+  {% if member.telegram_user_id %}
+    <div class="telegram-confirmed">
+      <span>Telegram подключён</span>
+      <strong>{{ '@' ~ member.username if member.username else 'Аккаунт подтверждён' }}</strong>
+    </div>
+    <a class="member-primary member-button-link" href="/account">Перейти в личный кабинет</a>
+  {% else %}
+    <a class="telegram-button {{ '' if telegram_available else 'disabled' }}" href="{{ '/account/telegram/start' if telegram_available else '#' }}">Подключить Telegram</a>
+    {% if not telegram_available %}<p class="member-muted">Подключение Telegram пока не настроено.</p>{% endif %}
+    <a class="member-secondary member-button-link" href="/account">Пропустить и перейти в кабинет</a>
+  {% endif %}
+</section>
+{% endblock %}

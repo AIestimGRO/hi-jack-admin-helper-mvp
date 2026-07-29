@@ -25,7 +25,7 @@
     <table><thead><tr><th>Рефовод</th><th>Кампания</th><th>Завершили тест</th><th>Наград выдано</th><th>Последний реферал</th></tr></thead>
     <tbody>{% for row in referral_stats %}<tr>
       <td><strong>{{ row.first_name or row.nickname or ('@' ~ row.username if row.username else display_phone(row.phone_local, row.phone_raw)) }}</strong>{% if row.username %}<small>@{{ row.username }}</small>{% endif %}</td>
-      <td>{{ row.campaign_title or row.campaign_code }}</td><td>{{ row.completed_referrals }}</td><td>{{ row.rewards_issued }}</td><td>{{ row.last_referral_at[:16] }}</td>
+      <td>{{ row.campaign_title or row.campaign_code }}</td><td>{{ row.completed_referrals }}</td><td>{{ row.rewards_issued }}</td><td>{{ display_datetime(row.last_referral_at) }}</td>
     </tr>{% else %}<tr><td colspan="5" class="empty">Завершённых приглашений пока нет</td></tr>{% endfor %}</tbody></table>
   </div>
 </details>
@@ -41,7 +41,7 @@
         <td><strong>{{ row.score|int }}</strong></td>
         <td><span class="{{ 'status-yes' if row.passed else 'status-no' }}">{{ 'Пройден' if row.passed else 'Не пройден' }}</span></td>
         <td>{% if row.reward_status=='used' %}<span class="status-yes">Начислен</span><small>{{ row.reward_code }}</small>{% elif row.reward_status=='issued' %}Код выдан<small>{{ row.reward_code }}</small>{% elif row.reward_status %}<span class="status-no">{{ 'Просрочен' if row.reward_status=='expired' else 'Отменён' }}</span><small>{{ row.reward_code }}</small>{% else %}<span class="status-no">Нет</span>{% endif %}</td>
-        <td>{{ row.created_at[:16] }}</td>
+        <td>{{ display_datetime(row.created_at) }}</td>
         <td class="result-name">{{ row.campaign_title or row.campaign_code }}<small>версия {{ row.campaign_version }}</small></td>
         <td><a class="result-action" href="/admin/quiz-results/{{ row.id }}">Открыть →</a></td>
       </tr>

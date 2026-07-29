@@ -322,6 +322,28 @@ def test_multiple_results_page_and_csv(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM quiz_submissions").fetchone()[0] == 5
 
 
+def test_quiz_result_time_is_displayed_in_configured_timezone(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        response = submit(client, campaign="summer", phone="9990000011", username="timezone_user")
+        assert response.status_code == 200
+        with transaction(settings.db_path) as conn:
+            submission_id = conn.execute(
+                "SELECT id FROM quiz_submissions WHERE username='timezone_user'"
+            ).fetchone()[0]
+            conn.execute(
+                "UPDATE quiz_submissions SET created_at='2026-07-29 09:42:36' WHERE id=?",
+                (submission_id,),
+            )
+        login(client)
+        results_page = client.get("/admin/quiz-results")
+        detail_page = client.get(f"/admin/quiz-results/{submission_id}")
+
+        assert "29.07.2026 12:42" in results_page.text
+        assert "29.07.2026 12:42:36" in detail_page.text
+        assert "2026-07-29 09:42:36" not in detail_page.text
+
+
 def test_master_can_configure_quiz_campaign(tmp_path):
     client, settings = make_client(tmp_path)
     with client:

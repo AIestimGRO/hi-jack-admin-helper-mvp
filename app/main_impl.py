@@ -124,6 +124,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
     templates.env.globals["display_phone"] = display_phone
 
+    def display_datetime(value: Any, with_seconds: bool = False) -> str:
+        if value is None or str(value).strip() == "":
+            return "—"
+        raw_value = str(value).strip()
+        try:
+            parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+        except ValueError:
+            return raw_value
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        local_value = parsed.astimezone(campaign_timezone)
+        return local_value.strftime("%d.%m.%Y %H:%M:%S" if with_seconds else "%d.%m.%Y %H:%M")
+
+    templates.env.globals["display_datetime"] = display_datetime
+
     static_dir = BASE_DIR / "app" / "static"
     asset_digest = hashlib.sha256()
     for asset_path in sorted(path for path in static_dir.rglob("*") if path.is_file()):
@@ -446,29 +461,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/account/telegram/start")
     async def member_telegram_start(request: Request):
         member_portal_or_404()
-        if not settings.telegram_client_id or not settings.telegram_client_secret:
+        member = current_member(request)
+        if not member:
             return member_redirect(
-                "/account/register",
-                "Подтверждение Telegram пока не настроено",
+                "/account/login",
+                "Сначала войдите в личный кабинет",
                 error=True,
             )
-        flow = member_registration_flow(request)
-        if not {"privacy", "rewards"}.issubset(flow["accepted"]):
+        if not settings.telegram_client_id or not settings.telegram_client_secret:
             return member_redirect(
-                "/account/register",
-                "Сначала ознакомьтесь с условиями участия",
+                "/account/telegram",
+                "Подключение Telegram пока не настроено",
                 error=True,
             )
         verifier, challenge = new_pkce()
         state = secrets.token_urlsafe(32)
         redirect_uri = (
-            settings.quiz_public_base_url.rstrip("/")
+            settings.public_base_url.rstrip("/")
             + "/account/telegram/callback"
         )
         request.session["member_telegram_oauth"] = {
             "state": state,
             "verifier": verifier,
             "created_at": int(utc_now().timestamp()),
+            "account_id": int(member["id"]),
         }
         return RedirectResponse(
             authorization_url(
@@ -485,27 +501,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request, code: str = "", state: str = "", error: str = ""
     ):
         member_portal_or_404()
+        member = current_member(request)
+        if not member:
+            return member_redirect(
+                "/account/login",
+                "Сначала войдите в личный кабинет",
+                error=True,
+            )
         oauth = request.session.pop("member_telegram_oauth", None)
         if error or not code or not state or not isinstance(oauth, dict):
             return member_redirect(
-                "/account/register",
-                "Не удалось подтвердить Telegram. Попробуйте ещё раз",
+                "/account/telegram",
+                "Не удалось подключить Telegram. Попробуйте ещё раз",
                 error=True,
             )
         if not hmac.compare_digest(state, str(oauth.get("state", ""))):
             return member_redirect(
-                "/account/register",
+                "/account/telegram",
                 "Проверка Telegram не совпала с начатым входом. Попробуйте ещё раз",
+                error=True,
+            )
+        if int(oauth.get("account_id", 0)) != int(member["id"]):
+            return member_redirect(
+                "/account/telegram",
+                "Сессия подключения Telegram устарела. Попробуйте ещё раз",
                 error=True,
             )
         if int(utc_now().timestamp()) - int(oauth.get("created_at", 0)) > 900:
             return member_redirect(
-                "/account/register",
-                "Подтверждение Telegram устарело. Попробуйте ещё раз",
+                "/account/telegram",
+                "Подключение Telegram устарело. Попробуйте ещё раз",
                 error=True,
             )
         redirect_uri = (
-            settings.quiz_public_base_url.rstrip("/")
+            settings.public_base_url.rstrip("/")
             + "/account/telegram/callback"
         )
         try:
@@ -517,35 +546,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 redirect_uri=redirect_uri,
                 code_verifier=str(oauth["verifier"]),
             )
-            username = normalize_username(claims.get("preferred_username"))
             telegram_user_id = str(claims.get("sub") or "").strip()
-            if not username or not telegram_user_id:
-                raise ValueError("telegram_username_required")
+            username = normalize_username(claims.get("preferred_username"))
+            if not telegram_user_id:
+                raise ValueError("telegram_identity_required")
         except Exception:
             return member_redirect(
-                "/account/register",
-                "В Telegram должен быть настроен username. Проверьте профиль и повторите вход",
+                "/account/telegram",
+                "Не удалось получить данные Telegram. Попробуйте ещё раз",
                 error=True,
             )
-        name = str(
-            claims.get("name")
-            or " ".join(
-                filter(
-                    None,
-                    [claims.get("given_name"), claims.get("family_name")],
+        try:
+            with transaction(settings.db_path) as conn:
+                linked = conn.execute(
+                    """
+                    SELECT id FROM clients
+                    WHERE telegram_user_id=? AND id<>?
+                    """,
+                    (telegram_user_id[:80], int(member["client_id"])),
+                ).fetchone()
+                if linked:
+                    raise ValueError(
+                        "Этот Telegram уже связан с другим аккаунтом"
+                    )
+                conn.execute(
+                    """
+                    UPDATE clients
+                    SET telegram_user_id=?, username=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (
+                        telegram_user_id[:80],
+                        username,
+                        int(member["client_id"]),
+                    ),
                 )
+        except (ValueError, sqlite3.IntegrityError) as exc:
+            message = (
+                str(exc)
+                if isinstance(exc, ValueError)
+                else "Этот Telegram уже связан с другим аккаунтом"
             )
-        )
-        flow = member_registration_flow(request)
-        flow["telegram_identity"] = {
-            "telegram_user_id": telegram_user_id[:80],
-            "username": username,
-            "name": name.strip()[:100],
-            "verified_at": quiz_timestamp(utc_now()),
-        }
-        request.session["member_registration_flow"] = flow
+            return member_redirect("/account/telegram", message, error=True)
         return member_redirect(
-            "/account/register", "Telegram успешно подтверждён"
+            "/account/telegram", "Telegram успешно подключён"
         )
 
     @app.get("/account/register", response_class=HTMLResponse)
@@ -576,11 +620,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 step=step,
                 documents=documents,
                 email_available=bool(settings.smtp_host and settings.smtp_from),
-                telegram_available=bool(
-                    settings.telegram_client_id
-                    and settings.telegram_client_secret
-                ),
-                telegram_identity=flow.get("telegram_identity"),
                 ok=ok,
                 error=error,
             ),
@@ -645,23 +684,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             normalized_email = normalize_email(email)
             phone_local = normalize_phone(phone)
             flow = member_registration_flow(request)
-            telegram_identity = flow.get("telegram_identity")
-            if not isinstance(telegram_identity, dict):
-                raise ValueError("Сначала подтвердите Telegram")
-            normalized_username = normalize_username(
-                telegram_identity.get("username")
-            )
-            telegram_user_id = str(
-                telegram_identity.get("telegram_user_id") or ""
-            ).strip()
-            if (
-                not normalized_email
-                or not normalized_username
-                or not telegram_user_id
-                or not phone_local
-            ):
+            if not normalized_email or not phone_local:
                 raise ValueError(
-                    "Заполните почту, подтвердите Telegram и укажите корректный телефон"
+                    "Заполните почту и укажите корректный номер телефона"
                 )
             if password != password_confirmation:
                 raise ValueError("Пароли не совпадают")
@@ -684,12 +709,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "password_hash": password_hash,
                     "phone": phone.strip()[:80],
                     "phone_local": phone_local,
-                    "telegram_username": normalized_username,
-                    "telegram_user_id": telegram_user_id,
-                    "first_name": (
-                        first_name.strip()
-                        or str(telegram_identity.get("name") or "").strip()
-                    )[:100],
+                    "first_name": first_name.strip()[:100],
                     "consents": json.loads(consents_json),
                 },
                 ensure_ascii=False,
@@ -801,8 +821,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         conn,
                         campaign="member_account",
                         phone_raw=payload["phone"],
-                        username=payload["telegram_username"],
-                        telegram_user_id=payload["telegram_user_id"],
+                        username="",
+                        telegram_user_id="",
                         name=payload.get("first_name", ""),
                         email=payload["email"],
                         source="member_portal",
@@ -872,7 +892,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise ValueError("Неверный код")
             request.session.pop("member_registration_code_id", None)
             request.session.pop("member_registration_flow", None)
-            response = RedirectResponse("/account", status_code=303)
+            response = RedirectResponse("/account/telegram", status_code=303)
             set_member_cookie(response, member_token)
             return response
         except (ValueError, sqlite3.IntegrityError) as exc:
@@ -1236,6 +1256,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 rating=rating,
                 ledger=ledger,
                 consents=consents,
+                ok=ok,
+                error=error,
+            ),
+        )
+
+    @app.get("/account/telegram", response_class=HTMLResponse)
+    async def member_telegram_page(
+        request: Request, ok: str = "", error: str = ""
+    ):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        return templates.TemplateResponse(
+            request,
+            "member_telegram.html",
+            member_context(
+                request,
+                member=member,
+                telegram_available=bool(
+                    settings.telegram_client_id
+                    and settings.telegram_client_secret
+                ),
                 ok=ok,
                 error=error,
             ),

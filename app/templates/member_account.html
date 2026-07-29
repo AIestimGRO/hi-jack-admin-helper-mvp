@@ -23,7 +23,16 @@
   <h2>Личные данные</h2>
   <dl class="profile-data">
     <div><dt>Почта</dt><dd>{{ member.email }}</dd></div>
-    <div><dt>Telegram</dt><dd>{{ '@' ~ member.username if member.username else 'Не указан' }}</dd></div>
+    <div>
+      <dt>Telegram</dt>
+      <dd>
+        {% if member.telegram_user_id %}
+          {{ '@' ~ member.username if member.username else 'Подключён' }}
+        {% else %}
+          <a class="profile-action" href="/account/telegram">Подключить</a>
+        {% endif %}
+      </dd>
+    </div>
     <div><dt>Телефон</dt><dd>{{ display_phone(member.phone_local) if member.phone_local else 'Не указан' }}</dd></div>
   </dl>
   <div class="consent-list">

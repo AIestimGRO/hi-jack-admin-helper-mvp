@@ -31,24 +31,18 @@
   {% elif step == 'profile' %}
     <p class="member-eyebrow">Создание аккаунта · шаг 3 из 3</p>
     <h1>Личные данные</h1>
-    <p class="member-muted">Почта станет логином. Подтверждённый Telegram и телефон нужны для безопасной связи с вашей карточкой участника клуба.</p>
+    <p class="member-muted">Почта станет логином, а номер телефона свяжет аккаунт с вашей карточкой участника клуба. Telegram можно будет подключить следующим отдельным шагом.</p>
     {% if not email_available %}
       <div class="member-alert error">Регистрация откроется после настройки отправки писем.</div>
     {% endif %}
-    {% if telegram_identity %}
-      <div class="telegram-confirmed"><span>Telegram подтверждён</span><strong>@{{ telegram_identity.username }}</strong></div>
-    {% else %}
-      <a class="telegram-button {{ '' if telegram_available else 'disabled' }}" href="{{ '/account/telegram/start' if telegram_available else '#' }}">Подтвердить через Telegram</a>
-      {% if not telegram_available %}<p class="member-muted">Вход через Telegram пока не настроен.</p>{% endif %}
-    {% endif %}
-    <form class="member-form" action="/account/register/request-code" method="post">
+    <form class="member-form" action="/account/register/request-code" method="post" data-registration-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Имя <small>необязательно</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться"></label>
       <label>Электронная почта<input name="email" type="email" maxlength="254" autocomplete="email" required></label>
       <label>Номер телефона<input name="phone" type="tel" maxlength="80" autocomplete="tel" placeholder="+7 999 123-45-67" required></label>
-      <label>Пароль<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required><small>Не менее 10 символов, хотя бы одна буква и цифра</small></label>
-      <label>Повторите пароль<input name="password_confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
-      <button class="member-primary" type="submit" {% if not email_available or not telegram_identity %}disabled{% endif %}>Получить код на почту</button>
+      <label>Пароль<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required data-registration-password><small>Не менее 10 символов, хотя бы одна буква и цифра</small></label>
+      <label>Повторите пароль<input name="password_confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password" required data-registration-password-confirmation><small class="password-match-message" data-password-match-message hidden>Пароли не совпадают</small></label>
+      <button class="member-primary" type="submit" {% if not email_available %}disabled{% endif %} data-registration-submit>Получить код на почту</button>
     </form>
   {% else %}
     <p class="member-eyebrow">Подтверждение почты</p>

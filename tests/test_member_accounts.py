@@ -20,6 +20,8 @@ def make_member_client(
         secret_key="member-test-secret-key-that-is-longer-than-32-characters",
         db_path=tmp_path / "member.sqlite3",
         secure_cookie=False,
+        public_base_url="https://club.example.test",
+        quiz_public_base_url="https://quiz.example.test",
         smtp_host="smtp.example.test",
         smtp_from="club@example.test",
         telegram_client_id="telegram-client",
@@ -78,17 +80,20 @@ def accept_registration_documents(client: TestClient) -> None:
     assert response.status_code == 303
 
 
-def verify_registration_telegram(client: TestClient, monkeypatch) -> None:
+def connect_member_telegram(
+    client: TestClient, monkeypatch, *, username: str | None = "poker_player"
+) -> None:
     captured: dict[str, str] = {}
 
     def fake_authorization_url(**kwargs):
         captured["state"] = kwargs["state"]
+        captured["redirect_uri"] = kwargs["redirect_uri"]
         return "https://oauth.telegram.example/authorize"
 
     def fake_exchange(**kwargs):
         return {
             "sub": "tg-permanent-101",
-            "preferred_username": "poker_player",
+            "preferred_username": username,
             "name": "Алекс",
         }
 
@@ -102,14 +107,20 @@ def verify_registration_telegram(client: TestClient, monkeypatch) -> None:
         "/account/telegram/start", follow_redirects=False
     )
     assert started.status_code == 302
+    assert (
+        captured["redirect_uri"]
+        == "https://club.example.test/account/telegram/callback"
+    )
     callback = client.get(
         f"/account/telegram/callback?code=oauth-code&state={captured['state']}",
         follow_redirects=False,
     )
     assert callback.status_code == 303
-    profile = client.get("/account/register")
-    assert "Telegram подтверждён" in profile.text
-    assert "@poker_player" in profile.text
+    assert callback.headers["location"].startswith("/account/telegram?")
+    telegram_page = client.get("/account/telegram")
+    assert "Telegram подключён" in telegram_page.text
+    if username:
+        assert f"@{username}" in telegram_page.text
 
 
 def request_registration_code(
@@ -160,7 +171,14 @@ def test_registration_consents_account_session_and_profile(
     monkeypatch.setattr("app.main_impl.send_member_email_code", fake_send)
     with client:
         accept_registration_documents(client)
-        verify_registration_telegram(client, monkeypatch)
+        profile = client.get("/account/register")
+        assert "Telegram можно будет подключить следующим отдельным шагом" in profile.text
+        assert "Подтвердить через Telegram" not in profile.text
+        submit = re.search(
+            r"<button[^>]+data-registration-submit[^>]*>", profile.text
+        )
+        assert submit
+        assert "disabled" not in submit.group(0)
         request_registration_code(client, captured)
 
         verify = client.get("/account/register")
@@ -186,8 +204,18 @@ def test_registration_consents_account_session_and_profile(
             follow_redirects=False,
         )
         assert created.status_code == 303
-        assert created.headers["location"] == "/account"
+        assert created.headers["location"] == "/account/telegram"
         assert "hjc_member_session" in created.cookies
+
+        telegram_step = client.get("/account/telegram")
+        assert telegram_step.status_code == 200
+        assert "Подключить Telegram?" in telegram_step.text
+        assert "Пропустить и перейти в кабинет" in telegram_step.text
+
+        skipped_profile = client.get("/account")
+        assert skipped_profile.status_code == 200
+        assert "Подключить" in skipped_profile.text
+        connect_member_telegram(client, monkeypatch)
 
         profile = client.get("/account")
         assert profile.status_code == 200
@@ -261,7 +289,6 @@ def test_login_logout_and_password_reset(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("app.main_impl.send_member_email_code", fake_send)
     with client:
         accept_registration_documents(client)
-        verify_registration_telegram(client, monkeypatch)
         request_registration_code(client, captured)
         verify = client.get("/account/register")
         client.post(
@@ -350,6 +377,49 @@ def test_login_logout_and_password_reset(tmp_path: Path, monkeypatch) -> None:
             ).fetchone()[0]
             >= 1
         )
+
+
+def test_telegram_connect_requires_account_and_accepts_missing_username(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    captured: dict[str, str] = {}
+
+    def fake_send(**kwargs):
+        captured[kwargs["purpose"]] = kwargs["code"]
+
+    monkeypatch.setattr("app.main_impl.send_member_email_code", fake_send)
+    with client:
+        anonymous = client.get(
+            "/account/telegram/start", follow_redirects=False
+        )
+        assert anonymous.status_code == 303
+        assert anonymous.headers["location"].startswith("/account/login?")
+
+        accept_registration_documents(client)
+        request_registration_code(client, captured)
+        verify = client.get("/account/register")
+        client.post(
+            "/account/register/verify",
+            data={
+                "code": captured["register"],
+                "csrf_token": csrf_from(verify),
+            },
+            follow_redirects=False,
+        )
+        connect_member_telegram(client, monkeypatch, username=None)
+        account_page = client.get("/account")
+        assert "Подключён" in account_page.text
+
+    with connect(settings.db_path) as conn:
+        client_row = conn.execute(
+            """
+            SELECT c.* FROM clients c
+            JOIN member_accounts ma ON ma.client_id=c.id
+            """
+        ).fetchone()
+        assert client_row["telegram_user_id"] == "tg-permanent-101"
+        assert client_row["username"] is None
 
 
 def test_daily_414_campaign_is_isolated_from_classic_quiz(
