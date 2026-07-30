@@ -3,22 +3,51 @@ from datetime import date, datetime, timedelta
 from app.db import connect, init_db, transaction
 from app.services.daily_414 import (
     award_daily_jackcoin,
+    final_table_candidate_eligible,
+    final_table_starts_at,
     main_prize_eligible,
+)
+from app.services.daily_414_final import (
+    ensure_final_table,
+    reconcile_final_table,
 )
 from app.services.quiz import load_builder_questions
 
 
-def test_daily_414_main_prize_has_thirty_second_start_grace() -> None:
+def test_daily_414_final_table_entry_window_is_five_minutes() -> None:
     start = datetime(2026, 7, 29, 18, 14)
     campaign = {"active_from": start.isoformat(timespec="minutes")}
 
     assert main_prize_eligible(
         campaign,
-        started_at=start + timedelta(seconds=30),
+        started_at=start + timedelta(minutes=5),
     )
     assert not main_prize_eligible(
         campaign,
-        started_at=start + timedelta(seconds=31),
+        started_at=start + timedelta(minutes=5, seconds=1),
+    )
+
+
+def test_daily_414_candidate_must_finish_before_shared_final_start() -> None:
+    start = datetime(2026, 7, 29, 18, 14)
+    campaign = {"active_from": start.isoformat(timespec="minutes")}
+    final_start = final_table_starts_at(campaign)
+
+    assert final_start == start + timedelta(minutes=9, seconds=14)
+    assert final_table_candidate_eligible(
+        campaign,
+        started_at=start + timedelta(minutes=4, seconds=59),
+        finished_at=final_start,
+    )
+    assert not final_table_candidate_eligible(
+        campaign,
+        started_at=start + timedelta(minutes=4, seconds=59),
+        finished_at=final_start + timedelta(milliseconds=1),
+    )
+    assert not final_table_candidate_eligible(
+        campaign,
+        started_at=start + timedelta(minutes=5, seconds=1),
+        finished_at=final_start,
     )
 
 
@@ -151,3 +180,220 @@ def test_daily_414_question_order_ignores_visual_section_order(tmp_path) -> None
         questions = load_builder_questions(conn, "daily_order")
 
     assert [question["id"] for question in questions] == ["q1", "q2"]
+
+
+def _seed_final_candidate(
+    conn,
+    *,
+    campaign_code: str,
+    client_number: int,
+    correct_count: int,
+    completion_time_ms: int,
+) -> int:
+    client_id = int(
+        conn.execute(
+            "INSERT INTO clients(first_name, source) VALUES (?, 'test')",
+            (f"Игрок {client_number}",),
+        ).lastrowid
+    )
+    return int(
+        conn.execute(
+            """
+            INSERT INTO quiz_submissions(
+                campaign_code, campaign_version, client_id, phone_raw,
+                phone_local, answers_json, correct_count, max_correct_count,
+                completion_time_ms, main_prize_eligible, ip_hash
+            ) VALUES ('daily_final', 1, ?, ?, ?, '{}', ?, 10, ?, 1, ?)
+            """,
+            (
+                client_id,
+                str(client_number),
+                str(client_number),
+                correct_count,
+                completion_time_ms,
+                f"ip-{client_number}",
+            ),
+        ).lastrowid
+    )
+
+
+def test_daily_414_final_table_takes_top_ten_in_score_time_order(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "daily-final-top-ten.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 7, 30, 18, 23, 14)
+    with transaction(db_path) as conn:
+        submission_ids = [
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=10 - (index // 4),
+                completion_time_ms=10_000 + index,
+            )
+            for index in range(1, 12)
+        ]
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}],
+        )
+        reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start,
+        )
+        finalists = conn.execute(
+            """
+            SELECT submission_id, seed FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+
+    assert len(finalists) == 10
+    assert [row["submission_id"] for row in finalists] == submission_ids[:10]
+
+
+def test_daily_414_final_questions_eliminate_synchronously(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-elimination.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 7, 30, 18, 23, 14)
+    questions = [{"id": "f1"}, {"id": "f2"}]
+    with transaction(db_path) as conn:
+        for index in range(1, 4):
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=10,
+                completion_time_ms=10_000 + index,
+            )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=questions,
+        )
+        live = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start,
+        )
+        finalists = conn.execute(
+            """
+            SELECT * FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+        assert live["status"] == "live"
+        assert len(finalists) == 3
+
+        for finalist in finalists[:2]:
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_answers(
+                    final_table_id, finalist_id, question_index, question_code,
+                    answer_json, is_correct, response_time_ms, answered_at
+                ) VALUES (?, ?, 0, 'f1', '"yes"', 1, 1000, ?)
+                """,
+                (table["id"], finalist["id"], start.isoformat()),
+            )
+        after_first = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=30),
+        )
+        statuses = conn.execute(
+            """
+            SELECT seed, status FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+        assert after_first["current_question_index"] == 1
+        assert [row["status"] for row in statuses] == [
+            "active",
+            "active",
+            "eliminated",
+        ]
+
+        second = finalists[1]
+        conn.execute(
+            """
+            INSERT INTO daily_414_final_answers(
+                final_table_id, finalist_id, question_index, question_code,
+                answer_json, is_correct, response_time_ms, answered_at
+            ) VALUES (?, ?, 1, 'f2', '"yes"', 1, 900, ?)
+            """,
+            (
+                table["id"],
+                second["id"],
+                (start + timedelta(seconds=31)).isoformat(),
+            ),
+        )
+        completed = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=60),
+        )
+        winner = conn.execute(
+            """
+            SELECT seed, status FROM daily_414_finalists
+            WHERE final_table_id=? AND status='winner'
+            """,
+            (table["id"],),
+        ).fetchone()
+
+    assert completed["status"] == "completed"
+    assert winner["seed"] == 2
+
+
+def test_daily_414_final_round_keeps_table_when_nobody_is_correct(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "daily-final-redeal.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 7, 30, 18, 23, 14)
+    with transaction(db_path) as conn:
+        for index in range(1, 3):
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=9,
+                completion_time_ms=12_000 + index,
+            )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}, {"id": "f2"}],
+        )
+        reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start,
+        )
+        after_missed_question = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=30),
+        )
+        active_count = conn.execute(
+            """
+            SELECT COUNT(*) FROM daily_414_finalists
+            WHERE final_table_id=? AND status='active'
+            """,
+            (table["id"],),
+        ).fetchone()[0]
+
+    assert after_missed_question["status"] == "live"
+    assert after_missed_question["current_question_index"] == 1
+    assert active_count == 2

@@ -286,6 +286,16 @@ body {
   font-weight: 850;
   text-transform: uppercase;
 }
+.hj-stage-badge.final {
+  border-color: rgba(213, 165, 71, .45);
+  background: rgba(213, 165, 71, .13);
+  color: #f2cb78;
+}
+.hj-round-section + .hj-round-section {
+  margin-top: 34px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
 
 .hj-text-action {
   justify-self: start;

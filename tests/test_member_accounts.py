@@ -638,6 +638,29 @@ def seed_daily_campaign(settings: Settings) -> None:
                     f"d{index}_no",
                 ),
             )
+        final_question_id = int(
+            conn.execute(
+                """
+                INSERT INTO quiz_questions(
+                    campaign_code, code, type, title, game_round,
+                    required, points, position, is_active
+                ) VALUES (
+                    'daily_test', 'final_1', 'single_choice',
+                    'Вопрос финального стола', 'final', 1, 1, 10, 1
+                )
+                """
+            ).lastrowid
+        )
+        conn.execute(
+            """
+            INSERT INTO quiz_options(
+                question_id, code, text, is_correct, position
+            ) VALUES
+                (?, 'final_yes', 'Верно', 1, 10),
+                (?, 'final_no', 'Неверно', 0, 20)
+            """,
+            (final_question_id, final_question_id),
+        )
 
 
 def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
@@ -652,7 +675,7 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         assert page.status_code == 200
         assert 'data-campaign-type="daily_414"' in page.text
         assert "СЕСТЬ ЗА СТОЛ" in page.text
-        assert "RIVER" in page.text
+        assert "РИВЕР" in page.text
 
         meta = client.get(
             "/api/quiz/questions?campaign=daily_test"
@@ -744,7 +767,16 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         }
         assert result["main_prize_eligible"] is True
         assert result["daily_place"] == 1
+        assert result["final_table_available"] is True
+        assert result["final_table_starts_at"]
         assert result["retry_allowed"] is False
+
+        lobby = client.get(
+            "/api/quiz/final-table/status?campaign=daily_test"
+        )
+        assert lobby.status_code == 200
+        assert lobby.json()["state"] == "lobby"
+        assert lobby.json()["provisional_place"] == 1
 
         blocked = client.post(
             "/api/quiz/start",
@@ -772,3 +804,115 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
             (client_id,),
         ).fetchone()
         assert progress["current_streak"] == 1
+
+
+def test_daily_414_final_answer_is_saved_once(tmp_path: Path) -> None:
+    client, settings = make_member_client(tmp_path)
+    with client:
+        client_id = seed_daily_member(client, settings)
+        local_now = datetime.now(ZoneInfo(settings.timezone_name)).replace(
+            tzinfo=None
+        )
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO quiz_campaigns(
+                    code, title, campaign_type, quiz_time_limit_seconds,
+                    max_attempts, current_version, active_from, active_until
+                ) VALUES (
+                    'daily_live_final', 'Живой финал', 'daily_414',
+                    254, 1, 1, ?, ?
+                )
+                """,
+                (
+                    (local_now - timedelta(minutes=9, seconds=15)).isoformat(
+                        timespec="seconds"
+                    ),
+                    (local_now + timedelta(hours=1)).isoformat(
+                        timespec="seconds"
+                    ),
+                ),
+            )
+            question_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO quiz_questions(
+                        campaign_code, code, type, title, game_round,
+                        position, is_active
+                    ) VALUES (
+                        'daily_live_final', 'final_live_1',
+                        'single_choice', 'Кто победил?', 'final', 10, 1
+                    )
+                    """
+                ).lastrowid
+            )
+            conn.execute(
+                """
+                INSERT INTO quiz_options(
+                    question_id, code, text, is_correct, position
+                ) VALUES
+                    (?, 'final_live_yes', 'Первый игрок', 1, 10),
+                    (?, 'final_live_no', 'Второй игрок', 0, 20)
+                """,
+                (question_id, question_id),
+            )
+            second_client_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(
+                        first_name, phone_raw, phone_local, source
+                    ) VALUES ('Соперник', '9990000002', '9990000002', 'test')
+                    """
+                ).lastrowid
+            )
+            for submission_client_id, phone, completion in (
+                (client_id, "9990000001", 20_000),
+                (second_client_id, "9990000002", 21_000),
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO quiz_submissions(
+                        campaign_code, campaign_version, client_id,
+                        phone_raw, phone_local, answers_json, correct_count,
+                        max_correct_count, completion_time_ms,
+                        main_prize_eligible, ip_hash
+                    ) VALUES (
+                        'daily_live_final', 1, ?, ?, ?, '{}', 10, 10, ?, 1, ?
+                    )
+                    """,
+                    (
+                        submission_client_id,
+                        phone,
+                        phone,
+                        completion,
+                        f"ip-{submission_client_id}",
+                    ),
+                )
+
+        status = client.get(
+            "/api/quiz/final-table/status?campaign=daily_live_final"
+        )
+        assert status.status_code == 200
+        assert status.json()["state"] == "final_question"
+        assert status.json()["active_count"] == 2
+
+        saved = client.post(
+            "/api/quiz/final-table/answer",
+            json={
+                "campaign": "daily_live_final",
+                "question_index": 0,
+                "answer": "final_live_yes",
+            },
+        )
+        assert saved.status_code == 200
+        assert saved.json()["answered"] is True
+
+        changed = client.post(
+            "/api/quiz/final-table/answer",
+            json={
+                "campaign": "daily_live_final",
+                "question_index": 0,
+                "answer": "final_live_no",
+            },
+        )
+        assert changed.status_code == 409

@@ -44,14 +44,14 @@
 
     {% if campaign_type == 'daily_414' %}
     <section class="quiz-screen daily-414-screen" data-screen="daily-prize">
-      <p class="quiz-kicker">Сегодня на столе</p>
+      <p class="quiz-kicker">Сегодня на кону</p>
       <h2>Главный приз дня</h2>
       <div class="daily-prize-card">
         <span>♠</span>
         <strong>{{ daily_prize_title }}</strong>
         {% if daily_prize_amount %}<small>Количество: {{ daily_prize_amount }}</small>{% endif %}
       </div>
-      <p class="quiz-lead small">В основной розыгрыш попадают участники, которые сели за стол вовремя. Опоздавшие всё равно получают JACKCOIN и продолжают серию дней.</p>
+      <p class="quiz-lead small">За финальный стол попадут до 10 участников: сначала по числу правильных ответов, затем по скорости. Начать отбор нужно в первые 5 минут. Опоздавшие всё равно проходят квиз, получают награду и JACKCOIN.</p>
       <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
     </section>
 
@@ -70,10 +70,45 @@
 
     <section class="quiz-screen daily-414-screen river-screen" data-screen="river">
       <p class="quiz-kicker">Последняя улица</p>
-      <div class="river-mark">RIVER</div>
-      <h2>Решающий вопрос</h2>
-      <p class="quiz-lead">Ответ уже нельзя будет изменить. Время продолжает идти.</p>
+      <div class="river-mark">РИВЕР</div>
+      <h2>Последняя карта основного раунда</h2>
+      <p class="quiz-lead">Десятый вопрос завершает отборочный квиз. Ответ изменить нельзя, время продолжает идти.</p>
       <button class="quiz-primary" type="button" data-action="river-open">ОТКРЫТЬ РИВЕР</button>
+    </section>
+
+    <section class="quiz-screen daily-414-screen final-lobby-screen" data-screen="final-lobby">
+      <p class="quiz-kicker">Основной раунд завершён</p>
+      <h2>Лобби финального стола</h2>
+      <p class="quiz-lead final-lobby-message">Собираем десятку лучших игроков.</p>
+      <div class="final-lobby-countdown" aria-live="polite">
+        <small>Финальный стол начнётся через</small>
+        <strong>0:00</strong>
+      </div>
+      <div class="final-lobby-place" hidden></div>
+      <p class="quiz-lead small">В 9:14 после старта игры первый финальный вопрос откроется одновременно у всех участников.</p>
+    </section>
+
+    <section class="quiz-screen final-table-screen" data-screen="final-question">
+      <div class="final-table-heading">
+        <p class="quiz-section-label">ФИНАЛЬНЫЙ СТОЛ</p>
+        <span class="final-active-count"></span>
+      </div>
+      <div class="final-question-timer"><strong>0:30</strong><div><span></span></div></div>
+      <p class="quiz-step final-question-number"></p>
+      <img class="quiz-question-image final-question-image" alt="" hidden>
+      <h2 class="final-question-title"></h2>
+      <div class="quiz-options final-question-options"></div>
+      <p class="quiz-validation final-question-validation" role="alert"></p>
+      <button class="quiz-primary final-answer-button" type="button" data-action="final-answer">Зафиксировать ответ</button>
+      <p class="final-answer-wait" hidden>Ответ принят. Ждём остальных игроков.</p>
+    </section>
+
+    <section class="quiz-screen daily-414-screen final-outcome-screen" data-screen="final-outcome">
+      <div class="quiz-success-mark final-outcome-mark">♠</div>
+      <p class="quiz-kicker final-outcome-kicker">Финальный стол</p>
+      <h2 class="final-outcome-title"></h2>
+      <p class="quiz-lead final-outcome-message"></p>
+      <a class="quiz-primary final-account-link" href="/account?tab=stats">Открыть статистику</a>
     </section>
     {% endif %}
 

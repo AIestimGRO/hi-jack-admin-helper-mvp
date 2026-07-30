@@ -7,7 +7,10 @@ from typing import Any
 
 DAILY_414_TIME_LIMIT_SECONDS = 254
 DAILY_414_QUESTION_COUNT = 10
-DAILY_414_ON_TIME_GRACE_SECONDS = 30
+DAILY_414_ENTRY_WINDOW_SECONDS = 5 * 60
+DAILY_414_FINAL_TABLE_DELAY_SECONDS = DAILY_414_ENTRY_WINDOW_SECONDS + DAILY_414_TIME_LIMIT_SECONDS
+DAILY_414_FINAL_QUESTION_SECONDS = 30
+DAILY_414_FINAL_TABLE_SIZE = 10
 
 JACKCOIN_PER_CORRECT = 5
 JACKCOIN_COMPLETION_BONUS = 10
@@ -65,8 +68,35 @@ def main_prize_eligible(
     if not active_from:
         return False
     start = datetime.fromisoformat(str(active_from))
-    cutoff = start + timedelta(seconds=DAILY_414_ON_TIME_GRACE_SECONDS)
+    cutoff = start + timedelta(seconds=DAILY_414_ENTRY_WINDOW_SECONDS)
     return start <= started_at <= cutoff
+
+
+def final_table_starts_at(
+    campaign: sqlite3.Row | dict[str, Any],
+) -> datetime | None:
+    active_from = campaign["active_from"]
+    if not active_from:
+        return None
+    return datetime.fromisoformat(str(active_from)) + timedelta(
+        seconds=DAILY_414_FINAL_TABLE_DELAY_SECONDS
+    )
+
+
+def final_table_candidate_eligible(
+    campaign: sqlite3.Row | dict[str, Any],
+    *,
+    started_at: datetime,
+    finished_at: datetime,
+    timed_out: bool = False,
+) -> bool:
+    final_start = final_table_starts_at(campaign)
+    return bool(
+        not timed_out
+        and final_start
+        and main_prize_eligible(campaign, started_at=started_at)
+        and finished_at <= final_start
+    )
 
 
 def elapsed_milliseconds(*, started_at: datetime, finished_at: datetime) -> int:

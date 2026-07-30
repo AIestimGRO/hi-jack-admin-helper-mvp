@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
     section_id INTEGER REFERENCES quiz_sections(id) ON DELETE SET NULL,
     placeholder TEXT,
     accepted_text_answers_json TEXT NOT NULL DEFAULT '[]',
+    game_round TEXT NOT NULL DEFAULT 'main' CHECK(game_round IN ('main', 'final')),
     required INTEGER NOT NULL DEFAULT 1,
     points INTEGER NOT NULL DEFAULT 1 CHECK(points >= 0),
     time_limit_seconds INTEGER,
@@ -493,6 +494,60 @@ CREATE TABLE IF NOT EXISTS daily_414_progress (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS daily_414_final_tables (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_code TEXT NOT NULL,
+    campaign_version INTEGER NOT NULL,
+    starts_at TEXT NOT NULL,
+    questions_snapshot_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'waiting'
+        CHECK(status IN ('waiting', 'live', 'completed', 'unavailable')),
+    current_question_index INTEGER NOT NULL DEFAULT 0,
+    winner_submission_id INTEGER REFERENCES quiz_submissions(id) ON DELETE SET NULL,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(campaign_code, campaign_version)
+);
+CREATE INDEX IF NOT EXISTS ix_daily_414_final_tables_start
+    ON daily_414_final_tables(starts_at, status);
+
+CREATE TABLE IF NOT EXISTS daily_414_finalists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    final_table_id INTEGER NOT NULL REFERENCES daily_414_final_tables(id) ON DELETE CASCADE,
+    submission_id INTEGER NOT NULL REFERENCES quiz_submissions(id) ON DELETE CASCADE,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    seed INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'eliminated', 'winner')),
+    eliminated_question_index INTEGER,
+    final_correct_count INTEGER NOT NULL DEFAULT 0,
+    final_response_time_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(final_table_id, submission_id),
+    UNIQUE(final_table_id, client_id),
+    UNIQUE(final_table_id, seed)
+);
+CREATE INDEX IF NOT EXISTS ix_daily_414_finalists_status
+    ON daily_414_finalists(final_table_id, status, seed);
+
+CREATE TABLE IF NOT EXISTS daily_414_final_answers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    final_table_id INTEGER NOT NULL REFERENCES daily_414_final_tables(id) ON DELETE CASCADE,
+    finalist_id INTEGER NOT NULL REFERENCES daily_414_finalists(id) ON DELETE CASCADE,
+    question_index INTEGER NOT NULL,
+    question_code TEXT NOT NULL,
+    answer_json TEXT NOT NULL,
+    is_correct INTEGER NOT NULL DEFAULT 0,
+    response_time_ms INTEGER NOT NULL DEFAULT 0,
+    answered_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(finalist_id, question_index)
+);
+CREATE INDEX IF NOT EXISTS ix_daily_414_final_answers_round
+    ON daily_414_final_answers(final_table_id, question_index, is_correct);
+
 CREATE TABLE IF NOT EXISTS club_rating_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     snapshot_date TEXT NOT NULL UNIQUE,
@@ -631,6 +686,13 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_questions", "image_path TEXT")
         _ensure_column(conn, "quiz_questions", "section_id INTEGER REFERENCES quiz_sections(id) ON DELETE SET NULL")
         _ensure_column(conn, "quiz_questions", "accepted_text_answers_json TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "quiz_questions", "game_round TEXT NOT NULL DEFAULT 'main'")
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_quiz_questions_round
+            ON quiz_questions(campaign_code, game_round, position, id)
+            """
+        )
         _ensure_column(conn, "quiz_attempts", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_submissions", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_reward_codes", "campaign_version INTEGER NOT NULL DEFAULT 1")

@@ -4,7 +4,7 @@
 
   const campaign = app.dataset.campaign || 'default';
   const isDaily414 = app.dataset.campaignType === 'daily_414';
-  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, scheduleTimer: null, serverOffset: 0, submitting: false, finishing: false, shareUrl: null, riverShown: false };
+  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, scheduleTimer: null, serverOffset: 0, submitting: false, finishing: false, shareUrl: null, riverShown: false, finalPoll: null, finalTimer: null, finalQuestionIndex: null, finalAnswer: null, finalResult: null };
   const screens = [...app.querySelectorAll('[data-screen]')];
   const show = (name) => screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
   const errorText = (message) => typeof message === 'string' ? message : 'Попробуй ещё раз чуть позже.';
@@ -25,7 +25,7 @@
   async function jsonRequest(url, body) {
     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
     const data = await readJson(response, 'Не удалось выполнить действие. Обнови страницу и попробуй ещё раз.');
-    if (!response.ok) throw new Error(data.error || 'Не удалось выполнить действие');
+    if (!response.ok) throw new Error(data.detail || data.error || 'Не удалось выполнить действие');
     return data;
   }
 
@@ -132,6 +132,7 @@
       app.querySelector('[data-content="welcome-text"]').textContent = data.content.welcome_text;
       app.querySelector('[data-content="identity-text"]').textContent = data.content.identity_text;
       app.querySelector('[data-action="identify"]').textContent = data.content.start_button_text;
+      if (isDaily414 && await resumeFinalFlow()) return;
       const identityResponse = await fetch(`/api/quiz/identity?campaign=${encodeURIComponent(campaign)}`, { headers: { Accept: 'application/json' } });
       const identity = await readJson(identityResponse, 'Не удалось проверить сохранённый вход.');
       if (!identityResponse.ok) throw new Error(identity.error || 'Не удалось проверить сохранённый вход');
@@ -306,7 +307,7 @@
     if (questionBackground) screen.style.setProperty('--section-background', `url("${questionBackground}")`);
     else screen.style.removeProperty('--section-background');
     const sectionLabel = app.querySelector('.quiz-section-label');
-    const stageNames = { preflop: 'ПРЕФЛОП', flop: 'ФЛОП', turn: 'ТЁРН', river: 'РИВЕР' };
+    const stageNames = { preflop: 'ПРЕФЛОП', flop: 'ФЛОП', turn: 'ТЕРН', river: 'РИВЕР' };
     const sectionTitle = isDaily414 ? stageNames[question.game_stage] : section.title;
     sectionLabel.hidden = !sectionTitle;
     sectionLabel.textContent = sectionTitle || '';
@@ -384,6 +385,15 @@
   }
 
   function showResult(data) {
+    state.finalResult = data;
+    if (
+      data.campaign_type === 'daily_414'
+      && data.main_prize_eligible
+      && data.final_table_available
+    ) {
+      startFinalLobby(data);
+      return;
+    }
     const title = app.querySelector('.quiz-success-title'); const mark = app.querySelector('.quiz-success-mark');
     app.classList.remove('quiz-winner', 'quiz-not-won'); title.textContent = data.title || 'Спасибо!';
     if (data.outcome === 'won') { mark.textContent = '★'; app.classList.add('quiz-winner'); launchConfetti(); }
@@ -402,10 +412,10 @@
         const prize = dailyResult.querySelector('.daily-result-prize');
         if (data.main_prize_eligible) {
           prize.textContent = data.daily_place
-            ? `Предварительное место за столом: ${data.daily_place}. Ты участвуешь в розыгрыше главного приза.`
-            : 'Ты участвуешь в розыгрыше главного приза.';
+            ? `Предварительное место отбора: ${data.daily_place}. Финальный стол начнётся одновременно для всех.`
+            : 'Результат участвует в отборе за финальный стол.';
         } else {
-          prize.textContent = 'JACKCOIN и серия сохранены. В розыгрыш главного приза этот результат не входит.';
+          prize.textContent = 'JACKCOIN, награда и серия сохранены. Отбор за финальный стол уже закрыт.';
         }
       }
     }
@@ -421,6 +431,234 @@
     share.hidden = !state.shareUrl;
     share.querySelector('.quiz-share-status').textContent = '';
     show('success');
+  }
+
+  async function fetchFinalStatus() {
+    const response = await fetch(
+      `/api/quiz/final-table/status?campaign=${encodeURIComponent(campaign)}`,
+      { headers: { Accept: 'application/json' } },
+    );
+    const data = await readJson(response, 'Не удалось обновить финальный стол.');
+    if (!response.ok) throw new Error(data.detail || data.error || 'Не удалось обновить финальный стол');
+    return data;
+  }
+
+  async function resumeFinalFlow() {
+    try {
+      const data = await fetchFinalStatus();
+      if (data.state === 'main_round') return false;
+      handleFinalStatus(data);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function stopFinalQuestionTimer() {
+    if (state.finalTimer) window.clearInterval(state.finalTimer);
+    state.finalTimer = null;
+  }
+
+  function stopFinalFlow() {
+    stopFinalQuestionTimer();
+    if (state.finalPoll) window.clearInterval(state.finalPoll);
+    state.finalPoll = null;
+  }
+
+  function startFinalPolling() {
+    if (state.finalPoll) return;
+    state.finalPoll = window.setInterval(async () => {
+      try {
+        handleFinalStatus(await fetchFinalStatus());
+      } catch (_) {
+        // A later poll can recover from a short network interruption.
+      }
+    }, 1000);
+  }
+
+  function renderFinalLobby(data = {}) {
+    stopFinalQuestionTimer();
+    const startsAt = Date.parse(data.starts_at || state.finalResult?.final_table_starts_at || '');
+    const message = app.querySelector('.final-lobby-message');
+    const place = app.querySelector('.final-lobby-place');
+    const result = state.finalResult;
+    message.textContent = result
+      ? `${result.correct_count} из ${result.max_correct_count} правильно · +${result.jackcoin_awarded} JACKCOIN.`
+      : (data.message || 'Основной раунд завершён. Собираем десятку лучших игроков.');
+    const provisionalPlace = data.provisional_place || result?.daily_place;
+    place.hidden = !provisionalPlace;
+    if (provisionalPlace) {
+      place.textContent = `Сейчас вы на ${provisionalPlace}-м месте отбора. В финал попадут не более 10 игроков.`;
+    }
+    const output = app.querySelector('.final-lobby-countdown strong');
+    const tick = () => {
+      const remaining = Number.isFinite(startsAt) ? Math.max(0, startsAt - scheduledNow()) : 0;
+      output.textContent = formatTime(remaining);
+    };
+    tick();
+    stopFinalQuestionTimer();
+    state.finalTimer = window.setInterval(tick, 250);
+    show('final-lobby');
+    startFinalPolling();
+  }
+
+  function startFinalLobby(result) {
+    state.finalResult = result;
+    renderFinalLobby({
+      starts_at: result.final_table_starts_at,
+      provisional_place: result.daily_place,
+    });
+    fetchFinalStatus().then(handleFinalStatus).catch(() => {});
+  }
+
+  function renderFinalQuestion(data) {
+    startFinalPolling();
+    const isNewQuestion = state.finalQuestionIndex !== data.question_index;
+    state.finalQuestionIndex = data.question_index;
+    const question = data.question;
+    app.querySelector('.final-table-heading .quiz-section-label').textContent = data.heads_up ? 'ХЕДЗ-АП' : 'ФИНАЛЬНЫЙ СТОЛ';
+    app.querySelector('.final-active-count').textContent = `В игре: ${data.active_count}`;
+    app.querySelector('.final-question-number').textContent = `Вопрос финала ${question.final_number}`;
+    const image = app.querySelector('.final-question-image');
+    image.hidden = !question.image_path;
+    image.src = question.image_path || '';
+    image.alt = question.image_path ? question.title : '';
+    app.querySelector('.final-question-title').textContent = question.title;
+    const button = app.querySelector('.final-answer-button');
+    const waiting = app.querySelector('.final-answer-wait');
+    const validation = app.querySelector('.final-question-validation');
+    validation.textContent = '';
+    if (isNewQuestion) {
+      state.finalAnswer = question.type === 'multi_choice' ? [] : '';
+      const options = app.querySelector('.final-question-options');
+      options.replaceChildren();
+      if (question.type === 'text') {
+        const textarea = document.createElement('textarea');
+        textarea.maxLength = 1000;
+        textarea.placeholder = question.placeholder || 'Напишите ответ';
+        textarea.addEventListener('input', () => { state.finalAnswer = textarea.value; });
+        options.append(textarea);
+      } else {
+        (question.options || []).forEach((option) => {
+          const label = document.createElement('label');
+          label.className = 'quiz-option';
+          const input = document.createElement('input');
+          input.type = question.type === 'multi_choice' ? 'checkbox' : 'radio';
+          input.name = `final-${question.id}`;
+          input.value = option.id;
+          input.addEventListener('change', () => {
+            state.finalAnswer = question.type === 'multi_choice'
+              ? [...options.querySelectorAll('input:checked')].map((item) => item.value)
+              : option.id;
+            options.querySelectorAll('.quiz-option').forEach((item) => {
+              item.classList.toggle('selected', item.querySelector('input').checked);
+            });
+          });
+          const marker = document.createElement('span');
+          const text = document.createElement('strong');
+          text.textContent = option.text;
+          label.append(input, marker, text);
+          options.append(label);
+        });
+      }
+    }
+    button.hidden = data.answered;
+    button.disabled = data.answered;
+    waiting.hidden = !data.answered;
+    app.querySelectorAll('.final-question-options input, .final-question-options textarea').forEach((field) => {
+      field.disabled = data.answered;
+    });
+    stopFinalQuestionTimer();
+    const deadline = Date.parse(data.question_deadline_at || '');
+    const timer = app.querySelector('.final-question-timer');
+    const number = timer.querySelector('strong');
+    const bar = timer.querySelector('span');
+    const tick = () => {
+      const remaining = Math.max(0, deadline - scheduledNow());
+      number.textContent = formatTime(remaining);
+      bar.style.width = `${Math.min(100, (remaining / (Number(data.question_seconds || 30) * 1000)) * 100)}%`;
+      timer.classList.toggle('urgent', remaining <= 10000);
+      if (remaining <= 0) {
+        stopFinalQuestionTimer();
+        button.disabled = true;
+      }
+    };
+    tick();
+    state.finalTimer = window.setInterval(tick, 200);
+    show('final-question');
+  }
+
+  function renderFinalOutcome(data) {
+    stopFinalFlow();
+    const mark = app.querySelector('.final-outcome-mark');
+    const kicker = app.querySelector('.final-outcome-kicker');
+    const title = app.querySelector('.final-outcome-title');
+    const message = app.querySelector('.final-outcome-message');
+    kicker.textContent = 'Финальный стол';
+    mark.textContent = '♠';
+    if (data.state === 'winner') {
+      mark.textContent = '★';
+      title.textContent = 'Победа!';
+      message.textContent = data.message;
+      app.classList.add('quiz-winner');
+      launchConfetti();
+    } else if (data.state === 'eliminated') {
+      title.textContent = 'Раздача завершена';
+      message.textContent = `${data.message} Вопрос на вылет: ${data.eliminated_question}.`;
+    } else if (data.state === 'not_qualified') {
+      title.textContent = 'Топ-10 сформирован';
+      message.textContent = data.message;
+    } else if (data.state === 'not_eligible') {
+      kicker.textContent = 'Основной квиз';
+      title.textContent = 'Результат сохранён';
+      message.textContent = data.message;
+    } else if (data.state === 'unavailable') {
+      title.textContent = 'Основной раунд завершён';
+      message.textContent = data.message;
+    } else {
+      title.textContent = 'Финальный стол завершён';
+      message.textContent = data.message || 'Результат сохранён.';
+    }
+    show('final-outcome');
+  }
+
+  function handleFinalStatus(data) {
+    if (data.state === 'lobby') {
+      renderFinalLobby(data);
+      return;
+    }
+    if (data.state === 'final_question') {
+      renderFinalQuestion(data);
+      return;
+    }
+    if (data.state !== 'main_round') renderFinalOutcome(data);
+  }
+
+  async function submitFinalAnswer() {
+    const validation = app.querySelector('.final-question-validation');
+    const button = app.querySelector('.final-answer-button');
+    const value = state.finalAnswer;
+    if (Array.isArray(value) ? value.length === 0 : !String(value || '').trim()) {
+      validation.textContent = 'Выберите ответ';
+      return;
+    }
+    button.disabled = true;
+    validation.textContent = '';
+    try {
+      await jsonRequest('/api/quiz/final-table/answer', {
+        campaign,
+        question_index: state.finalQuestionIndex,
+        answer: value,
+      });
+      button.hidden = true;
+      app.querySelector('.final-answer-wait').hidden = false;
+      app.querySelectorAll('.final-question-options input, .final-question-options textarea').forEach((field) => {
+        field.disabled = true;
+      });
+    } catch (error) {
+      validation.textContent = errorText(error.message);
+      button.disabled = false;
+    }
   }
 
   async function copyShareLink() {
@@ -492,8 +730,10 @@
   app.querySelector('[data-action="daily-prize-next"]')?.addEventListener('click', () => show('daily-jackcoin'));
   app.querySelector('[data-action="daily-start"]')?.addEventListener('click', startQuiz);
   app.querySelector('[data-action="river-open"]')?.addEventListener('click', renderQuestion);
+  app.querySelector('[data-action="final-answer"]')?.addEventListener('click', submitFinalAnswer);
   window.addEventListener('beforeunload', () => {
     stopTimer();
+    stopFinalFlow();
     if (state.scheduleTimer) window.clearInterval(state.scheduleTimer);
   });
   initialize();

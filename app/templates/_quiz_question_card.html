@@ -1,0 +1,64 @@
+<details class="hj-question-card card {{ 'legacy-hidden' if not question.is_active else '' }}" data-question-card data-question-id="{{ question.db_id }}">
+  <summary>
+    <span class="hj-question-number">{{ question_number }}</span>
+    <span class="hj-question-summary">
+      <strong>{{ question.title }}</strong>
+      <small>
+        {% if campaign.campaign_type == 'daily_414' %}
+          {% if question.game_round == 'final' %}
+          <span class="hj-stage-badge final">Финальный стол</span> ·
+          {% else %}
+          <span class="hj-stage-badge">{{ 'Префлоп' if question_number <= 2 else ('Флоп' if question_number <= 5 else ('Тёрн' if question_number <= 8 else 'Ривер')) }}</span> ·
+          {% endif %}
+        {% endif %}
+        {% if question.type == 'text' %}Свободный ответ{% else %}{{ question.options|length }} вариантов{% endif %}
+        {% if question.points != 1 %} · {{ question.points }} балл.{% endif %}
+        {% if not question.is_active %} · скрыт{% endif %}
+      </small>
+    </span>
+    <span class="hj-chevron">⌄</span>
+  </summary>
+  <div class="hj-question-edit-body">
+    <form class="hj-question-editor hj-existing-editor" data-existing-question-form data-question-id="{{ question.db_id }}" data-game-round="{{ question.game_round }}">
+      <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" required>{{ question.title }}</textarea></label>
+      <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice" {% if question.type=='single_choice' %}selected{% endif %}>Один правильный</option><option value="multi_choice" {% if question.type=='multi_choice' %}selected{% endif %}>Несколько правильных</option><option value="text" {% if question.type=='text' %}selected{% endif %}>Свободный текст</option></select></label>
+      {% if campaign.campaign_type == 'daily_414' %}
+      <label>Этап игры<select name="game_round"><option value="main" {% if question.game_round=='main' %}selected{% endif %}>Основной раунд</option><option value="final" {% if question.game_round=='final' %}selected{% endif %}>Финальный стол</option></select></label>
+      {% endif %}
+      <label>{{ 'Фон / оформление' if campaign.campaign_type == 'daily_414' else 'Блок' }}<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}" {% if question.section_id==section.id %}selected{% endif %}>{{ section.title }}</option>{% endfor %}</select></label>
+      <label>Вид вопроса<select name="visual_type"><option value="standard" {% if question.visual_type=='standard' %}selected{% endif %}>Обычный текстовый</option><option value="rebus" {% if question.visual_type=='rebus' %}selected{% endif %}>Ребус с картинкой</option><option value="photo" {% if question.visual_type=='photo' %}selected{% endif %}>Фотовопрос / раздача</option></select></label>
+      <label class="wide hj-media-field" data-question-media {% if question.visual_type=='standard' %}hidden{% endif %}>Изображение<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_path" type="hidden" value="{{ question.image_path or '' }}">{% if question.image_path %}<img src="{{ question.image_path }}" alt="Текущее изображение">{% endif %}</label>
+      <p class="correct-help">Выберите правильный вариант.</p>
+      <div class="hj-answer-list" data-existing-options>
+      {% for option in question.options %}
+        <div class="hj-option-seed" data-option-id="{{ option.db_id }}" data-option-code="{{ option.id }}" data-text="{{ option.text }}" data-correct="{{ 'true' if option.correct else 'false' }}"></div>
+      {% endfor %}
+      </div>
+      <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
+      <label class="wide hj-text-answer-field" data-text-answers {% if question.type!='text' %}hidden{% endif %}>Правильные текстовые ответы
+        <textarea name="accepted_text_answers" maxlength="5000" rows="4" placeholder="По одному допустимому варианту на строке">{{ question.accepted_text_answers|join('\n') }}</textarea>
+        <small>Регистр, точки, запятые, лишние пробелы и «ё/е» при проверке не учитываются.</small>
+      </label>
+      <details class="hj-advanced">
+        <summary>Дополнительные настройки</summary>
+        <div>
+          <label>Баллы<input name="points" type="number" min="0" max="1000" value="{{ question.points }}"></label>
+          <label class="check-label"><input name="required" type="checkbox" {% if question.required %}checked{% endif %}> Обязательный вопрос</label>
+          <label class="wide">Подсказка<input name="placeholder" maxlength="200" value="{{ question.placeholder or '' }}"></label>
+        </div>
+      </details>
+      <p class="form-status" role="alert"></p>
+      <button class="primary hj-save-question" type="submit">Сохранить изменения</button>
+    </form>
+
+    <details class="hj-question-more">
+      <summary>Другие действия</summary>
+      <div>
+        <form action="/api/master/quiz-questions/{{ question.db_id }}/move" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="up"><button type="submit" {% if question_is_first %}disabled{% endif %}>Поднять выше</button></form>
+        <form action="/api/master/quiz-questions/{{ question.db_id }}/move" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="down"><button type="submit" {% if question_is_last %}disabled{% endif %}>Опустить ниже</button></form>
+        <form action="/api/master/quiz-questions/{{ question.db_id }}/duplicate" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Дублировать</button></form>
+        <form class="delete-question-form" action="/api/master/quiz-questions/{{ question.db_id }}/delete" method="post" data-question-title="{{ question.title }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-text" type="submit">Удалить</button></form>
+      </div>
+    </details>
+  </div>
+</details>

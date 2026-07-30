@@ -152,9 +152,12 @@ def _db_questions(
     *,
     active_only: bool,
     fallback: bool,
+    game_round: str | None = None,
 ) -> list[dict[str, Any]]:
     campaign = normalize_campaign(campaign)
     active_clause = "AND is_active = 1" if active_only else ""
+    round_clause = "AND qq.game_round = ?" if game_round else ""
+    params: tuple[Any, ...] = (campaign, game_round) if game_round else (campaign,)
     campaign_row = conn.execute(
         "SELECT campaign_type FROM quiz_campaigns WHERE code = ?",
         (campaign,),
@@ -170,21 +173,23 @@ def _db_questions(
                qs.background_image AS section_background_image, qs.position AS section_position
         FROM quiz_questions qq
         LEFT JOIN quiz_sections qs ON qs.id=qq.section_id
-        WHERE qq.campaign_code = ? {active_clause}
+        WHERE qq.campaign_code = ? {active_clause} {round_clause}
         ORDER BY {order_clause}
         """,
-        (campaign,),
+        params,
     ).fetchall()
     if not rows and fallback and campaign != "default":
+        fallback_params: tuple[Any, ...] = (game_round,) if game_round else ()
         rows = conn.execute(
             f"""
             SELECT qq.*, qs.title AS section_title, qs.theme AS section_theme,
                    qs.background_image AS section_background_image, qs.position AS section_position
             FROM quiz_questions qq
             LEFT JOIN quiz_sections qs ON qs.id=qq.section_id
-            WHERE qq.campaign_code = 'default' {active_clause}
+            WHERE qq.campaign_code = 'default' {active_clause} {round_clause}
             ORDER BY COALESCE(qs.position, 0), qq.position, qq.id
-            """
+            """,
+            fallback_params,
         ).fetchall()
     result: list[dict[str, Any]] = []
     for row in rows:
@@ -208,6 +213,7 @@ def _db_questions(
             },
             "placeholder": row["placeholder"],
             "accepted_text_answers": _accepted_text_answers(row["accepted_text_answers_json"]),
+            "game_round": row["game_round"] or "main",
             "required": bool(row["required"]),
             "points": int(row["points"]),
             "time_limit_seconds": row["time_limit_seconds"],
@@ -239,7 +245,13 @@ def _accepted_text_answers(value: Any) -> list[str]:
 
 
 def load_db_questions(conn: sqlite3.Connection, campaign: str) -> list[dict[str, Any]]:
-    questions = _db_questions(conn, campaign, active_only=True, fallback=True)
+    questions = _db_questions(
+        conn,
+        campaign,
+        active_only=True,
+        fallback=True,
+        game_round="main",
+    )
     if not questions:
         raise ValueError("questions_unavailable")
     for question in questions:
@@ -248,8 +260,32 @@ def load_db_questions(conn: sqlite3.Connection, campaign: str) -> list[dict[str,
     return questions
 
 
+def load_final_questions(
+    conn: sqlite3.Connection, campaign: str
+) -> list[dict[str, Any]]:
+    questions = _db_questions(
+        conn,
+        campaign,
+        active_only=True,
+        fallback=False,
+        game_round="final",
+    )
+    for question in questions:
+        if (
+            question["type"] in {"single_choice", "multi_choice"}
+            and len(question["options"]) < 2
+        ):
+            raise ValueError("questions_incomplete")
+    return questions
+
+
 def load_builder_questions(conn: sqlite3.Connection, campaign: str) -> list[dict[str, Any]]:
-    return _db_questions(conn, campaign, active_only=False, fallback=False)
+    return _db_questions(
+        conn,
+        campaign,
+        active_only=False,
+        fallback=False,
+    )
 
 
 def validate_answers(questions: list[dict[str, Any]], answers: Any) -> dict[str, Any]:

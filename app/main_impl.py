@@ -38,6 +38,7 @@ from app.services.quiz import (
     ip_fingerprint,
     load_builder_questions,
     load_db_questions,
+    load_final_questions,
     normalize_campaign,
     normalize_text_answer,
     parse_quick_questions,
@@ -63,14 +64,23 @@ from app.services.quiz_device import (
     remembered_display_name,
 )
 from app.services.daily_414 import (
+    DAILY_414_ENTRY_WINDOW_SECONDS,
+    DAILY_414_FINAL_QUESTION_SECONDS,
+    DAILY_414_FINAL_TABLE_SIZE,
     DAILY_414_QUESTION_COUNT,
     DAILY_414_TIME_LIMIT_SECONDS,
     award_daily_jackcoin,
     elapsed_milliseconds,
+    final_table_candidate_eligible,
+    final_table_starts_at as daily_final_table_starts_at,
     issue_date as daily_issue_date,
-    main_prize_eligible,
     public_daily_questions,
     validate_daily_questions,
+)
+from app.services.daily_414_final import (
+    ensure_final_table,
+    question_window as final_question_window,
+    reconcile_final_table,
 )
 from app.services.quiz_mail import send_member_email_code, send_quiz_email_code
 from app.services.member_accounts import (
@@ -1526,6 +1536,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "question_count": DAILY_414_QUESTION_COUNT,
                     "time_limit_seconds": DAILY_414_TIME_LIMIT_SECONDS,
+                    "entry_window_seconds": DAILY_414_ENTRY_WINDOW_SECONDS,
+                    "final_question_seconds": DAILY_414_FINAL_QUESTION_SECONDS,
+                    "final_table_size": DAILY_414_FINAL_TABLE_SIZE,
                     "one_attempt": True,
                     "jackcoin_per_correct": int(
                         campaign_row["jackcoin_per_correct"]
@@ -2186,10 +2199,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             prize_eligible = bool(
                 is_daily_414
-                and not timed_out
-                and main_prize_eligible(
+                and final_table_candidate_eligible(
                     campaign_row,
                     started_at=started_local,
+                    finished_at=local_finished_at,
+                    timed_out=timed_out,
                 )
             )
             bonus_eligible = bool(
@@ -2222,7 +2236,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             submission_id = int(cursor.lastrowid)
             daily_award = None
             daily_place = None
+            final_table_start_iso = None
+            final_questions: list[dict[str, Any]] = []
             if is_daily_414:
+                final_start_local = daily_final_table_starts_at(campaign_row)
+                if final_start_local:
+                    final_start_utc = final_start_local.replace(
+                        tzinfo=campaign_timezone
+                    ).astimezone(timezone.utc)
+                    final_table_start_iso = final_start_utc.isoformat()
+                    final_questions = load_final_questions(
+                        conn, attempt["campaign_code"]
+                    )
+                    ensure_final_table(
+                        conn,
+                        campaign_code=attempt["campaign_code"],
+                        campaign_version=int(attempt["campaign_version"] or 1),
+                        starts_at=final_start_utc,
+                        questions=final_questions,
+                    )
                 daily_award = award_daily_jackcoin(
                     conn,
                     client_id=int(attempt["client_id"]),
@@ -2425,6 +2457,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "completion_time_ms": completion_time_ms,
             "main_prize_eligible": prize_eligible,
             "daily_place": daily_place,
+            "final_table_starts_at": final_table_start_iso,
+            "final_table_available": bool(
+                is_daily_414 and final_table_start_iso and final_questions
+            ),
             "jackcoin_awarded": daily_award["total"] if daily_award else 0,
             "jackcoin_breakdown": daily_award,
             "streak_days": daily_award["streak_days"] if daily_award else 0,
@@ -2435,6 +2471,357 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "referral_count": referral_count,
             "referral_reward_issued": bool(referral_reward),
         }
+
+    def daily_final_start_utc(campaign_row: sqlite3.Row) -> datetime:
+        local_start = daily_final_table_starts_at(campaign_row)
+        if not local_start:
+            raise HTTPException(
+                status_code=409,
+                detail="Для выпуска не задано время начала",
+            )
+        return local_start.replace(tzinfo=campaign_timezone).astimezone(
+            timezone.utc
+        )
+
+    @app.get("/api/quiz/final-table/status")
+    async def daily_final_table_status(
+        request: Request, campaign: str = "default"
+    ):
+        campaign = normalize_campaign(campaign)
+        campaign_row = quiz_campaign_or_404(campaign)
+        if campaign_row["campaign_type"] != "daily_414":
+            raise HTTPException(
+                status_code=404,
+                detail="Финальный стол доступен только в JACKSIDE 4:14",
+            )
+        member = daily_member(request, campaign_row, required=True)
+        now = utc_now()
+        campaign_version = max(1, int(campaign_row["current_version"] or 1))
+        final_start = daily_final_start_utc(campaign_row)
+        base = {
+            "ok": True,
+            "campaign": campaign,
+            "campaign_version": campaign_version,
+            "server_now": now.isoformat(),
+            "starts_at": final_start.isoformat(),
+            "entry_window_seconds": DAILY_414_ENTRY_WINDOW_SECONDS,
+            "question_seconds": DAILY_414_FINAL_QUESTION_SECONDS,
+            "table_size": DAILY_414_FINAL_TABLE_SIZE,
+        }
+        with transaction(settings.db_path) as conn:
+            submission = conn.execute(
+                """
+                SELECT * FROM quiz_submissions
+                WHERE campaign_code=? AND campaign_version=? AND client_id=?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (campaign, campaign_version, int(member["client_id"])),
+            ).fetchone()
+            if not submission:
+                return {
+                    **base,
+                    "state": "main_round",
+                    "message": "Сначала завершите основной раунд из 10 вопросов.",
+                }
+            final_questions = load_final_questions(conn, campaign)
+            table = ensure_final_table(
+                conn,
+                campaign_code=campaign,
+                campaign_version=campaign_version,
+                starts_at=final_start,
+                questions=final_questions,
+            )
+            if now >= final_start:
+                table = reconcile_final_table(
+                    conn,
+                    final_table_id=int(table["id"]),
+                    now=now,
+                )
+            if table["status"] == "unavailable":
+                return {
+                    **base,
+                    "state": "unavailable",
+                    "message": (
+                        "Финальные вопросы ещё не опубликованы. "
+                        "Результат основного раунда и JACKCOIN сохранены."
+                    ),
+                }
+
+            candidate = bool(submission["main_prize_eligible"])
+            provisional_place = None
+            if candidate:
+                provisional_place = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) + 1
+                        FROM quiz_submissions
+                        WHERE campaign_code=? AND campaign_version=?
+                          AND main_prize_eligible=1
+                          AND (
+                            correct_count > ?
+                            OR (
+                              correct_count = ?
+                              AND (
+                                completion_time_ms < ?
+                                OR (
+                                  completion_time_ms = ? AND id < ?
+                                )
+                              )
+                            )
+                          )
+                        """,
+                        (
+                            campaign,
+                            campaign_version,
+                            submission["correct_count"],
+                            submission["correct_count"],
+                            submission["completion_time_ms"],
+                            submission["completion_time_ms"],
+                            submission["id"],
+                        ),
+                    ).fetchone()[0]
+                )
+            if now < final_start:
+                return {
+                    **base,
+                    "state": "lobby" if candidate else "not_eligible",
+                    "candidate": candidate,
+                    "provisional_place": provisional_place,
+                    "message": (
+                        "Основной раунд завершён. Ждём финальный стол."
+                        if candidate
+                        else (
+                            "Отбор за финальный стол уже завершён. "
+                            "JACKCOIN и награда за основной квиз сохранены."
+                        )
+                    ),
+                }
+
+            finalist = conn.execute(
+                """
+                SELECT * FROM daily_414_finalists
+                WHERE final_table_id=? AND client_id=?
+                """,
+                (table["id"], int(member["client_id"])),
+            ).fetchone()
+            if not finalist:
+                return {
+                    **base,
+                    "state": "not_qualified" if candidate else "not_eligible",
+                    "candidate": candidate,
+                    "provisional_place": provisional_place,
+                    "message": (
+                        "В этот раз результат не вошёл в топ-10 финального стола."
+                        if candidate
+                        else (
+                            "Вы прошли основной квиз после закрытия отбора "
+                            "и не участвуете в финальном столе."
+                        )
+                    ),
+                }
+
+            active_count = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM daily_414_finalists
+                    WHERE final_table_id=? AND status='active'
+                    """,
+                    (table["id"],),
+                ).fetchone()[0]
+            )
+            if finalist["status"] == "winner":
+                return {
+                    **base,
+                    "state": "winner",
+                    "seed": int(finalist["seed"]),
+                    "active_count": 1,
+                    "message": "Вы победили за финальным столом!",
+                }
+            if finalist["status"] == "eliminated":
+                return {
+                    **base,
+                    "state": "eliminated",
+                    "seed": int(finalist["seed"]),
+                    "active_count": active_count,
+                    "eliminated_question": int(
+                        finalist["eliminated_question_index"] or 0
+                    )
+                    + 1,
+                    "message": "Вы выбыли из финального стола.",
+                }
+            if table["status"] == "completed":
+                return {
+                    **base,
+                    "state": "completed",
+                    "seed": int(finalist["seed"]),
+                    "active_count": active_count,
+                    "message": (
+                        "Финальные вопросы закончились. "
+                        "Результат сохранён для ведущего."
+                    ),
+                }
+
+            questions = json.loads(table["questions_snapshot_json"] or "[]")
+            question_index, question_start, question_deadline = (
+                final_question_window(table)
+            )
+            if question_index >= len(questions):
+                return {
+                    **base,
+                    "state": "completed",
+                    "seed": int(finalist["seed"]),
+                    "active_count": active_count,
+                    "message": "Финальный стол завершён.",
+                }
+            saved_answer = conn.execute(
+                """
+                SELECT id FROM daily_414_final_answers
+                WHERE finalist_id=? AND question_index=?
+                """,
+                (finalist["id"], question_index),
+            ).fetchone()
+            question = public_questions([questions[question_index]])[0]
+            question["final_number"] = question_index + 1
+            return {
+                **base,
+                "state": "final_question",
+                "seed": int(finalist["seed"]),
+                "active_count": active_count,
+                "heads_up": active_count == 2,
+                "question_index": question_index,
+                "question_started_at": question_start.isoformat(),
+                "question_deadline_at": question_deadline.isoformat(),
+                "answered": bool(saved_answer),
+                "question": question,
+            }
+
+    @app.post("/api/quiz/final-table/answer")
+    async def daily_final_table_answer(request: Request):
+        payload = await request_json(request)
+        campaign = normalize_campaign(payload.get("campaign"))
+        campaign_row = quiz_campaign_or_404(campaign)
+        if campaign_row["campaign_type"] != "daily_414":
+            raise HTTPException(status_code=404, detail="Финальный стол не найден")
+        member = daily_member(request, campaign_row, required=True)
+        try:
+            requested_index = int(payload.get("question_index"))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="Некорректный номер вопроса"
+            ) from exc
+        now = utc_now()
+        campaign_version = max(1, int(campaign_row["current_version"] or 1))
+        with transaction(settings.db_path) as conn:
+            table = conn.execute(
+                """
+                SELECT * FROM daily_414_final_tables
+                WHERE campaign_code=? AND campaign_version=?
+                """,
+                (campaign, campaign_version),
+            ).fetchone()
+            if not table:
+                raise HTTPException(
+                    status_code=409, detail="Финальный стол ещё не сформирован"
+                )
+            table = reconcile_final_table(
+                conn,
+                final_table_id=int(table["id"]),
+                now=now,
+            )
+            if table["status"] != "live":
+                raise HTTPException(
+                    status_code=409, detail="Сейчас ответ не принимается"
+                )
+            finalist = conn.execute(
+                """
+                SELECT * FROM daily_414_finalists
+                WHERE final_table_id=? AND client_id=?
+                """,
+                (table["id"], int(member["client_id"])),
+            ).fetchone()
+            if not finalist or finalist["status"] != "active":
+                raise HTTPException(
+                    status_code=403, detail="Вы не участвуете в текущем вопросе"
+                )
+            question_index, question_start, question_deadline = (
+                final_question_window(table)
+            )
+            if requested_index != question_index:
+                raise HTTPException(
+                    status_code=409, detail="Этот вопрос уже закрыт"
+                )
+            if now < question_start or now >= question_deadline:
+                raise HTTPException(
+                    status_code=409, detail="Время ответа закончилось"
+                )
+            questions = json.loads(table["questions_snapshot_json"] or "[]")
+            if question_index >= len(questions):
+                raise HTTPException(
+                    status_code=409, detail="Финальные вопросы закончились"
+                )
+            question = questions[question_index]
+            try:
+                answer = validate_answers(
+                    [question],
+                    {question["id"]: payload.get("answer")},
+                )[question["id"]]
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=422, detail="Выберите ответ"
+                ) from exc
+            answer_json = json.dumps(answer, ensure_ascii=False, sort_keys=True)
+            existing = conn.execute(
+                """
+                SELECT * FROM daily_414_final_answers
+                WHERE finalist_id=? AND question_index=?
+                """,
+                (finalist["id"], question_index),
+            ).fetchone()
+            if existing:
+                if existing["answer_json"] != answer_json:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Сохранённый ответ нельзя изменить",
+                    )
+                return {"ok": True, "saved": True, "answered": True}
+            scoring = score_answers(
+                [question],
+                {question["id"]: answer},
+            )
+            is_correct = int(scoring["correct_count"] == 1)
+            response_time_ms = max(
+                0, int((now - question_start).total_seconds() * 1000)
+            )
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_answers(
+                    final_table_id, finalist_id, question_index, question_code,
+                    answer_json, is_correct, response_time_ms, answered_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    table["id"],
+                    finalist["id"],
+                    question_index,
+                    question["id"],
+                    answer_json,
+                    is_correct,
+                    response_time_ms,
+                    quiz_timestamp(now),
+                ),
+            )
+            if is_correct:
+                conn.execute(
+                    """
+                    UPDATE daily_414_finalists
+                    SET final_correct_count=final_correct_count+1,
+                        final_response_time_ms=final_response_time_ms+?,
+                        updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (response_time_ms, finalist["id"]),
+                )
+        return {"ok": True, "saved": True, "answered": True}
 
     @app.post("/api/quiz/submit")
     async def quiz_submit(request: Request):
@@ -3409,6 +3796,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             if delete_permanently:
                 conn.execute(
+                    "DELETE FROM daily_414_final_tables WHERE campaign_code=?",
+                    (row["code"],),
+                )
+                conn.execute(
                     """
                     DELETE FROM quiz_options
                     WHERE question_id IN (
@@ -3468,8 +3859,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return builder_redirect(campaign_id, "Кампания не найдена", error=True)
             try:
                 questions = load_db_questions(conn, row["code"])
+                if row["campaign_type"] == "daily_414":
+                    validate_daily_questions(questions, row["code"])
             except ValueError:
-                return builder_redirect(campaign_id, "Нельзя опубликовать версию без готовых вопросов", error=True)
+                return builder_redirect(
+                    campaign_id,
+                    (
+                        "Для основного раунда 4:14 нужно ровно 10 "
+                        "опубликованных вопросов"
+                        if row["campaign_type"] == "daily_414"
+                        else "Нельзя опубликовать версию без готовых вопросов"
+                    ),
+                    error=True,
+                )
             new_version = max(1, int(row["current_version"] or 1)) + 1
             conn.execute(
                 "UPDATE quiz_attempts SET status='expired', finished_at=CURRENT_TIMESTAMP WHERE campaign_code=? AND status='in_progress'",
@@ -3509,7 +3911,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "SELECT * FROM quiz_sections WHERE campaign_code=? ORDER BY position, id",
                 (campaign["code"],),
             ).fetchall()
-        active_questions = [question for question in questions if question["is_active"]]
+        main_questions = [
+            question for question in questions
+            if question["game_round"] == "main"
+        ]
+        final_questions = [
+            question for question in questions
+            if question["game_round"] == "final"
+        ]
+        active_questions = [
+            question for question in questions
+            if question["is_active"]
+            and (
+                campaign["campaign_type"] != "daily_414"
+                or question["game_round"] == "main"
+            )
+        ]
         max_score = sum(
             question["points"] for question in active_questions
             if (
@@ -3534,7 +3951,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             context(
                 request, campaign=campaign, questions=questions, max_score=max_score,
                 max_correct=max_correct, published_count=len(active_questions),
-                hidden_count=len(questions) - len(active_questions), sections=sections,
+                hidden_count=sum(not question["is_active"] for question in questions),
+                main_questions=main_questions,
+                final_questions=final_questions,
+                active_main_count=sum(question["is_active"] for question in main_questions),
+                active_final_count=sum(question["is_active"] for question in final_questions),
+                sections=sections,
                 ok=ok, error=error,
             ),
         )
@@ -3543,10 +3965,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title = str(payload.get("title", "")).strip()
         question_type = str(payload.get("question_type", "single_choice"))
         visual_type = str(payload.get("visual_type", "standard"))
+        game_round = str(payload.get("game_round", "main"))
         if len(title) < 2 or len(title) > 300 or question_type not in {"single_choice", "multi_choice", "text"}:
             raise ValueError("Проверьте текст и тип вопроса")
         if visual_type not in {"standard", "rebus", "photo"}:
             raise ValueError("Проверьте визуальный формат вопроса")
+        if game_round not in {"main", "final"}:
+            raise ValueError("Проверьте этап игры")
         image_path = str(payload.get("image_path", "")).strip()[:500] or None
         try:
             section_id = int(payload.get("section_id") or 0) or None
@@ -3623,6 +4048,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "title": title,
             "question_type": question_type,
             "visual_type": visual_type,
+            "game_round": game_round,
             "image_path": image_path,
             "section_id": section_id,
             "required": bool(payload.get("required", True)),
@@ -3642,22 +4068,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         admin_id: int,
     ) -> int:
         position = int(conn.execute(
-            "SELECT COALESCE(MAX(position), 0) + 10 FROM quiz_questions WHERE campaign_code=?",
-            (campaign_code,),
+            """
+            SELECT COALESCE(MAX(position), 0) + 10
+            FROM quiz_questions WHERE campaign_code=? AND game_round=?
+            """,
+            (campaign_code, question["game_round"]),
         ).fetchone()[0])
         cursor = conn.execute(
             """
             INSERT INTO quiz_questions(
                 campaign_code, code, type, title, visual_type, image_path, section_id,
-                placeholder, accepted_text_answers_json, required, points, time_limit_seconds,
+                placeholder, accepted_text_answers_json, game_round,
+                required, points, time_limit_seconds,
                 position, is_active, created_by_admin_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 campaign_code, f"q_{uuid.uuid4().hex[:10]}", question["question_type"], question["title"],
                 question["visual_type"], question["image_path"], question["section_id"],
                 question["placeholder"],
                 json.dumps(question["accepted_text_answers"], ensure_ascii=False),
+                question["game_round"],
                 int(question["required"]), question["points"],
                 question["time_limit_seconds"], position, int(question["publish"]), admin_id,
             ),
@@ -3691,9 +4122,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         with transaction(settings.db_path) as conn:
-            campaign = conn.execute("SELECT code FROM quiz_campaigns WHERE id=?", (campaign_id,)).fetchone()
+            campaign = conn.execute(
+                "SELECT code, campaign_type FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
             if not campaign:
                 raise HTTPException(status_code=404, detail="Кампания не найдена")
+            if campaign["campaign_type"] != "daily_414":
+                question["game_round"] = "main"
             if question["section_id"] and not conn.execute(
                 "SELECT 1 FROM quiz_sections WHERE id=? AND campaign_code=?",
                 (question["section_id"], campaign["code"]),
@@ -3737,13 +4173,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with transaction(settings.db_path) as conn:
             row = conn.execute(
                 """
-                SELECT qq.*, qc.id AS campaign_id FROM quiz_questions qq
+                SELECT qq.*, qc.id AS campaign_id, qc.campaign_type FROM quiz_questions qq
                 JOIN quiz_campaigns qc ON qc.code=qq.campaign_code WHERE qq.id=?
                 """,
                 (question_id,),
             ).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Вопрос не найден")
+            if row["campaign_type"] != "daily_414":
+                question["game_round"] = "main"
             existing_options = {
                 int(option["id"]): option
                 for option in conn.execute(
@@ -3769,13 +4207,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """
                 UPDATE quiz_questions SET type=?, title=?, placeholder=?, required=?, points=?,
                     visual_type=?, image_path=?, section_id=?, accepted_text_answers_json=?,
-                    time_limit_seconds=NULL, is_active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?
+                    game_round=?, time_limit_seconds=NULL, is_active=1,
+                    updated_at=CURRENT_TIMESTAMP WHERE id=?
                 """,
                 (
                     question["question_type"], question["title"], question["placeholder"],
                     int(question["required"]), question["points"], question["visual_type"],
                     question["image_path"], question["section_id"],
                     json.dumps(question["accepted_text_answers"], ensure_ascii=False),
+                    question["game_round"],
                     question_id,
                 ),
             )
@@ -3971,15 +4411,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 **item,
                 "points": points,
                 "time_limit_seconds": time_limit_seconds,
+                "game_round": payload.get("game_round", "main"),
                 "required": True,
                 "publish": True,
             }) for item in parsed]
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         with transaction(settings.db_path) as conn:
-            campaign = conn.execute("SELECT code FROM quiz_campaigns WHERE id=?", (campaign_id,)).fetchone()
+            campaign = conn.execute(
+                "SELECT code, campaign_type FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
             if not campaign:
                 raise HTTPException(status_code=404, detail="Кампания не найдена")
+            if campaign["campaign_type"] != "daily_414":
+                for question in questions:
+                    question["game_round"] = "main"
             question_ids = [
                 insert_complete_question(
                     conn, campaign_code=campaign["code"], question=question,
@@ -4233,21 +4680,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=404, detail="Вопрос не найден")
             title = f"{row['title'][:290]} — копия"
             position = int(conn.execute(
-                "SELECT COALESCE(MAX(position), 0) + 10 FROM quiz_questions WHERE campaign_code=?",
-                (row["campaign_code"],),
+                """
+                SELECT COALESCE(MAX(position), 0) + 10
+                FROM quiz_questions
+                WHERE campaign_code=? AND game_round=?
+                """,
+                (row["campaign_code"], row["game_round"]),
             ).fetchone()[0])
             cursor = conn.execute(
                 """
                 INSERT INTO quiz_questions(
                     campaign_code, code, type, title, visual_type, image_path, section_id,
-                    placeholder, accepted_text_answers_json, required, points, time_limit_seconds,
+                    placeholder, accepted_text_answers_json, game_round,
+                    required, points, time_limit_seconds,
                     position, is_active, created_by_admin_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     row["campaign_code"], f"q_{uuid.uuid4().hex[:10]}", row["type"], title,
                     row["visual_type"], row["image_path"], row["section_id"],
-                    row["placeholder"], row["accepted_text_answers_json"], row["required"],
+                    row["placeholder"], row["accepted_text_answers_json"],
+                    row["game_round"], row["required"],
                     row["points"], row["time_limit_seconds"],
                     position, request.session["admin_id"],
                 ),
@@ -4293,8 +4746,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not row:
                 raise HTTPException(status_code=404, detail="Вопрос не найден")
             ordered = [item["id"] for item in conn.execute(
-                "SELECT id FROM quiz_questions WHERE campaign_code=? ORDER BY position, id",
-                (row["campaign_code"],),
+                """
+                SELECT id FROM quiz_questions
+                WHERE campaign_code=? AND game_round=?
+                ORDER BY position, id
+                """,
+                (row["campaign_code"], row["game_round"]),
             ).fetchall()]
             index = ordered.index(question_id)
             target = index - 1 if direction == "up" else index + 1

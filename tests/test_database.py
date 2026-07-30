@@ -118,6 +118,9 @@ def test_414_and_member_tables_are_added_without_changing_legacy_campaign(tmp_pa
             "member_consents",
             "jackcoin_ledger",
             "daily_414_progress",
+            "daily_414_final_tables",
+            "daily_414_finalists",
+            "daily_414_final_answers",
             "club_rating_snapshots",
             "club_rating_entries",
         }.issubset(tables)
@@ -144,6 +147,10 @@ def test_text_answer_column_is_migrated_without_rebuilding_questions(tmp_path):
     with connect(path) as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(quiz_questions)")}
         assert "accepted_text_answers_json" in columns
+        assert "game_round" in columns
+        assert conn.execute(
+            "SELECT game_round FROM quiz_questions WHERE id=7"
+        ).fetchone()[0] == "main"
         row = conn.execute("SELECT id, title, accepted_text_answers_json FROM quiz_questions WHERE id=7").fetchone()
         assert tuple(row) == (7, "Старый вопрос", "[]")
 

@@ -262,6 +262,7 @@ if (quizBuilder) {
         const payload = {
           title: form.elements.title.value,
           question_type: typeSelect.value,
+          game_round: form.elements.game_round?.value || 'main',
           visual_type: visualSelect.value,
           image_path: imagePath,
           section_id: form.elements.section_id.value,
@@ -273,7 +274,12 @@ if (quizBuilder) {
           placeholder: form.elements.placeholder.value,
         };
         const data = await builderRequest(url, payload);
-        if (!questionId || !isDaily414) {
+        const movedBetweenRounds = Boolean(
+          questionId
+          && form.dataset.gameRound
+          && form.dataset.gameRound !== payload.game_round
+        );
+        if (!questionId || !isDaily414 || movedBetweenRounds) {
           finishBuilderAction(data.message);
           return;
         }
@@ -323,6 +329,7 @@ if (quizBuilder) {
     try {
       const data = await builderRequest(`/api/master/quiz-campaigns/${campaignId}/questions/bulk-create`, {
         text: bulkForm.elements.bulk_text.value,
+        game_round: bulkForm.elements.game_round?.value || 'main',
         points: 1,
         time_limit_seconds: 0,
       });

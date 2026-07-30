@@ -25,7 +25,7 @@
   <div class="card result-detail-item"><small>Время 4:14</small><strong>{{ ((result.completion_time_ms or 0) / 1000)|round(1) }} сек.</strong></div>
   <div class="card result-detail-item"><small>JACKCOIN начислено</small><strong>+{{ result.jackcoin_awarded }} JC</strong></div>
   <div class="card result-detail-item"><small>Серия дней</small><strong>{{ result.streak_days }}</strong></div>
-  <div class="card result-detail-item"><small>Главный приз дня</small><strong class="{{ 'status-yes' if result.main_prize_eligible else 'status-no' }}">{{ 'Участвует' if result.main_prize_eligible else 'Вне розыгрыша' }}</strong></div>
+  <div class="card result-detail-item"><small>Отбор за финальный стол</small><strong class="{{ 'status-yes' if result.main_prize_eligible else 'status-no' }}">{{ 'Допущен' if result.main_prize_eligible else 'Вне отбора' }}</strong></div>
   {% endif %}
 </section>
 

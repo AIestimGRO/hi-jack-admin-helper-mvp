@@ -11,7 +11,12 @@
       <h1>{{ campaign.title }}</h1>
       <div class="hj-quiz-summary">
         <span>Версия <strong>{{ campaign.current_version }}</strong></span>
+        {% if campaign.campaign_type == 'daily_414' %}
+        <span>Основной раунд <strong>{{ active_main_count }}/10</strong></span>
+        <span>Финальный стол <strong>{{ active_final_count }}</strong></span>
+        {% else %}
         <span><strong>{{ questions|length }}</strong> вопросов</span>
+        {% endif %}
         <span>Порог <strong>{{ campaign.pass_score }}</strong></span>
         <span>Время <strong>{{ campaign.quiz_time_limit_seconds }} сек.</strong></span>
         <span>Бонус <strong>{{ campaign.bonus_title or 'не назначен' }}</strong></span>
@@ -36,9 +41,12 @@
   {% if campaign.pass_score > max_score and campaign.pass_score > 0 %}<div class="alert error">Порог выше доступного максимума: бонус сейчас невозможно получить.</div>{% endif %}
   {% if hidden_count %}<div class="alert warning">Остались старые скрытые вопросы: {{ hidden_count }}. Откройте нужный вопрос и нажмите «Сохранить изменения» — он сразу появится в квизе.</div>{% endif %}
   {% if campaign.campaign_type == 'daily_414' %}
+  {% if active_main_count != 10 %}<div class="alert error">Основной раунд пока не готов: опубликовано {{ active_main_count }} из 10 вопросов.</div>{% endif %}
+  {% if active_final_count == 0 %}<div class="alert warning">Финальный стол пока не запустится: добавьте хотя бы один вопрос на вылет.</div>{% endif %}
   <div class="alert daily-order-note">
-    Порядок 4:14 закреплён номером вопроса: <strong>1–2 Префлоп · 3–5 Флоп · 6–8 Тёрн · 9–10 Ривер</strong>.
-    Выбранный ниже блок меняет только оформление и больше не меняет очерёдность.
+    Основной раунд содержит ровно 10 вопросов:
+    <strong>1–2 Префлоп · 3–5 Флоп · 6–8 Тёрн · 9–10 Ривер</strong>.
+    Вопросы финального стола идут отдельным списком и открываются синхронно на 30 секунд.
   </div>
   {% endif %}
 
@@ -74,6 +82,9 @@
     <form class="hj-question-editor card" id="quick-question-form">
       <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" placeholder="Например: Какая комбинация старше?" required></textarea></label>
       <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice">Один правильный</option><option value="multi_choice">Несколько правильных</option><option value="text">Свободный текст</option></select></label>
+      {% if campaign.campaign_type == 'daily_414' %}
+      <label>Этап игры<select name="game_round"><option value="main">Основной раунд — 10 вопросов</option><option value="final">Финальный стол — на вылет</option></select></label>
+      {% endif %}
       <label>{{ 'Фон / оформление' if campaign.campaign_type == 'daily_414' else 'Блок' }}<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}">{{ section.title }}</option>{% endfor %}</select></label>
       <label>Вид вопроса<select name="visual_type"><option value="standard">Обычный текстовый</option><option value="rebus">Ребус с картинкой</option><option value="photo">Фотовопрос / раздача</option></select></label>
       <label class="wide hj-media-field" data-question-media hidden>Изображение<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_path" type="hidden"></label>
@@ -101,65 +112,37 @@
       <form id="bulk-question-form">
         <p class="muted">Первая строка — вопрос, <code>*</code> — правильный ответ, <code>-</code> — неправильный. Между вопросами оставьте пустую строку.</p>
         <textarea name="bulk_text" rows="11" maxlength="50000" placeholder="Какая комбинация старше?&#10;- Стрит&#10;* Флеш&#10;- Тройка&#10;&#10;Сколько карт во флопе?&#10;- Две&#10;* Три&#10;- Четыре" required></textarea>
+        {% if campaign.campaign_type == 'daily_414' %}
+        <label>Добавить в<select name="game_round"><option value="main">Основной раунд</option><option value="final">Финальный стол</option></select></label>
+        {% endif %}
         <p class="form-status" role="alert"></p>
         <button class="primary" type="submit">Добавить вопросы</button>
       </form>
     </details>
   </section>
 
-  <section class="hj-question-section">
-    <div class="hj-section-heading"><div><p class="eyebrow">Содержание</p><h2>Вопросы квиза</h2></div><span>{{ questions|length }}</span></div>
+  {% if campaign.campaign_type == 'daily_414' %}
+    {% set question_groups = [
+      {'title': 'Основной раунд', 'eyebrow': '10 вопросов · 4:14', 'questions': main_questions, 'empty': 'Добавьте ровно 10 вопросов основного раунда.'},
+      {'title': 'Финальный стол', 'eyebrow': 'Вопросы на вылет · 30 секунд', 'questions': final_questions, 'empty': 'Добавьте вопросы для синхронного финального стола.'}
+    ] %}
+  {% else %}
+    {% set question_groups = [
+      {'title': 'Вопросы квиза', 'eyebrow': 'Содержание', 'questions': questions, 'empty': 'Вопросов пока нет. Добавьте первый вопрос выше.'}
+    ] %}
+  {% endif %}
+  {% for group in question_groups %}
+  <section class="hj-question-section hj-round-section">
+    <div class="hj-section-heading"><div><p class="eyebrow">{{ group.eyebrow }}</p><h2>{{ group.title }}</h2></div><span>{{ group.questions|length }}</span></div>
     <div class="hj-question-list">
-    {% for question in questions %}
-      <details class="hj-question-card card {{ 'legacy-hidden' if not question.is_active else '' }}" data-question-card data-question-id="{{ question.db_id }}">
-        <summary>
-          <span class="hj-question-number">{{ loop.index }}</span>
-          <span class="hj-question-summary"><strong>{{ question.title }}</strong><small>{% if campaign.campaign_type == 'daily_414' %}<span class="hj-stage-badge">{{ 'Префлоп' if loop.index <= 2 else ('Флоп' if loop.index <= 5 else ('Тёрн' if loop.index <= 8 else 'Ривер')) }}</span> · {% endif %}{% if question.type == 'text' %}Свободный ответ{% else %}{{ question.options|length }} вариантов{% endif %}{% if question.points != 1 %} · {{ question.points }} балл.{% endif %}{% if not question.is_active %} · скрыт{% endif %}</small></span>
-          <span class="hj-chevron">⌄</span>
-        </summary>
-        <div class="hj-question-edit-body">
-          <form class="hj-question-editor hj-existing-editor" data-existing-question-form data-question-id="{{ question.db_id }}">
-            <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" required>{{ question.title }}</textarea></label>
-            <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice" {% if question.type=='single_choice' %}selected{% endif %}>Один правильный</option><option value="multi_choice" {% if question.type=='multi_choice' %}selected{% endif %}>Несколько правильных</option><option value="text" {% if question.type=='text' %}selected{% endif %}>Свободный текст</option></select></label>
-            <label>{{ 'Фон / оформление' if campaign.campaign_type == 'daily_414' else 'Блок' }}<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}" {% if question.section_id==section.id %}selected{% endif %}>{{ section.title }}</option>{% endfor %}</select></label>
-            <label>Вид вопроса<select name="visual_type"><option value="standard" {% if question.visual_type=='standard' %}selected{% endif %}>Обычный текстовый</option><option value="rebus" {% if question.visual_type=='rebus' %}selected{% endif %}>Ребус с картинкой</option><option value="photo" {% if question.visual_type=='photo' %}selected{% endif %}>Фотовопрос / раздача</option></select></label>
-            <label class="wide hj-media-field" data-question-media {% if question.visual_type=='standard' %}hidden{% endif %}>Изображение<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_path" type="hidden" value="{{ question.image_path or '' }}">{% if question.image_path %}<img src="{{ question.image_path }}" alt="Текущее изображение">{% endif %}</label>
-            <p class="correct-help">Выберите правильный вариант.</p>
-            <div class="hj-answer-list" data-existing-options>
-            {% for option in question.options %}
-              <div class="hj-option-seed" data-option-id="{{ option.db_id }}" data-option-code="{{ option.id }}" data-text="{{ option.text }}" data-correct="{{ 'true' if option.correct else 'false' }}"></div>
-            {% endfor %}
-            </div>
-            <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
-            <label class="wide hj-text-answer-field" data-text-answers {% if question.type!='text' %}hidden{% endif %}>Правильные текстовые ответы
-              <textarea name="accepted_text_answers" maxlength="5000" rows="4" placeholder="По одному допустимому варианту на строке">{{ question.accepted_text_answers|join('\n') }}</textarea>
-              <small>Регистр, точки, запятые, лишние пробелы и «ё/е» при проверке не учитываются.</small>
-            </label>
-            <details class="hj-advanced">
-              <summary>Дополнительные настройки</summary>
-              <div>
-                <label>Баллы<input name="points" type="number" min="0" max="1000" value="{{ question.points }}"></label>
-                <label class="check-label"><input name="required" type="checkbox" {% if question.required %}checked{% endif %}> Обязательный вопрос</label>
-                <label class="wide">Подсказка<input name="placeholder" maxlength="200" value="{{ question.placeholder or '' }}"></label>
-              </div>
-            </details>
-            <p class="form-status" role="alert"></p>
-            <button class="primary hj-save-question" type="submit">Сохранить изменения</button>
-          </form>
-
-          <details class="hj-question-more">
-            <summary>Другие действия</summary>
-            <div>
-              <form action="/api/master/quiz-questions/{{ question.db_id }}/move" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="up"><button type="submit" {% if loop.first %}disabled{% endif %}>Поднять выше</button></form>
-              <form action="/api/master/quiz-questions/{{ question.db_id }}/move" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="down"><button type="submit" {% if loop.last %}disabled{% endif %}>Опустить ниже</button></form>
-              <form action="/api/master/quiz-questions/{{ question.db_id }}/duplicate" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Дублировать</button></form>
-              <form class="delete-question-form" action="/api/master/quiz-questions/{{ question.db_id }}/delete" method="post" data-question-title="{{ question.title }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-text" type="submit">Удалить</button></form>
-            </div>
-          </details>
-        </div>
-      </details>
-    {% else %}<div class="card empty">Вопросов пока нет. Добавьте первый вопрос выше.</div>{% endfor %}
+    {% for question in group.questions %}
+      {% set question_number = loop.index %}
+      {% set question_is_first = loop.first %}
+      {% set question_is_last = loop.last %}
+      {% include "_quiz_question_card.html" %}
+    {% else %}<div class="card empty">{{ group.empty }}</div>{% endfor %}
     </div>
   </section>
+  {% endfor %}
 </div>
 {% endblock %}
