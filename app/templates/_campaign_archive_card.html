@@ -1,0 +1,23 @@
+<article class="card master-item campaign-archive-card" data-campaign-kind="archived">
+  <div class="master-item-head">
+    <div><h3>{{ campaign.title }}</h3><code>{{ campaign.code }}</code></div>
+    <div class="campaign-pills">
+      <span class="type-pill">{{ '4:14' if campaign.campaign_type == 'daily_414' else 'Обычный квиз' }}</span>
+      <span class="type-pill archived">В архиве</span>
+    </div>
+  </div>
+  <p class="muted">Архивирована: {{ campaign.archived_at|replace('T', ' ') }}</p>
+  <div class="campaign-actions">
+    <form action="/api/master/quiz-campaigns/{{ campaign.id }}/restore" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="success-outline" type="submit">Восстановить</button>
+    </form>
+    {% if campaign.can_delete %}
+    <form action="/api/master/quiz-campaigns/{{ campaign.id }}/delete" method="post" onsubmit="return confirm('Удалить эту тестовую кампанию навсегда? Восстановить её будет невозможно.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="danger-outline" type="submit">Удалить навсегда</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if campaign.delete_block_reason %}<small class="muted">{{ campaign.delete_block_reason }}</small>{% endif %}
+</article>

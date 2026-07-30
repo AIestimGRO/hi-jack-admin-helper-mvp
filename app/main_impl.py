@@ -25,7 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 
 from app.config import BASE_DIR, Settings
-from app.db import connect, init_db, transaction
+from app.db import QUIZ_CAMPAIGNS, connect, init_db, transaction
 from app.services.clients import ensure_preferences
 from app.services.auth import audit, authenticate, bootstrap_master, hash_pin, validate_username
 from app.services.import_clients import FIELD_LABELS, detect_mapping, import_rows, read_tabular
@@ -89,6 +89,21 @@ from app.services.member_accounts import (
 from app.services.quiz_retention import cleanup_quiz_data
 from app.services.quiz_rewards import issue_referral_reward, issue_reward, redeem_reward, render_campaign_text
 from app.services.telegram_oidc import authorization_url, exchange_telegram_code, new_pkce
+
+
+BUILT_IN_CAMPAIGN_CODES = frozenset(code for code, _title in QUIZ_CAMPAIGNS)
+CAMPAIGN_HISTORY_TABLES = (
+    "quiz_attempts",
+    "quiz_submissions",
+    "client_quiz_campaigns",
+    "quiz_participation_summary",
+    "quiz_participation_versions",
+    "quiz_reward_codes",
+    "quiz_referral_codes",
+    "quiz_referrals",
+    "quiz_reward_events",
+    "quiz_email_codes",
+)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -338,7 +353,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     def campaign_schedule_state(campaign_row: sqlite3.Row | dict[str, Any]) -> str:
-        if not campaign_row["is_active"]:
+        if campaign_row["archived_at"] or not campaign_row["is_active"]:
             return "disabled"
         now = datetime.now(campaign_timezone).replace(tzinfo=None)
         start = datetime.fromisoformat(campaign_row["active_from"]) if campaign_row["active_from"] else None
@@ -348,6 +363,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if end and now >= end:
             return "ended"
         return "active"
+
+    def campaign_has_history(conn: sqlite3.Connection, campaign_code: str) -> bool:
+        for table in CAMPAIGN_HISTORY_TABLES:
+            if conn.execute(
+                f"SELECT 1 FROM {table} WHERE campaign_code=? LIMIT 1",
+                (campaign_code,),
+            ).fetchone():
+                return True
+        return bool(
+            conn.execute(
+                """
+                SELECT 1 FROM clients
+                WHERE acquisition_campaign_code=? LIMIT 1
+                """,
+                (campaign_code,),
+            ).fetchone()
+        )
 
     def format_campaign_datetime(value: str) -> str:
         return datetime.fromisoformat(value).strftime("%d.%m.%Y в %H:%M")
@@ -2681,14 +2713,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             campaign_rows = conn.execute(
                 """
                 SELECT * FROM quiz_campaigns
-                ORDER BY CASE campaign_type WHEN 'daily_414' THEN 0 ELSE 1 END, title
+                ORDER BY archived_at IS NOT NULL, title
                 """
             ).fetchall()
-            quiz_campaigns = []
+            quiz_campaigns_classic = []
+            quiz_campaigns_daily_414 = []
+            quiz_campaigns_archived = []
             for campaign_row in campaign_rows:
                 campaign_item = dict(campaign_row)
                 campaign_item["schedule_state"] = campaign_schedule_state(campaign_row)
-                quiz_campaigns.append(campaign_item)
+                if campaign_row["archived_at"]:
+                    has_history = campaign_has_history(conn, campaign_row["code"])
+                    campaign_item["can_delete"] = (
+                        campaign_row["code"] not in BUILT_IN_CAMPAIGN_CODES
+                        and not has_history
+                    )
+                    campaign_item["delete_block_reason"] = (
+                        "Системную кампанию можно хранить в архиве, но нельзя удалить."
+                        if campaign_row["code"] in BUILT_IN_CAMPAIGN_CODES
+                        else "У кампании есть история участников, поэтому удалить её нельзя."
+                        if has_history
+                        else ""
+                    )
+                    quiz_campaigns_archived.append(campaign_item)
+                elif campaign_row["campaign_type"] == "daily_414":
+                    quiz_campaigns_daily_414.append(campaign_item)
+                else:
+                    quiz_campaigns_classic.append(campaign_item)
             counter_preferences = conn.execute(
                 "SELECT code, title FROM preference_types WHERE kind='counter' ORDER BY position, id"
             ).fetchall()
@@ -2702,7 +2753,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 request,
                 preference_types=preference_types,
                 admins=admins,
-                quiz_campaigns=quiz_campaigns,
+                quiz_campaigns_classic=quiz_campaigns_classic,
+                quiz_campaigns_daily_414=quiz_campaigns_daily_414,
+                quiz_campaigns_archived=quiz_campaigns_archived,
                 counter_preferences=counter_preferences,
                 admin_audit=admin_audit,
                 current_tab=tab,
@@ -3231,6 +3284,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             row = conn.execute("SELECT * FROM quiz_campaigns WHERE id = ?", (campaign_id,)).fetchone()
             if not row:
                 return master_redirect("Кампания не найдена", error=True, tab="campaigns")
+            if row["archived_at"]:
+                return master_redirect(
+                    "Сначала восстановите кампанию из архива",
+                    error=True,
+                    tab="campaigns",
+                )
             new_state = 0 if row["is_active"] else 1
             conn.execute("UPDATE quiz_campaigns SET is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (new_state, campaign_id))
             audit(
@@ -3239,6 +3298,150 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 details={"code": row["code"], "title": row["title"]},
             )
         return master_redirect("Кампания включена" if new_state else "Кампания отключена", tab="campaigns")
+
+    @app.post("/api/master/quiz-campaigns/{campaign_id}/archive")
+    async def archive_quiz_campaign(
+        request: Request,
+        campaign_id: int,
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
+            if not row:
+                return master_redirect(
+                    "Кампания не найдена", error=True, tab="campaigns"
+                )
+            if row["archived_at"]:
+                return master_redirect("Кампания уже находится в архиве", tab="campaigns")
+            conn.execute(
+                """
+                UPDATE quiz_campaigns
+                SET is_active=0, archived_at=CURRENT_TIMESTAMP,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (campaign_id,),
+            )
+            audit(
+                conn,
+                admin_id=request.session["admin_id"],
+                admin_name=request.session["admin_name"],
+                action="archive",
+                entity_type="quiz_campaign",
+                entity_id=campaign_id,
+                details={"code": row["code"], "title": row["title"]},
+            )
+        return master_redirect("Кампания перемещена в архив", tab="campaigns")
+
+    @app.post("/api/master/quiz-campaigns/{campaign_id}/restore")
+    async def restore_quiz_campaign(
+        request: Request,
+        campaign_id: int,
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
+            if not row:
+                return master_redirect(
+                    "Кампания не найдена", error=True, tab="campaigns"
+                )
+            if not row["archived_at"]:
+                return master_redirect("Кампания уже восстановлена", tab="campaigns")
+            conn.execute(
+                """
+                UPDATE quiz_campaigns
+                SET archived_at=NULL, is_active=0, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (campaign_id,),
+            )
+            audit(
+                conn,
+                admin_id=request.session["admin_id"],
+                admin_name=request.session["admin_name"],
+                action="restore",
+                entity_type="quiz_campaign",
+                entity_id=campaign_id,
+                details={"code": row["code"], "title": row["title"]},
+            )
+        return master_redirect(
+            "Кампания восстановлена и оставлена отключённой",
+            tab="campaigns",
+        )
+
+    @app.post("/api/master/quiz-campaigns/{campaign_id}/delete")
+    async def delete_quiz_campaign(
+        request: Request,
+        campaign_id: int,
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            row = conn.execute(
+                "SELECT * FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
+            if not row:
+                return master_redirect(
+                    "Кампания не найдена", error=True, tab="campaigns"
+                )
+            if not row["archived_at"]:
+                return master_redirect(
+                    "Перед удалением переместите кампанию в архив",
+                    error=True,
+                    tab="campaigns",
+                )
+            if row["code"] in BUILT_IN_CAMPAIGN_CODES:
+                return master_redirect(
+                    "Системную кампанию нельзя удалить навсегда",
+                    error=True,
+                    tab="campaigns",
+                )
+            if campaign_has_history(conn, row["code"]):
+                return master_redirect(
+                    "Удаление запрещено: у кампании есть история участников",
+                    error=True,
+                    tab="campaigns",
+                )
+            conn.execute(
+                """
+                DELETE FROM quiz_options
+                WHERE question_id IN (
+                    SELECT id FROM quiz_questions WHERE campaign_code=?
+                )
+                """,
+                (row["code"],),
+            )
+            conn.execute(
+                "DELETE FROM quiz_questions WHERE campaign_code=?",
+                (row["code"],),
+            )
+            conn.execute(
+                "DELETE FROM quiz_sections WHERE campaign_code=?",
+                (row["code"],),
+            )
+            conn.execute("DELETE FROM quiz_campaigns WHERE id=?", (campaign_id,))
+            audit(
+                conn,
+                admin_id=request.session["admin_id"],
+                admin_name=request.session["admin_name"],
+                action="delete",
+                entity_type="quiz_campaign",
+                entity_id=campaign_id,
+                details={"code": row["code"], "title": row["title"]},
+            )
+        return master_redirect("Пустая тестовая кампания удалена", tab="campaigns")
 
     @app.post("/api/master/quiz-campaigns/{campaign_id}/publish-version")
     async def publish_quiz_campaign_version(

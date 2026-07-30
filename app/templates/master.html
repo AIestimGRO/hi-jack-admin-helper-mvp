@@ -109,16 +109,22 @@
     <button class="primary" type="submit">Создать кампанию</button>
   </form>
   <p class="muted master-hint">Пока у кампании нет собственных опубликованных вопросов, участникам показывается стартовый набор <code>default</code>.</p>
-  <div class="section-head"><h2>Кампании</h2><span class="muted">{{ quiz_campaigns|length }}</span></div>
+  {% set quiz_campaigns = quiz_campaigns_classic + quiz_campaigns_daily_414 %}
+  <div class="section-head"><h2>Кампании</h2><span class="muted">{{ quiz_campaigns|length }} рабочих · {{ quiz_campaigns_archived|length }} в архиве</span></div>
+  <div class="campaign-tabs" role="tablist" aria-label="Разделы кампаний">
+    <button class="active" type="button" role="tab" aria-selected="true" data-campaign-tab="classic">Обычные квизы <span>{{ quiz_campaigns_classic|length }}</span></button>
+    <button type="button" role="tab" aria-selected="false" data-campaign-tab="daily_414">JACKSIDE 4:14 <span>{{ quiz_campaigns_daily_414|length }}</span></button>
+    <button type="button" role="tab" aria-selected="false" data-campaign-tab="archived">Архив <span>{{ quiz_campaigns_archived|length }}</span></button>
+  </div>
   <div class="master-list">
   {% for campaign in quiz_campaigns %}
     {% if loop.first or loop.previtem.campaign_type != campaign.campaign_type %}
-    <div class="campaign-group-title">
+    <div class="campaign-group-title" data-campaign-kind="{{ campaign.campaign_type }}">
       <p class="eyebrow">{{ 'Новый подраздел' if campaign.campaign_type == 'daily_414' else 'Действующие механики' }}</p>
       <h2>{{ '4:14' if campaign.campaign_type == 'daily_414' else 'Обычные квизы' }}</h2>
     </div>
     {% endif %}
-    <article class="card master-item {{ '' if campaign.is_active else 'inactive' }}">
+    <article class="card master-item {{ '' if campaign.is_active else 'inactive' }}" data-campaign-kind="{{ campaign.campaign_type }}">
       <div class="master-item-head"><div><h3>{{ campaign.title }}</h3><code>{{ campaign.code }}</code></div><div class="campaign-pills">{% if campaign.campaign_type == 'daily_414' %}<span class="type-pill live-414">4:14</span>{% endif %}<span class="type-pill {{ campaign.schedule_state }}">{{ {'active':'Активна','upcoming':'Запланирована','ended':'Завершена','disabled':'Отключена'}[campaign.schedule_state] }}</span></div></div>
       {% if campaign.active_from or campaign.active_until %}<p class="campaign-period">{% if campaign.active_from %}с {{ campaign.active_from|replace('T', ' ') }}{% else %}без даты начала{% endif %} · {% if campaign.active_until %}до {{ campaign.active_until|replace('T', ' ') }}{% else %}без даты окончания{% endif %}</p>{% endif %}
       {% set campaign_base_url = club_public_base_url if campaign.campaign_type == 'daily_414' else quiz_public_base_url %}
@@ -177,8 +183,22 @@
         </details>
         <button class="button" type="submit">Сохранить</button>
       </form>
-      <form action="/api/master/quiz-campaigns/{{ campaign.id }}/toggle" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="{{ 'danger-outline' if campaign.is_active else 'success-outline' }}" type="submit">{{ 'Отключить' if campaign.is_active else 'Включить' }}</button></form>
+      <div class="campaign-actions">
+        <form action="/api/master/quiz-campaigns/{{ campaign.id }}/toggle" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="{{ 'danger-outline' if campaign.is_active else 'success-outline' }}" type="submit">{{ 'Отключить' if campaign.is_active else 'Включить' }}</button></form>
+        <form action="/api/master/quiz-campaigns/{{ campaign.id }}/archive" method="post" onsubmit="return confirm('Переместить кампанию в архив? Она будет отключена, а результаты и настройки сохранятся.');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="archive-outline" type="submit">В архив</button></form>
+      </div>
     </article>
+  {% endfor %}
+  {% if not quiz_campaigns_classic %}<div class="card campaign-empty" data-campaign-kind="classic"><p>Обычных квизов пока нет.</p></div>{% endif %}
+  {% if not quiz_campaigns_daily_414 %}<div class="card campaign-empty" data-campaign-kind="daily_414"><p>Выпусков JACKSIDE 4:14 пока нет.</p></div>{% endif %}
+  <div class="campaign-group-title" data-campaign-kind="archived">
+    <p class="eyebrow">Без потери истории</p>
+    <h2>Архив кампаний</h2>
+  </div>
+  {% for campaign in quiz_campaigns_archived %}
+    {% include "_campaign_archive_card.html" %}
+  {% else %}
+    <div class="card campaign-empty" data-campaign-kind="archived"><p>Архив пока пуст.</p></div>
   {% endfor %}
   </div>
 </section>

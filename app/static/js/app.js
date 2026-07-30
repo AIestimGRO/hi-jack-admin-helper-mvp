@@ -31,6 +31,37 @@ masterTabs.forEach((tab) => tab.addEventListener('click', () => {
   });
 }));
 
+const campaignTabs = [...document.querySelectorAll('[data-campaign-tab]')];
+if (campaignTabs.length) {
+  const campaignKinds = new Set(campaignTabs.map((tab) => tab.dataset.campaignTab));
+  let selectedCampaignKind = 'classic';
+  try {
+    const saved = window.localStorage.getItem('hj-master-campaign-tab');
+    if (campaignKinds.has(saved)) selectedCampaignKind = saved;
+  } catch (_) {
+    // The campaign switcher still works when browser storage is unavailable.
+  }
+  const showCampaignKind = (kind) => {
+    campaignTabs.forEach((tab) => {
+      const active = tab.dataset.campaignTab === kind;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-campaign-kind]').forEach((item) => {
+      item.hidden = item.dataset.campaignKind !== kind;
+    });
+    try {
+      window.localStorage.setItem('hj-master-campaign-tab', kind);
+    } catch (_) {
+      // Ignore storage restrictions without breaking the switcher.
+    }
+  };
+  campaignTabs.forEach((tab) => {
+    tab.addEventListener('click', () => showCampaignKind(tab.dataset.campaignTab));
+  });
+  showCampaignKind(selectedCampaignKind);
+}
+
 document.querySelectorAll('.campaign-create').forEach((form) => {
   const typeSelect = form.elements.campaign_type;
   const jackcoinFields = form.querySelector('.campaign-jackcoin-fields');

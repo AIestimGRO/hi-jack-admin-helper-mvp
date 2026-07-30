@@ -375,6 +375,162 @@ def test_master_can_configure_quiz_campaign(tmp_path):
         assert campaign["active_until"] == "2026-08-01T23:00"
 
 
+def test_master_separates_archives_and_restores_campaigns_safely(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        login(client)
+        page = client.get("/master?tab=campaigns")
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        assert 'data-campaign-tab="classic"' in page.text
+        assert 'data-campaign-tab="daily_414"' in page.text
+        assert 'data-campaign-tab="archived"' in page.text
+
+        created = client.post(
+            "/api/master/quiz-campaigns/create",
+            data={
+                "code": "archive_test",
+                "title": "Тест архива",
+                "csrf_token": token,
+            },
+            follow_redirects=False,
+        )
+        assert created.status_code == 303
+        with connect(settings.db_path) as conn:
+            campaign_id = conn.execute(
+                "SELECT id FROM quiz_campaigns WHERE code='archive_test'"
+            ).fetchone()[0]
+
+        archived = client.post(
+            f"/api/master/quiz-campaigns/{campaign_id}/archive",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert archived.status_code == 303
+        assert client.get("/quiz?campaign=archive_test").status_code == 404
+        archive_page = client.get("/master?tab=campaigns")
+        assert "Тест архива" in archive_page.text
+        assert "Восстановить" in archive_page.text
+        assert "Удалить навсегда" in archive_page.text
+
+        restored = client.post(
+            f"/api/master/quiz-campaigns/{campaign_id}/restore",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert restored.status_code == 303
+        with connect(settings.db_path) as conn:
+            campaign = conn.execute(
+                "SELECT is_active, archived_at FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
+            assert tuple(campaign) == (0, None)
+
+        enabled = client.post(
+            f"/api/master/quiz-campaigns/{campaign_id}/toggle",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert enabled.status_code == 303
+        with connect(settings.db_path) as conn:
+            assert conn.execute(
+                "SELECT is_active FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()[0] == 1
+
+
+def test_master_permanently_deletes_only_empty_non_system_campaigns(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        login(client)
+        page = client.get("/master?tab=campaigns")
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        with transaction(settings.db_path) as conn:
+            empty_id = conn.execute(
+                """
+                INSERT INTO quiz_campaigns(
+                    code, title, is_active, archived_at
+                ) VALUES ('empty_delete', 'Пустой тест', 0, CURRENT_TIMESTAMP)
+                """
+            ).lastrowid
+            question_id = conn.execute(
+                """
+                INSERT INTO quiz_questions(
+                    campaign_code, code, type, title
+                ) VALUES ('empty_delete', 'q1', 'single_choice', 'Вопрос')
+                """
+            ).lastrowid
+            conn.execute(
+                """
+                INSERT INTO quiz_options(
+                    question_id, code, text, is_correct
+                ) VALUES (?, 'a', 'Ответ', 1)
+                """,
+                (question_id,),
+            )
+            history_id = conn.execute(
+                """
+                INSERT INTO quiz_campaigns(
+                    code, title, is_active, archived_at
+                ) VALUES ('history_keep', 'Тест с историей', 0, CURRENT_TIMESTAMP)
+                """
+            ).lastrowid
+            conn.execute(
+                """
+                INSERT INTO quiz_attempts(
+                    campaign_code, token_hash, questions_snapshot_json, ip_hash
+                ) VALUES ('history_keep', 'history-token', '[]', 'history-ip')
+                """
+            )
+            system_id = conn.execute(
+                """
+                UPDATE quiz_campaigns
+                SET is_active=0, archived_at=CURRENT_TIMESTAMP
+                WHERE code='default'
+                RETURNING id
+                """
+            ).fetchone()[0]
+
+        deleted = client.post(
+            f"/api/master/quiz-campaigns/{empty_id}/delete",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert deleted.status_code == 303
+        history_blocked = client.post(
+            f"/api/master/quiz-campaigns/{history_id}/delete",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert "error=" in history_blocked.headers["location"]
+        system_blocked = client.post(
+            f"/api/master/quiz-campaigns/{system_id}/delete",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert "error=" in system_blocked.headers["location"]
+
+    with connect(settings.db_path) as conn:
+        assert conn.execute(
+            "SELECT 1 FROM quiz_campaigns WHERE id=?",
+            (empty_id,),
+        ).fetchone() is None
+        assert conn.execute(
+            "SELECT 1 FROM quiz_questions WHERE campaign_code='empty_delete'"
+        ).fetchone() is None
+        assert conn.execute(
+            "SELECT 1 FROM quiz_options WHERE question_id=?",
+            (question_id,),
+        ).fetchone() is None
+        assert conn.execute(
+            "SELECT 1 FROM quiz_campaigns WHERE id=?",
+            (history_id,),
+        ).fetchone()
+        assert conn.execute(
+            "SELECT 1 FROM quiz_campaigns WHERE id=?",
+            (system_id,),
+        ).fetchone()
+
+
 def test_master_rejects_invalid_campaign_period_and_keeps_single_preview_tab(tmp_path):
     client, settings = make_client(tmp_path)
     with client:
