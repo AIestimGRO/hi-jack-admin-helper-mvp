@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     campaign_type TEXT NOT NULL DEFAULT 'classic' CHECK(campaign_type IN ('classic', 'daily_414')),
     is_active INTEGER NOT NULL DEFAULT 1,
     archived_at TEXT,
+    deleted_at TEXT,
     bonus_preference_code TEXT,
     bonus_amount INTEGER NOT NULL DEFAULT 0 CHECK(bonus_amount >= 0),
     reward_delivery_mode TEXT NOT NULL DEFAULT 'automatic' CHECK(reward_delivery_mode IN ('automatic', 'code')),
@@ -593,6 +594,7 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_campaigns", "pass_score INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "quiz_campaigns", "campaign_type TEXT NOT NULL DEFAULT 'classic'")
         _ensure_column(conn, "quiz_campaigns", "archived_at TEXT")
+        _ensure_column(conn, "quiz_campaigns", "deleted_at TEXT")
         _ensure_column(conn, "quiz_campaigns", "reward_delivery_mode TEXT NOT NULL DEFAULT 'automatic'")
         _ensure_column(conn, "quiz_campaigns", "referral_delivery_mode TEXT NOT NULL DEFAULT 'automatic'")
         _ensure_column(conn, "quiz_campaigns", "question_time_limit_seconds INTEGER NOT NULL DEFAULT 20")

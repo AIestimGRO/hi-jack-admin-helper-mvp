@@ -12,12 +12,10 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="success-outline" type="submit">Восстановить</button>
     </form>
-    {% if campaign.can_delete %}
-    <form action="/api/master/quiz-campaigns/{{ campaign.id }}/delete" method="post" onsubmit="return confirm('Удалить эту тестовую кампанию навсегда? Восстановить её будет невозможно.');">
+    <form action="/api/master/quiz-campaigns/{{ campaign.id }}/delete" method="post" onsubmit="return confirm('{{ 'Удалить пустую кампанию навсегда? Восстановить её будет невозможно.' if campaign.delete_permanently else 'Удалить кампанию из списка? История участников и наград сохранится.' }}');">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="danger-outline" type="submit">Удалить навсегда</button>
+      <button class="danger-outline" type="submit">Удалить</button>
     </form>
-    {% endif %}
   </div>
-  {% if campaign.delete_block_reason %}<small class="muted">{{ campaign.delete_block_reason }}</small>{% endif %}
+  <small class="muted">{{ campaign.delete_note }}</small>
 </article>

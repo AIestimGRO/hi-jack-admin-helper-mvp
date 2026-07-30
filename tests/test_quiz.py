@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.db import connect, transaction
+from app.db import connect, init_db, transaction
 from app.main import create_app
 from app.services.clients import upsert_client
 from app.services.quiz import (
@@ -384,6 +384,9 @@ def test_master_separates_archives_and_restores_campaigns_safely(tmp_path):
         assert 'data-campaign-tab="classic"' in page.text
         assert 'data-campaign-tab="daily_414"' in page.text
         assert 'data-campaign-tab="archived"' in page.text
+        stylesheet = client.get("/static/css/app.css")
+        assert stylesheet.status_code == 200
+        assert "[data-campaign-kind][hidden]{display:none!important}" in stylesheet.text
 
         created = client.post(
             "/api/master/quiz-campaigns/create",
@@ -410,7 +413,7 @@ def test_master_separates_archives_and_restores_campaigns_safely(tmp_path):
         archive_page = client.get("/master?tab=campaigns")
         assert "Тест архива" in archive_page.text
         assert "Восстановить" in archive_page.text
-        assert "Удалить навсегда" in archive_page.text
+        assert ">Удалить</button>" in archive_page.text
 
         restored = client.post(
             f"/api/master/quiz-campaigns/{campaign_id}/restore",
@@ -438,7 +441,7 @@ def test_master_separates_archives_and_restores_campaigns_safely(tmp_path):
             ).fetchone()[0] == 1
 
 
-def test_master_permanently_deletes_only_empty_non_system_campaigns(tmp_path):
+def test_master_deletes_empty_campaigns_and_hides_preserved_history(tmp_path):
     client, settings = make_client(tmp_path)
     with client:
         login(client)
@@ -490,24 +493,34 @@ def test_master_permanently_deletes_only_empty_non_system_campaigns(tmp_path):
                 """
             ).fetchone()[0]
 
+        archive_page = client.get("/master?tab=campaigns")
+        assert archive_page.text.count(">Удалить</button>") >= 3
+
         deleted = client.post(
             f"/api/master/quiz-campaigns/{empty_id}/delete",
             data={"csrf_token": token},
             follow_redirects=False,
         )
         assert deleted.status_code == 303
-        history_blocked = client.post(
+        history_deleted = client.post(
             f"/api/master/quiz-campaigns/{history_id}/delete",
             data={"csrf_token": token},
             follow_redirects=False,
         )
-        assert "error=" in history_blocked.headers["location"]
-        system_blocked = client.post(
+        assert history_deleted.status_code == 303
+        assert "error=" not in history_deleted.headers["location"]
+        system_deleted = client.post(
             f"/api/master/quiz-campaigns/{system_id}/delete",
             data={"csrf_token": token},
             follow_redirects=False,
         )
-        assert "error=" in system_blocked.headers["location"]
+        assert system_deleted.status_code == 303
+        assert "error=" not in system_deleted.headers["location"]
+
+        master_page = client.get("/master?tab=campaigns")
+        assert "<h3>Пустой тест</h3>" not in master_page.text
+        assert "<h3>Тест с историей</h3>" not in master_page.text
+        assert "<h3>Опрос Hi, Jack!</h3>" not in master_page.text
 
     with connect(settings.db_path) as conn:
         assert conn.execute(
@@ -521,14 +534,26 @@ def test_master_permanently_deletes_only_empty_non_system_campaigns(tmp_path):
             "SELECT 1 FROM quiz_options WHERE question_id=?",
             (question_id,),
         ).fetchone() is None
-        assert conn.execute(
-            "SELECT 1 FROM quiz_campaigns WHERE id=?",
+        history = conn.execute(
+            "SELECT deleted_at FROM quiz_campaigns WHERE id=?",
             (history_id,),
         ).fetchone()
-        assert conn.execute(
-            "SELECT 1 FROM quiz_campaigns WHERE id=?",
+        system = conn.execute(
+            "SELECT deleted_at FROM quiz_campaigns WHERE id=?",
             (system_id,),
         ).fetchone()
+        assert history["deleted_at"]
+        assert system["deleted_at"]
+        assert conn.execute(
+            "SELECT 1 FROM quiz_attempts WHERE campaign_code='history_keep'"
+        ).fetchone()
+
+    init_db(settings.db_path)
+    with connect(settings.db_path) as conn:
+        assert conn.execute(
+            "SELECT deleted_at FROM quiz_campaigns WHERE id=?",
+            (system_id,),
+        ).fetchone()["deleted_at"]
 
 
 def test_master_rejects_invalid_campaign_period_and_keeps_single_preview_tab(tmp_path):

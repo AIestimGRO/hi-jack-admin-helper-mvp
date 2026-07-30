@@ -76,7 +76,7 @@ def test_quiz_campaign_schedule_columns_are_migrated(tmp_path):
     init_db(path)
     with connect(path) as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(quiz_campaigns)")}
-        assert {"active_from", "active_until", "archived_at"}.issubset(columns)
+        assert {"active_from", "active_until", "archived_at", "deleted_at"}.issubset(columns)
         assert conn.execute("SELECT title FROM quiz_campaigns WHERE code='legacy'").fetchone()[0] == "Старый квиз"
 
 
