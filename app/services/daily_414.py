@@ -94,6 +94,9 @@ def award_daily_jackcoin(
     issue_day: date,
     correct_count: int,
     max_correct_count: int,
+    jackcoin_per_correct: int = JACKCOIN_PER_CORRECT,
+    jackcoin_completion_bonus: int = JACKCOIN_COMPLETION_BONUS,
+    jackcoin_perfect_bonus: int = JACKCOIN_PERFECT_BONUS,
 ) -> dict[str, int]:
     progress = conn.execute(
         "SELECT * FROM daily_414_progress WHERE client_id=?",
@@ -112,10 +115,12 @@ def award_daily_jackcoin(
     )
     best_streak = max(streak, int(progress["best_streak"]) if progress else 0)
     streak_bonus = JACKCOIN_STREAK_BONUSES.get(streak, 0)
-    answer_amount = max(0, int(correct_count)) * JACKCOIN_PER_CORRECT
-    completion_amount = JACKCOIN_COMPLETION_BONUS
+    per_correct = max(0, int(jackcoin_per_correct))
+    completion_amount = max(0, int(jackcoin_completion_bonus))
+    perfect_bonus = max(0, int(jackcoin_perfect_bonus))
+    answer_amount = max(0, int(correct_count)) * per_correct
     perfect_amount = (
-        JACKCOIN_PERFECT_BONUS
+        perfect_bonus
         if (
             max_correct_count == DAILY_414_QUESTION_COUNT
             and correct_count == DAILY_414_QUESTION_COUNT
@@ -150,7 +155,7 @@ def award_daily_jackcoin(
             str(submission_id),
             f"daily_414:submission:{submission_id}",
             (
-                f"4:14: {correct_count} правильных × {JACKCOIN_PER_CORRECT} JC"
+                f"4:14: {correct_count} правильных × {per_correct} JC"
                 f" + {completion_amount} JC за завершение"
                 f"{f' + {perfect_amount} JC за 10/10' if perfect_amount else ''}"
                 f"{f' + {streak_bonus} JC за серию {streak} дней' if streak_bonus else ''}"

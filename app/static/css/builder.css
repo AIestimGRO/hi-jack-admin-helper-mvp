@@ -221,9 +221,16 @@ body {
 
 .quick-option-row {
   display: grid;
-  grid-template-columns: 44px 1fr 40px;
+  grid-template-columns: 30px 44px 1fr 40px;
   align-items: center;
   gap: 8px;
+}
+
+.quick-option-letter {
+  color: #69d1d0;
+  font-size: 14px;
+  font-weight: 900;
+  text-align: center;
 }
 
 .quick-correct {
@@ -264,6 +271,20 @@ body {
 .remove-option-button:hover {
   color: #ff7f82;
   background: rgba(189, 57, 60, .1);
+}
+
+.form-status.success {
+  color: #6ee7c4;
+}
+
+.daily-order-note {
+  line-height: 1.55;
+}
+
+.hj-stage-badge {
+  color: #69d1d0;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .hj-text-action {

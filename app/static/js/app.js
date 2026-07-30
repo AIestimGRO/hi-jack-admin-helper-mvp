@@ -31,6 +31,17 @@ masterTabs.forEach((tab) => tab.addEventListener('click', () => {
   });
 }));
 
+document.querySelectorAll('.campaign-create').forEach((form) => {
+  const typeSelect = form.elements.campaign_type;
+  const jackcoinFields = form.querySelector('.campaign-jackcoin-fields');
+  if (!typeSelect || !jackcoinFields) return;
+  const syncCampaignType = () => {
+    jackcoinFields.hidden = typeSelect.value !== 'daily_414';
+  };
+  typeSelect.addEventListener('change', syncCampaignType);
+  syncCampaignType();
+});
+
 document.querySelectorAll('[data-row-href]').forEach((row) => {
   const openRow = () => window.location.assign(row.dataset.rowHref);
   row.addEventListener('click', (event) => {
@@ -47,6 +58,7 @@ document.querySelectorAll('[data-row-href]').forEach((row) => {
 const quizBuilder = document.querySelector('[data-quiz-builder]');
 if (quizBuilder) {
   const campaignId = quizBuilder.dataset.campaignId;
+  const isDaily414 = quizBuilder.dataset.campaignType === 'daily_414';
   const csrfToken = quizBuilder.dataset.csrfToken;
 
   async function builderRequest(url, payload) {
@@ -56,7 +68,7 @@ if (quizBuilder) {
       body: JSON.stringify({ csrf_token: csrfToken, ...payload }),
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Не удалось сохранить изменения');
+    if (!response.ok) throw new Error(data.detail || data.error || 'Не удалось сохранить изменения');
     return data;
   }
 
@@ -66,6 +78,10 @@ if (quizBuilder) {
 
   function finishBuilderAction(message) {
     window.location.assign(`${window.location.pathname}?ok=${encodeURIComponent(message)}`);
+  }
+
+  function optionLetter(index) {
+    return index < 26 ? String.fromCharCode(65 + index) : `${index + 1}`;
   }
 
   function setupQuestionEditor(form, optionsBox, questionId = null) {
@@ -85,14 +101,27 @@ if (quizBuilder) {
     syncVisual();
 
     const seeds = [...optionsBox.querySelectorAll('.hj-option-seed')].map((seed) => ({
+      optionId: seed.dataset.optionId || '',
+      optionCode: seed.dataset.optionCode || '',
       text: seed.dataset.text || '',
       correct: seed.dataset.correct === 'true',
     }));
     optionsBox.replaceChildren();
 
-    function addOption(text = '', correct = false, skipSync = false) {
+    function syncOptionLetters() {
+      optionsBox.querySelectorAll('.quick-option-row').forEach((row, index) => {
+        row.querySelector('.quick-option-letter').textContent = optionLetter(index);
+      });
+    }
+
+    function addOption(text = '', correct = false, skipSync = false, optionId = '', optionCode = '') {
       const row = document.createElement('div');
       row.className = 'quick-option-row';
+      row.dataset.optionId = optionId;
+      row.dataset.optionCode = optionCode;
+      const letter = document.createElement('span');
+      letter.className = 'quick-option-letter';
+      letter.setAttribute('aria-hidden', 'true');
       const correctLabel = document.createElement('label');
       correctLabel.className = 'quick-correct';
       correctLabel.title = 'Правильный ответ';
@@ -125,10 +154,12 @@ if (quizBuilder) {
         } else {
           row.remove();
         }
+        syncOptionLetters();
         syncType();
       });
-      row.append(correctLabel, textInput, remove);
+      row.append(letter, correctLabel, textInput, remove);
       optionsBox.append(row);
+      syncOptionLetters();
       if (!skipSync) syncType();
     }
 
@@ -159,7 +190,9 @@ if (quizBuilder) {
     (seeds.length ? seeds : [
       { text: '', correct: true }, { text: '', correct: false },
       { text: '', correct: false }, { text: '', correct: false },
-    ]).forEach((item) => addOption(item.text, item.correct, true));
+    ]).forEach((item) => addOption(
+      item.text, item.correct, true, item.optionId || '', item.optionCode || '',
+    ));
     syncType();
     typeSelect.addEventListener('change', syncType);
     addOptionButton.addEventListener('click', () => {
@@ -173,6 +206,8 @@ if (quizBuilder) {
       status.textContent = '';
       status.classList.remove('error');
       const options = [...optionsBox.querySelectorAll('.quick-option-row')].map((row) => ({
+        option_id: row.dataset.optionId || null,
+        option_code: row.dataset.optionCode || null,
         text: row.querySelector('input[type="text"]').value,
         is_correct: row.querySelector('.quick-correct input').checked,
       }));
@@ -207,7 +242,33 @@ if (quizBuilder) {
           placeholder: form.elements.placeholder.value,
         };
         const data = await builderRequest(url, payload);
-        finishBuilderAction(data.message);
+        if (!questionId || !isDaily414) {
+          finishBuilderAction(data.message);
+          return;
+        }
+        (data.options || []).forEach((option, index) => {
+          const row = optionsBox.children[index];
+          if (!row) return;
+          row.dataset.optionId = option.db_id;
+          row.dataset.optionCode = option.id;
+        });
+        if (imagePath) {
+          form.elements.image_path.value = imagePath;
+          let preview = form.querySelector('[data-question-media] img');
+          if (!preview) {
+            preview = document.createElement('img');
+            preview.alt = 'Текущее изображение';
+            form.querySelector('[data-question-media]').append(preview);
+          }
+          preview.src = imagePath;
+        }
+        mediaInput.value = '';
+        const card = form.closest('[data-question-card]');
+        const summary = card?.querySelector('.hj-question-summary strong');
+        if (summary) summary.textContent = payload.title.trim();
+        status.textContent = data.message;
+        status.classList.add('success');
+        setFormBusy(form, false);
       } catch (error) {
         status.textContent = error.message;
         status.classList.add('error');

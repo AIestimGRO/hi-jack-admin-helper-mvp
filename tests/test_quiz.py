@@ -496,6 +496,63 @@ def test_master_can_create_complete_question_in_one_action(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM quiz_options WHERE question_id=?", (question["id"],)).fetchone()[0] == 2
 
 
+def test_complete_question_update_preserves_option_identity_and_order(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        login(client)
+        with connect(settings.db_path) as conn:
+            campaign_id = conn.execute(
+                "SELECT id FROM quiz_campaigns WHERE code='default'"
+            ).fetchone()[0]
+        page = client.get(f"/master/quiz-builder/{campaign_id}")
+        token = re.search(r'data-csrf-token="([^"]+)"', page.text).group(1)
+        created = client.post(
+            f"/api/master/quiz-campaigns/{campaign_id}/questions/create-complete",
+            json={
+                "csrf_token": token,
+                "title": "Стабильные варианты",
+                "question_type": "single_choice",
+                "options": [
+                    {"text": "Вариант A", "is_correct": True},
+                    {"text": "Вариант B", "is_correct": False},
+                    {"text": "Вариант C", "is_correct": False},
+                    {"text": "Вариант D", "is_correct": False},
+                ],
+            },
+        )
+        assert created.status_code == 200
+        question_id = created.json()["question_id"]
+        original_options = created.json()["options"]
+
+        updated = client.post(
+            f"/api/master/quiz-questions/{question_id}/update-complete",
+            json={
+                "csrf_token": token,
+                "title": "Стабильные варианты после загрузки картинки",
+                "question_type": "single_choice",
+                "options": [
+                    {
+                        "option_id": option["db_id"],
+                        "option_code": option["id"],
+                        "text": f"{option['text']} обновлён",
+                        "is_correct": index == 0,
+                    }
+                    for index, option in enumerate(original_options)
+                ],
+            },
+        )
+        assert updated.status_code == 200
+        saved_options = updated.json()["options"]
+
+    assert [option["db_id"] for option in saved_options] == [
+        option["db_id"] for option in original_options
+    ]
+    assert [option["id"] for option in saved_options] == [
+        option["id"] for option in original_options
+    ]
+    assert [option["position"] for option in saved_options] == [10, 20, 30, 40]
+
+
 def test_master_can_score_rebus_with_normalized_text_answers(tmp_path):
     client, settings = make_client(tmp_path)
     with client:

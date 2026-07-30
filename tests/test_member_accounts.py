@@ -475,6 +475,9 @@ def test_daily_414_campaign_requires_member_account(
                 "campaign_type": "daily_414",
                 "code": "jackside_daily",
                 "title": "JACKSIDE 4:14",
+                "jackcoin_per_correct": 7,
+                "jackcoin_completion_bonus": 13,
+                "jackcoin_perfect_bonus": 29,
                 "csrf_token": csrf_from(master),
             },
             follow_redirects=False,
@@ -497,6 +500,9 @@ def test_daily_414_campaign_requires_member_account(
                 "title": "JACKSIDE 4:14",
                 "quiz_time_limit_seconds": 999,
                 "max_attempts": 9,
+                "jackcoin_per_correct": 8,
+                "jackcoin_completion_bonus": 14,
+                "jackcoin_perfect_bonus": 30,
                 "csrf_token": csrf_from(page),
             },
             follow_redirects=False,
@@ -522,6 +528,9 @@ def test_daily_414_campaign_requires_member_account(
         assert row["quiz_time_limit_seconds"] == 254
         assert row["max_attempts"] == 1
         assert row["verification_required"] == 1
+        assert row["jackcoin_per_correct"] == 8
+        assert row["jackcoin_completion_bonus"] == 14
+        assert row["jackcoin_perfect_bonus"] == 30
         assert row["active_from"]
         assert row["active_until"]
 

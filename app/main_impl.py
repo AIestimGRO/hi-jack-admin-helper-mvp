@@ -1495,9 +1495,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "question_count": DAILY_414_QUESTION_COUNT,
                     "time_limit_seconds": DAILY_414_TIME_LIMIT_SECONDS,
                     "one_attempt": True,
-                    "jackcoin_per_correct": 5,
-                    "completion_jackcoin": 10,
-                    "perfect_jackcoin": 20,
+                    "jackcoin_per_correct": int(
+                        campaign_row["jackcoin_per_correct"]
+                    ),
+                    "completion_jackcoin": int(
+                        campaign_row["jackcoin_completion_bonus"]
+                    ),
+                    "perfect_jackcoin": int(
+                        campaign_row["jackcoin_perfect_bonus"]
+                    ),
                     "prize_title": campaign_row["bonus_title"]
                     or "Главный приз дня",
                     "prize_amount": int(campaign_row["bonus_amount"] or 0),
@@ -2195,6 +2201,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ),
                     correct_count=int(scoring["correct_count"]),
                     max_correct_count=int(scoring["max_correct_count"]),
+                    jackcoin_per_correct=int(campaign_row["jackcoin_per_correct"]),
+                    jackcoin_completion_bonus=int(campaign_row["jackcoin_completion_bonus"]),
+                    jackcoin_perfect_bonus=int(campaign_row["jackcoin_perfect_bonus"]),
                 )
                 conn.execute(
                     """
@@ -2938,6 +2947,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         quiz_time_limit_seconds: int = Form(120),
         max_attempts: int = Form(3),
         verification_required: bool = Form(False),
+        jackcoin_per_correct: int = Form(5),
+        jackcoin_completion_bonus: int = Form(10),
+        jackcoin_perfect_bonus: int = Form(20),
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
@@ -2973,6 +2985,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Общий таймер должен быть от 0 до 7200 секунд", error=True, tab="campaigns")
         if max_attempts < 1 or max_attempts > 100:
             return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
+        if any(
+            value < 0 or value > 10_000
+            for value in (
+                jackcoin_per_correct,
+                jackcoin_completion_bonus,
+                jackcoin_perfect_bonus,
+            )
+        ):
+            return master_redirect(
+                "Начисление JACKCOIN должно быть от 0 до 10000",
+                error=True,
+                tab="campaigns",
+            )
         if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
             return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
         if campaign_type == "classic" and verification_required and not (
@@ -3023,10 +3048,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         SET welcome_kicker='JACKSIDE 4:14',
                             welcome_text='10 вопросов. 4 минуты 14 секунд. Одна попытка. Возвращаться к предыдущим вопросам и менять ответы нельзя.',
                             start_button_text='ПОСМОТРЕТЬ ПРИЗ ДНЯ',
-                            identity_text='Один человек. Один аккаунт. Одна попытка.'
+                            identity_text='Один человек. Один аккаунт. Одна попытка.',
+                            jackcoin_per_correct=?,
+                            jackcoin_completion_bonus=?,
+                            jackcoin_perfect_bonus=?
                         WHERE id=?
                         """,
-                        (int(cursor.lastrowid),),
+                        (
+                            jackcoin_per_correct,
+                            jackcoin_completion_bonus,
+                            jackcoin_perfect_bonus,
+                            int(cursor.lastrowid),
+                        ),
                     )
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
@@ -3051,6 +3084,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         quiz_time_limit_seconds: int = Form(120),
         max_attempts: int = Form(3),
         verification_required: bool = Form(False),
+        jackcoin_per_correct: int = Form(5),
+        jackcoin_completion_bonus: int = Form(10),
+        jackcoin_perfect_bonus: int = Form(20),
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
@@ -3103,6 +3139,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return master_redirect("Общий таймер должен быть от 0 до 7200 секунд", error=True, tab="campaigns")
         if max_attempts < 1 or max_attempts > 100:
             return master_redirect("Количество попыток должно быть от 1 до 100", error=True, tab="campaigns")
+        if any(
+            value < 0 or value > 10_000
+            for value in (
+                jackcoin_per_correct,
+                jackcoin_completion_bonus,
+                jackcoin_perfect_bonus,
+            )
+        ):
+            return master_redirect(
+                "Начисление JACKCOIN должно быть от 0 до 10000",
+                error=True,
+                tab="campaigns",
+            )
         if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
             return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
         if (
@@ -3151,6 +3200,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         victory_title=?, victory_text=?, failure_title=?, failure_text=?,
                         completion_title=?, completion_text=?, referral_enabled=?, referral_preference_code=?,
                         referral_amount=?, referral_delivery_mode=?, referral_threshold=?, referral_repeatable=?, referral_max_rewards=?,
+                        jackcoin_per_correct=?, jackcoin_completion_bonus=?, jackcoin_perfect_bonus=?,
                         active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
@@ -3161,6 +3211,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                      content_values["failure_title"], content_values["failure_text"], content_values["completion_title"],
                      content_values["completion_text"], int(referral_enabled), referral_code, referral_amount, referral_delivery_mode,
                      referral_threshold, int(referral_repeatable), referral_max_rewards,
+                     jackcoin_per_correct, jackcoin_completion_bonus, jackcoin_perfect_bonus,
                      active_from_value, active_until_value, campaign_id),
                 )
                 audit(
@@ -3302,6 +3353,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raw_options = payload.get("options")
             if not isinstance(raw_options, list):
                 raise ValueError("Добавьте варианты ответов")
+            seen_option_ids: set[int] = set()
             for raw_option in raw_options:
                 if not isinstance(raw_option, dict):
                     raise ValueError("Проверьте варианты ответов")
@@ -3310,7 +3362,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     continue
                 if len(option_text) > 300:
                     raise ValueError("Вариант ответа не должен быть длиннее 300 символов")
-                options.append({"text": option_text, "is_correct": bool(raw_option.get("is_correct"))})
+                raw_option_id = raw_option.get("option_id")
+                try:
+                    option_id = int(raw_option_id) if raw_option_id else None
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("Проверьте варианты ответов") from exc
+                if option_id is not None:
+                    if option_id in seen_option_ids:
+                        raise ValueError("Один вариант ответа передан несколько раз")
+                    seen_option_ids.add(option_id)
+                options.append({
+                    "db_id": option_id,
+                    "text": option_text,
+                    "is_correct": bool(raw_option.get("is_correct")),
+                })
             if len(options) < 2:
                 raise ValueError("Добавьте минимум два варианта ответа")
             if len({option["text"].casefold() for option in options}) != len(options):
@@ -3427,7 +3492,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 action="create_complete", entity_type="quiz_question", entity_id=question_id,
                 details={"campaign": campaign["code"], "title": question["title"], "options": len(question["options"]), "published": question["publish"]},
             )
-        return {"ok": True, "question_id": question_id, "message": "Вопрос сохранён"}
+        with connect(settings.db_path) as conn:
+            saved_options = load_builder_questions(conn, campaign["code"])
+        saved_question = next(
+            item for item in saved_options if item["db_id"] == question_id
+        )
+        return {
+            "ok": True,
+            "question_id": question_id,
+            "message": "Вопрос сохранён",
+            "options": saved_question["options"],
+        }
 
     @app.post("/api/master/quiz-questions/{question_id}/update-complete")
     async def update_complete_quiz_question(request: Request, question_id: int):
@@ -3453,6 +3528,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Вопрос не найден")
+            existing_options = {
+                int(option["id"]): option
+                for option in conn.execute(
+                    """
+                    SELECT * FROM quiz_options
+                    WHERE question_id=?
+                    ORDER BY position, id
+                    """,
+                    (question_id,),
+                ).fetchall()
+            }
+            supplied_option_ids = {
+                int(option["db_id"])
+                for option in question["options"]
+                if option["db_id"] is not None
+            }
+            if not supplied_option_ids.issubset(existing_options):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Один из вариантов ответа относится к другому вопросу",
+                )
             conn.execute(
                 """
                 UPDATE quiz_questions SET type=?, title=?, placeholder=?, required=?, points=?,
@@ -3467,24 +3563,72 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     question_id,
                 ),
             )
-            conn.execute("DELETE FROM quiz_options WHERE question_id=?", (question_id,))
+            kept_option_ids: set[int] = set()
             for index, option in enumerate(question["options"], start=1):
-                conn.execute(
-                    """
-                    INSERT INTO quiz_options(question_id, code, text, is_correct, position)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        question_id, f"o_{uuid.uuid4().hex[:10]}", option["text"],
-                        int(option["is_correct"]), index * 10,
-                    ),
-                )
+                if option["db_id"] is not None:
+                    option_id = int(option["db_id"])
+                    conn.execute(
+                        """
+                        UPDATE quiz_options
+                        SET text=?, is_correct=?, position=?, is_active=1,
+                            updated_at=CURRENT_TIMESTAMP
+                        WHERE id=? AND question_id=?
+                        """,
+                        (
+                            option["text"], int(option["is_correct"]), index * 10,
+                            option_id, question_id,
+                        ),
+                    )
+                else:
+                    option_id = int(
+                        conn.execute(
+                            """
+                            INSERT INTO quiz_options(
+                                question_id, code, text, is_correct, position
+                            ) VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (
+                                question_id, f"o_{uuid.uuid4().hex[:10]}",
+                                option["text"], int(option["is_correct"]), index * 10,
+                            ),
+                        ).lastrowid
+                    )
+                kept_option_ids.add(option_id)
+            for option_id in existing_options:
+                if option_id not in kept_option_ids:
+                    conn.execute(
+                        "DELETE FROM quiz_options WHERE id=? AND question_id=?",
+                        (option_id, question_id),
+                    )
             audit(
                 conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
                 action="update_complete", entity_type="quiz_question", entity_id=question_id,
                 details={"title": question["title"], "type": question["question_type"], "options": len(question["options"])},
             )
-        return {"ok": True, "question_id": question_id, "message": "Изменения сохранены"}
+            saved_options = conn.execute(
+                """
+                SELECT id, code, text, is_correct, position, is_active
+                FROM quiz_options WHERE question_id=?
+                ORDER BY position, id
+                """,
+                (question_id,),
+            ).fetchall()
+        return {
+            "ok": True,
+            "question_id": question_id,
+            "message": "Изменения сохранены",
+            "options": [
+                {
+                    "db_id": int(option["id"]),
+                    "id": option["code"],
+                    "text": option["text"],
+                    "correct": bool(option["is_correct"]),
+                    "position": int(option["position"]),
+                    "is_active": bool(option["is_active"]),
+                }
+                for option in saved_options
+            ],
+        }
 
     @app.post("/api/master/quiz-campaigns/{campaign_id}/media")
     async def upload_quiz_media(

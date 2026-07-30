@@ -83,6 +83,13 @@
     <label>Секунд на весь тест <small>0 = без таймера</small><input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="120"></label>
     <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="3"></label>
     <label class="check-label"><input name="verification_required" type="checkbox" value="true"> Требовать Telegram или email</label>
+    <fieldset class="campaign-jackcoin-fields" hidden>
+      <legend>Начисление JACKCOIN в 4:14</legend>
+      <label>За каждый правильный ответ<input name="jackcoin_per_correct" type="number" min="0" max="10000" value="5"></label>
+      <label>За завершение игры<input name="jackcoin_completion_bonus" type="number" min="0" max="10000" value="10"></label>
+      <label>Дополнительно за 10/10<input name="jackcoin_perfect_bonus" type="number" min="0" max="10000" value="20"></label>
+      <p class="muted">Итого при 10/10 с этими настройками: 80 JC без учёта бонуса за серию дней.</p>
+    </fieldset>
     <fieldset class="campaign-referral-fields">
       <legend>Реферальная программа</legend>
       <label class="check-label"><input name="referral_enabled" type="checkbox" value="true"> Включить кнопку «Поделиться тестом»</label>
@@ -127,6 +134,15 @@
         <label>Секунд на весь тест<input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="{{ campaign.quiz_time_limit_seconds }}"></label>
         <label>Количество попыток<input name="max_attempts" type="number" min="1" max="100" value="{{ campaign.max_attempts }}"></label>
         <label class="check-label"><input name="verification_required" type="checkbox" value="true" {% if campaign.verification_required %}checked{% endif %}> Требовать Telegram или email</label>
+        {% if campaign.campaign_type == 'daily_414' %}
+        <fieldset class="campaign-jackcoin-fields">
+          <legend>Начисление JACKCOIN в 4:14</legend>
+          <label>За каждый правильный ответ<input name="jackcoin_per_correct" type="number" min="0" max="10000" value="{{ campaign.jackcoin_per_correct }}"></label>
+          <label>За завершение игры<input name="jackcoin_completion_bonus" type="number" min="0" max="10000" value="{{ campaign.jackcoin_completion_bonus }}"></label>
+          <label>Дополнительно за 10/10<input name="jackcoin_perfect_bonus" type="number" min="0" max="10000" value="{{ campaign.jackcoin_perfect_bonus }}"></label>
+          <p class="muted">Настройка относится только к этому выпуску. Бонус за серию дней начисляется отдельно.</p>
+        </fieldset>
+        {% endif %}
         <fieldset class="campaign-referral-fields">
           <legend>Реферальная программа</legend>
           <label class="check-label"><input name="referral_enabled" type="checkbox" value="true" {% if campaign.referral_enabled %}checked{% endif %}> Включить кнопку «Поделиться тестом»</label>

@@ -130,6 +130,9 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     quiz_time_limit_seconds INTEGER NOT NULL DEFAULT 120 CHECK(quiz_time_limit_seconds >= 0),
     max_attempts INTEGER NOT NULL DEFAULT 3 CHECK(max_attempts >= 1),
     verification_required INTEGER NOT NULL DEFAULT 0,
+    jackcoin_per_correct INTEGER NOT NULL DEFAULT 5 CHECK(jackcoin_per_correct >= 0),
+    jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10 CHECK(jackcoin_completion_bonus >= 0),
+    jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20 CHECK(jackcoin_perfect_bonus >= 0),
     welcome_kicker TEXT NOT NULL DEFAULT 'Короткий опрос клуба',
     welcome_text TEXT NOT NULL DEFAULT 'Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.',
     start_button_text TEXT NOT NULL DEFAULT 'Начать',
@@ -596,6 +599,9 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_campaigns", "active_until TEXT")
         _ensure_column(conn, "quiz_campaigns", "max_attempts INTEGER NOT NULL DEFAULT 3")
         _ensure_column(conn, "quiz_campaigns", "verification_required INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "quiz_campaigns", "jackcoin_per_correct INTEGER NOT NULL DEFAULT 5")
+        _ensure_column(conn, "quiz_campaigns", "jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10")
+        _ensure_column(conn, "quiz_campaigns", "jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20")
         _ensure_column(conn, "quiz_campaigns", "welcome_kicker TEXT NOT NULL DEFAULT 'Короткий опрос клуба'")
         _ensure_column(conn, "quiz_campaigns", "welcome_text TEXT NOT NULL DEFAULT 'Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.'")
         _ensure_column(conn, "quiz_campaigns", "start_button_text TEXT NOT NULL DEFAULT 'Начать'")

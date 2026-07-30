@@ -97,9 +97,13 @@ def test_414_and_member_tables_are_added_without_changing_legacy_campaign(tmp_pa
     init_db(path)
     with connect(path) as conn:
         campaign = conn.execute(
-            "SELECT id, title, campaign_type FROM quiz_campaigns WHERE id=7"
+            """
+            SELECT id, title, campaign_type, jackcoin_per_correct,
+                   jackcoin_completion_bonus, jackcoin_perfect_bonus
+            FROM quiz_campaigns WHERE id=7
+            """
         ).fetchone()
-        assert tuple(campaign) == (7, "Старый квиз", "classic")
+        assert tuple(campaign) == (7, "Старый квиз", "classic", 5, 10, 20)
         tables = {
             row[0]
             for row in conn.execute(

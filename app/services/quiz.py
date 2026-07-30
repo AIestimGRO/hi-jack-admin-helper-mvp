@@ -155,6 +155,15 @@ def _db_questions(
 ) -> list[dict[str, Any]]:
     campaign = normalize_campaign(campaign)
     active_clause = "AND is_active = 1" if active_only else ""
+    campaign_row = conn.execute(
+        "SELECT campaign_type FROM quiz_campaigns WHERE code = ?",
+        (campaign,),
+    ).fetchone()
+    order_clause = (
+        "qq.position, qq.id"
+        if campaign_row and campaign_row["campaign_type"] == "daily_414"
+        else "COALESCE(qs.position, 0), qq.position, qq.id"
+    )
     rows = conn.execute(
         f"""
         SELECT qq.*, qs.title AS section_title, qs.theme AS section_theme,
@@ -162,7 +171,7 @@ def _db_questions(
         FROM quiz_questions qq
         LEFT JOIN quiz_sections qs ON qs.id=qq.section_id
         WHERE qq.campaign_code = ? {active_clause}
-        ORDER BY COALESCE(qs.position, 0), qq.position, qq.id
+        ORDER BY {order_clause}
         """,
         (campaign,),
     ).fetchall()

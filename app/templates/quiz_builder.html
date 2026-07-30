@@ -2,7 +2,7 @@
 {% block title %}Конструктор «{{ campaign.title }}» — Hi Jack Club{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/builder.css') }}?v={{ asset_version }}">{% endblock %}
 {% block content %}
-<div class="hj-builder" data-quiz-builder data-campaign-id="{{ campaign.id }}" data-csrf-token="{{ csrf_token }}">
+<div class="hj-builder" data-quiz-builder data-campaign-id="{{ campaign.id }}" data-campaign-type="{{ campaign.campaign_type }}" data-csrf-token="{{ csrf_token }}">
   <a class="back" href="/master?tab=campaigns">← Кампании квиза</a>
 
   <section class="hj-builder-hero">
@@ -15,6 +15,9 @@
         <span>Порог <strong>{{ campaign.pass_score }}</strong></span>
         <span>Время <strong>{{ campaign.quiz_time_limit_seconds }} сек.</strong></span>
         <span>Бонус <strong>{{ campaign.bonus_title or 'не назначен' }}</strong></span>
+        {% if campaign.campaign_type == 'daily_414' %}
+        <span>JACKCOIN <strong>{{ campaign.jackcoin_per_correct }} за ответ · {{ campaign.jackcoin_completion_bonus }} за финиш · {{ campaign.jackcoin_perfect_bonus }} за 10/10</strong></span>
+        {% endif %}
       </div>
       <div class="hj-hero-actions">
         <a class="primary button" href="{{ request.app.state.settings.quiz_public_base_url.rstrip('/') }}/quiz?campaign={{ campaign.code }}" target="hj-quiz-preview" rel="noopener noreferrer">Посмотреть квиз ↗</a>
@@ -32,6 +35,12 @@
   {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
   {% if campaign.pass_score > max_score and campaign.pass_score > 0 %}<div class="alert error">Порог выше доступного максимума: бонус сейчас невозможно получить.</div>{% endif %}
   {% if hidden_count %}<div class="alert warning">Остались старые скрытые вопросы: {{ hidden_count }}. Откройте нужный вопрос и нажмите «Сохранить изменения» — он сразу появится в квизе.</div>{% endif %}
+  {% if campaign.campaign_type == 'daily_414' %}
+  <div class="alert daily-order-note">
+    Порядок 4:14 закреплён номером вопроса: <strong>1–2 Префлоп · 3–5 Флоп · 6–8 Тёрн · 9–10 Ривер</strong>.
+    Выбранный ниже блок меняет только оформление и больше не меняет очерёдность.
+  </div>
+  {% endif %}
 
   <section class="hj-block-section">
     <div class="hj-section-heading"><div><p class="eyebrow">Оформление</p><h2>Тематические блоки</h2></div><span>{{ sections|length }}</span></div>
@@ -65,7 +74,7 @@
     <form class="hj-question-editor card" id="quick-question-form">
       <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" placeholder="Например: Какая комбинация старше?" required></textarea></label>
       <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice">Один правильный</option><option value="multi_choice">Несколько правильных</option><option value="text">Свободный текст</option></select></label>
-      <label>Блок<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}">{{ section.title }}</option>{% endfor %}</select></label>
+      <label>{{ 'Фон / оформление' if campaign.campaign_type == 'daily_414' else 'Блок' }}<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}">{{ section.title }}</option>{% endfor %}</select></label>
       <label>Вид вопроса<select name="visual_type"><option value="standard">Обычный текстовый</option><option value="rebus">Ребус с картинкой</option><option value="photo">Фотовопрос / раздача</option></select></label>
       <label class="wide hj-media-field" data-question-media hidden>Изображение<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_path" type="hidden"></label>
       <p class="correct-help">Выберите правильный вариант.</p>
@@ -105,20 +114,20 @@
       <details class="hj-question-card card {{ 'legacy-hidden' if not question.is_active else '' }}" data-question-card data-question-id="{{ question.db_id }}">
         <summary>
           <span class="hj-question-number">{{ loop.index }}</span>
-          <span class="hj-question-summary"><strong>{{ question.title }}</strong><small>{% if question.type == 'text' %}Свободный ответ{% else %}{{ question.options|length }} вариантов{% endif %}{% if question.points != 1 %} · {{ question.points }} балл.{% endif %}{% if not question.is_active %} · скрыт{% endif %}</small></span>
+          <span class="hj-question-summary"><strong>{{ question.title }}</strong><small>{% if campaign.campaign_type == 'daily_414' %}<span class="hj-stage-badge">{{ 'Префлоп' if loop.index <= 2 else ('Флоп' if loop.index <= 5 else ('Тёрн' if loop.index <= 8 else 'Ривер')) }}</span> · {% endif %}{% if question.type == 'text' %}Свободный ответ{% else %}{{ question.options|length }} вариантов{% endif %}{% if question.points != 1 %} · {{ question.points }} балл.{% endif %}{% if not question.is_active %} · скрыт{% endif %}</small></span>
           <span class="hj-chevron">⌄</span>
         </summary>
         <div class="hj-question-edit-body">
           <form class="hj-question-editor hj-existing-editor" data-existing-question-form data-question-id="{{ question.db_id }}">
             <label class="hj-title-field">Текст вопроса<textarea name="title" maxlength="300" rows="2" required>{{ question.title }}</textarea></label>
             <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice" {% if question.type=='single_choice' %}selected{% endif %}>Один правильный</option><option value="multi_choice" {% if question.type=='multi_choice' %}selected{% endif %}>Несколько правильных</option><option value="text" {% if question.type=='text' %}selected{% endif %}>Свободный текст</option></select></label>
-            <label>Блок<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}" {% if question.section_id==section.id %}selected{% endif %}>{{ section.title }}</option>{% endfor %}</select></label>
+            <label>{{ 'Фон / оформление' if campaign.campaign_type == 'daily_414' else 'Блок' }}<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}" {% if question.section_id==section.id %}selected{% endif %}>{{ section.title }}</option>{% endfor %}</select></label>
             <label>Вид вопроса<select name="visual_type"><option value="standard" {% if question.visual_type=='standard' %}selected{% endif %}>Обычный текстовый</option><option value="rebus" {% if question.visual_type=='rebus' %}selected{% endif %}>Ребус с картинкой</option><option value="photo" {% if question.visual_type=='photo' %}selected{% endif %}>Фотовопрос / раздача</option></select></label>
             <label class="wide hj-media-field" data-question-media {% if question.visual_type=='standard' %}hidden{% endif %}>Изображение<input name="image" type="file" accept="image/jpeg,image/png,image/webp"><input name="image_path" type="hidden" value="{{ question.image_path or '' }}">{% if question.image_path %}<img src="{{ question.image_path }}" alt="Текущее изображение">{% endif %}</label>
             <p class="correct-help">Выберите правильный вариант.</p>
             <div class="hj-answer-list" data-existing-options>
             {% for option in question.options %}
-              <div class="hj-option-seed" data-text="{{ option.text }}" data-correct="{{ 'true' if option.correct else 'false' }}"></div>
+              <div class="hj-option-seed" data-option-id="{{ option.db_id }}" data-option-code="{{ option.id }}" data-text="{{ option.text }}" data-correct="{{ 'true' if option.correct else 'false' }}"></div>
             {% endfor %}
             </div>
             <button class="hj-text-action" type="button" data-action="add-option">+ Добавить вариант</button>
