@@ -343,8 +343,9 @@
     const sectionTitle = isDaily414 ? stageNames[question.game_stage] : section.title;
     sectionLabel.hidden = !sectionTitle;
     sectionLabel.textContent = sectionTitle || '';
-    const questionImage = screen.querySelector('.quiz-question-image');
-    questionImage.hidden = !question.image_path;
+    const media = screen.querySelector('.quiz-question-media');
+    const questionImage = media.querySelector('.quiz-question-image');
+    media.hidden = !question.image_path;
     questionImage.src = question.image_path || '';
     questionImage.alt = question.image_path ? question.title : '';
     screen.querySelector('.quiz-question-title').textContent = question.title;
@@ -590,8 +591,9 @@
     app.querySelector('.final-table-heading .quiz-section-label').textContent = data.heads_up ? 'ХЕДЗ-АП' : 'ФИНАЛЬНЫЙ СТОЛ';
     app.querySelector('.final-active-count').textContent = `В игре: ${data.active_count}`;
     app.querySelector('.final-question-number').textContent = `Вопрос финала ${question.final_number}`;
-    const image = app.querySelector('.final-question-image');
-    image.hidden = !question.image_path;
+    const media = app.querySelector('.final-question-media');
+    const image = media.querySelector('.final-question-image');
+    media.hidden = !question.image_path;
     image.src = question.image_path || '';
     image.alt = question.image_path ? question.title : '';
     app.querySelector('.final-question-title').textContent = question.title;
