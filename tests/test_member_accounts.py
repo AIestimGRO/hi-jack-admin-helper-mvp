@@ -847,6 +847,11 @@ def test_daily_414_lobby_ranks_by_correct_count(
         assert body["state"] == "lobby"
         assert body["correct_count"] == 9
         assert body["provisional_place"] == 1
+        assert body["standings"][0]["is_you"] is True
+        assert body["standings"][0]["place"] == 1
+        assert body["standings"][0]["correct_count"] == 9
+        assert body["standings"][1]["place"] == 2
+        assert body["standings"][1]["correct_count"] == 8
 
 
 def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
@@ -903,8 +908,13 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         assert "final-question-options" in html_text
         assert "requestDailySeat" in js_text
         assert "startQuizAfterCountdown" in js_text
+        assert "setFlow" in js_text
+        assert "rank_final_candidates" not in js_text
+        assert "standings" in (
+            Path(__file__).resolve().parents[1] / "app" / "main_impl.py"
+        ).read_text(encoding="utf-8")
         assert "zeroFetchPending" in js_text
-        assert "provisional_place ?? result?.daily_place" in js_text or "data.provisional_place ?? result?.daily_place" in js_text
+        assert "data.provisional_place ?? result?.daily_place" in js_text or "youStanding?.place ?? provisionalPlace" in js_text
 
         token = attempt["attempt_token"]
         first = client.post(

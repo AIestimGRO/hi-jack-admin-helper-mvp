@@ -6,12 +6,25 @@ from app.services.daily_414 import (
     final_table_candidate_eligible,
     final_table_starts_at,
     main_prize_eligible,
+    rank_final_candidates,
 )
 from app.services.daily_414_final import (
     ensure_final_table,
     reconcile_final_table,
 )
 from app.services.quiz import load_builder_questions
+
+
+def test_rank_final_candidates_orders_by_score_then_speed() -> None:
+    ranked = rank_final_candidates(
+        [
+            {"id": 1, "client_id": 11, "correct_count": 8, "completion_time_ms": 10000},
+            {"id": 2, "client_id": 22, "correct_count": 9, "completion_time_ms": 20000},
+            {"id": 3, "client_id": 33, "correct_count": 9, "completion_time_ms": 15000},
+        ]
+    )
+    assert [item["client_id"] for item in ranked] == [33, 22, 11]
+    assert [item["place"] for item in ranked] == [1, 2, 3]
 
 
 def test_daily_414_final_table_entry_window_is_five_minutes() -> None:

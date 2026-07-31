@@ -75,6 +75,7 @@ from app.services.daily_414 import (
     final_table_starts_at as daily_final_table_starts_at,
     issue_date as daily_issue_date,
     public_daily_questions,
+    rank_final_candidates,
     validate_daily_questions,
 )
 from app.services.daily_414_final import (
@@ -2472,37 +2473,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ),
                 )
                 if prize_eligible:
-                    daily_place = int(
+                    ranked = rank_final_candidates(
                         conn.execute(
                             """
-                            SELECT COUNT(*) + 1
+                            SELECT id, client_id, correct_count, completion_time_ms
                             FROM quiz_submissions
                             WHERE campaign_code=? AND campaign_version=?
                               AND main_prize_eligible=1
-                              AND (
-                                correct_count > ?
-                                OR (
-                                  correct_count = ?
-                                  AND (
-                                    IFNULL(completion_time_ms, 2147483647) < IFNULL(?, 2147483647)
-                                    OR (
-                                      IFNULL(completion_time_ms, 2147483647) = IFNULL(?, 2147483647)
-                                      AND id < ?
-                                    )
-                                  )
-                                )
-                              )
                             """,
                             (
                                 attempt["campaign_code"],
                                 attempt["campaign_version"],
-                                scoring["correct_count"],
-                                scoring["correct_count"],
-                                completion_time_ms,
-                                completion_time_ms,
-                                submission_id,
                             ),
-                        ).fetchone()[0]
+                        ).fetchall()
+                    )
+                    daily_place = next(
+                        (
+                            item["place"]
+                            for item in ranked
+                            if item["submission_id"] == submission_id
+                        ),
+                        None,
                     )
             reward = issue_reward(
                 conn, client_id=int(attempt["client_id"]), campaign=campaign_row,
@@ -2737,44 +2728,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             candidate = bool(submission["main_prize_eligible"])
             provisional_place = None
+            ranked = rank_final_candidates(
+                conn.execute(
+                    """
+                    SELECT id, client_id, correct_count, completion_time_ms
+                    FROM quiz_submissions
+                    WHERE campaign_code=? AND campaign_version=?
+                      AND main_prize_eligible=1
+                    """,
+                    (campaign, campaign_version),
+                ).fetchall()
+            )
+            standings = [
+                {
+                    "place": item["place"],
+                    "correct_count": item["correct_count"],
+                    "is_you": item["client_id"] == int(member["client_id"]),
+                }
+                for item in ranked[:10]
+            ]
             if candidate:
-                provisional_place = int(
-                    conn.execute(
-                        """
-                        SELECT COUNT(*) + 1
-                        FROM quiz_submissions
-                        WHERE campaign_code=? AND campaign_version=?
-                          AND main_prize_eligible=1
-                          AND (
-                            correct_count > ?
-                            OR (
-                              correct_count = ?
-                              AND (
-                                IFNULL(completion_time_ms, 2147483647) < IFNULL(?, 2147483647)
-                                OR (
-                                  IFNULL(completion_time_ms, 2147483647) = IFNULL(?, 2147483647)
-                                  AND id < ?
-                                )
-                              )
-                            )
-                          )
-                        """,
-                        (
-                            campaign,
-                            campaign_version,
-                            submission["correct_count"],
-                            submission["correct_count"],
-                            submission["completion_time_ms"],
-                            submission["completion_time_ms"],
-                            submission["id"],
-                        ),
-                    ).fetchone()[0]
+                provisional_place = next(
+                    (
+                        item["place"]
+                        for item in ranked
+                        if item["client_id"] == int(member["client_id"])
+                    ),
+                    None,
                 )
             lobby_stats = {
                 "correct_count": int(submission["correct_count"] or 0),
                 "max_correct_count": int(submission["max_correct_count"] or 0),
                 "completion_time_ms": submission["completion_time_ms"],
                 "jackcoin_awarded": int(submission["jackcoin_awarded"] or 0),
+                "standings": standings,
             }
             if now < final_start:
                 return {
