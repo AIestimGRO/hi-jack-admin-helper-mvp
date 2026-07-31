@@ -5,9 +5,11 @@ import hashlib
 import hmac
 import io
 import json
+import logging
 import re
 import secrets
 import sqlite3
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -80,6 +82,7 @@ from app.services.daily_414 import (
 )
 from app.services.daily_414_final import (
     ensure_final_table,
+    final_table_needs_reconcile,
     question_window as final_question_window,
     reconcile_final_table,
 )
@@ -2676,6 +2679,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         now = utc_now()
         campaign_version = max(1, int(campaign_row["current_version"] or 1))
         final_start = daily_final_start_utc(campaign_row)
+        client_id = int(member["client_id"])
         base = {
             "ok": True,
             "campaign": campaign,
@@ -2686,39 +2690,75 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "question_seconds": DAILY_414_FINAL_QUESTION_SECONDS,
             "table_size": DAILY_414_FINAL_TABLE_SIZE,
         }
-        with transaction(settings.db_path) as conn:
-            submission = conn.execute(
-                """
-                SELECT * FROM quiz_submissions
-                WHERE campaign_code=? AND campaign_version=? AND client_id=?
-                ORDER BY id DESC LIMIT 1
-                """,
-                (campaign, campaign_version, int(member["client_id"])),
-            ).fetchone()
-            if not submission:
-                return {
-                    **base,
-                    "state": "main_round",
-                    "message": "Сначала завершите основной раунд из 10 вопросов.",
-                }
+
+        def build_status() -> dict[str, Any]:
+            with connect(settings.db_path) as conn:
+                submission = conn.execute(
+                    """
+                    SELECT * FROM quiz_submissions
+                    WHERE campaign_code=? AND campaign_version=? AND client_id=?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (campaign, campaign_version, client_id),
+                ).fetchone()
+                if not submission:
+                    return {
+                        **base,
+                        "state": "main_round",
+                        "message": "Сначала завершите основной раунд из 10 вопросов.",
+                    }
+                table = conn.execute(
+                    """
+                    SELECT * FROM daily_414_final_tables
+                    WHERE campaign_code=? AND campaign_version=?
+                    """,
+                    (campaign, campaign_version),
+                ).fetchone()
+
             try:
-                final_questions = load_final_questions(conn, campaign)
+                with connect(settings.db_path) as conn:
+                    final_questions = load_final_questions(conn, campaign)
             except ValueError:
                 final_questions = []
-            table = ensure_final_table(
-                conn,
-                campaign_code=campaign,
-                campaign_version=campaign_version,
-                starts_at=final_start,
-                questions=final_questions,
+            except Exception:
+                final_questions = []
+
+            mutate = table is None or final_table_needs_reconcile(
+                table, now=now, schedule_starts_at=final_start
+            ) or (
+                table is not None
+                and table["status"] in {"waiting", "unavailable"}
+                and bool(final_questions)
+                and str(table["questions_snapshot_json"] or "").strip() in {"", "[]"}
             )
-            if now >= final_start:
-                table = reconcile_final_table(
-                    conn,
-                    final_table_id=int(table["id"]),
-                    now=now,
-                    schedule_starts_at=final_start,
+            if mutate:
+                with transaction(settings.db_path) as conn:
+                    table = ensure_final_table(
+                        conn,
+                        campaign_code=campaign,
+                        campaign_version=campaign_version,
+                        starts_at=final_start,
+                        questions=final_questions,
+                    )
+                    if final_table_needs_reconcile(
+                        table, now=now, schedule_starts_at=final_start
+                    ):
+                        table = reconcile_final_table(
+                            conn,
+                            final_table_id=int(table["id"]),
+                            now=now,
+                            schedule_starts_at=final_start,
+                        )
+            elif table is None:
+                raise HTTPException(
+                    status_code=409, detail="Финальный стол ещё не сформирован"
                 )
+
+            if table is None:
+                raise HTTPException(
+                    status_code=500, detail="Не удалось создать финальный стол"
+                )
+
             if table["status"] == "unavailable":
                 return {
                     **base,
@@ -2729,161 +2769,213 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ),
                 }
 
-            candidate = bool(submission["main_prize_eligible"])
-            provisional_place = None
-            ranked = rank_final_candidates(
-                conn.execute(
+            with connect(settings.db_path) as conn:
+                submission = conn.execute(
                     """
-                    SELECT id, client_id, correct_count, completion_time_ms
-                    FROM quiz_submissions
-                    WHERE campaign_code=? AND campaign_version=?
-                      AND main_prize_eligible=1
+                    SELECT * FROM quiz_submissions
+                    WHERE campaign_code=? AND campaign_version=? AND client_id=?
+                    ORDER BY id DESC LIMIT 1
                     """,
-                    (campaign, campaign_version),
-                ).fetchall()
-            )
-            standings = [
-                {
-                    "place": item["place"],
-                    "correct_count": item["correct_count"],
-                    "is_you": item["client_id"] == int(member["client_id"]),
-                }
-                for item in ranked[:10]
-            ]
-            if candidate:
-                provisional_place = next(
-                    (
-                        item["place"]
-                        for item in ranked
-                        if item["client_id"] == int(member["client_id"])
-                    ),
-                    None,
+                    (campaign, campaign_version, client_id),
+                ).fetchone()
+                candidate = bool(submission["main_prize_eligible"])
+                provisional_place = None
+                ranked = rank_final_candidates(
+                    conn.execute(
+                        """
+                        SELECT id, client_id, correct_count, completion_time_ms
+                        FROM quiz_submissions
+                        WHERE campaign_code=? AND campaign_version=?
+                          AND main_prize_eligible=1
+                        """,
+                        (campaign, campaign_version),
+                    ).fetchall()
                 )
-            lobby_stats = {
-                "correct_count": int(submission["correct_count"] or 0),
-                "max_correct_count": int(submission["max_correct_count"] or 0),
-                "completion_time_ms": submission["completion_time_ms"],
-                "jackcoin_awarded": int(submission["jackcoin_awarded"] or 0),
-                "standings": standings,
-            }
-            if now < final_start:
-                return {
-                    **base,
-                    "state": "lobby" if candidate else "not_eligible",
-                    "candidate": candidate,
-                    "provisional_place": provisional_place,
-                    **lobby_stats,
-                    "message": (
-                        "Основной раунд завершён. Ждём финальный стол."
-                        if candidate
-                        else (
-                            "Отбор за финальный стол уже завершён. "
-                            "JACKCOIN и награда за основной квиз сохранены."
-                        )
-                    ),
-                }
-
-            finalist = conn.execute(
-                """
-                SELECT * FROM daily_414_finalists
-                WHERE final_table_id=? AND client_id=?
-                """,
-                (table["id"], int(member["client_id"])),
-            ).fetchone()
-            if not finalist:
-                return {
-                    **base,
-                    "state": "not_qualified" if candidate else "not_eligible",
-                    "candidate": candidate,
-                    "provisional_place": provisional_place,
-                    "message": (
-                        "В этот раз результат не вошёл в топ-10 финального стола."
-                        if candidate
-                        else (
-                            "Вы прошли основной квиз после закрытия отбора "
-                            "и не участвуете в финальном столе."
-                        )
-                    ),
-                }
-
-            active_count = int(
-                conn.execute(
-                    """
-                    SELECT COUNT(*) FROM daily_414_finalists
-                    WHERE final_table_id=? AND status='active'
-                    """,
-                    (table["id"],),
-                ).fetchone()[0]
-            )
-            if finalist["status"] == "winner":
-                return {
-                    **base,
-                    "state": "winner",
-                    "seed": int(finalist["seed"]),
-                    "active_count": 1,
-                    "message": "Вы победили за финальным столом!",
-                }
-            if finalist["status"] == "eliminated":
-                return {
-                    **base,
-                    "state": "eliminated",
-                    "seed": int(finalist["seed"]),
-                    "active_count": active_count,
-                    "eliminated_question": int(
-                        finalist["eliminated_question_index"] or 0
+                standings = [
+                    {
+                        "place": item["place"],
+                        "correct_count": item["correct_count"],
+                        "is_you": item["client_id"] == client_id,
+                    }
+                    for item in ranked[:10]
+                ]
+                if candidate:
+                    provisional_place = next(
+                        (
+                            item["place"]
+                            for item in ranked
+                            if item["client_id"] == client_id
+                        ),
+                        None,
                     )
-                    + 1,
-                    "message": "Вы выбыли из финального стола.",
+                lobby_stats = {
+                    "correct_count": int(submission["correct_count"] or 0),
+                    "max_correct_count": int(submission["max_correct_count"] or 0),
+                    "completion_time_ms": submission["completion_time_ms"],
+                    "jackcoin_awarded": int(submission["jackcoin_awarded"] or 0),
+                    "standings": standings,
                 }
-            if table["status"] == "completed":
+                if now < final_start:
+                    return {
+                        **base,
+                        "state": "lobby" if candidate else "not_eligible",
+                        "candidate": candidate,
+                        "provisional_place": provisional_place,
+                        **lobby_stats,
+                        "message": (
+                            "Основной раунд завершён. Ждём финальный стол."
+                            if candidate
+                            else (
+                                "Отбор за финальный стол уже завершён. "
+                                "JACKCOIN и награда за основной квиз сохранены."
+                            )
+                        ),
+                    }
+
+                finalist = conn.execute(
+                    """
+                    SELECT * FROM daily_414_finalists
+                    WHERE final_table_id=? AND client_id=?
+                    """,
+                    (table["id"], client_id),
+                ).fetchone()
+                if not finalist:
+                    return {
+                        **base,
+                        "state": "not_qualified" if candidate else "not_eligible",
+                        "candidate": candidate,
+                        "provisional_place": provisional_place,
+                        "message": (
+                            "В этот раз результат не вошёл в топ-10 финального стола."
+                            if candidate
+                            else (
+                                "Вы прошли основной квиз после закрытия отбора "
+                                "и не участвуете в финальном столе."
+                            )
+                        ),
+                    }
+
+                active_count = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM daily_414_finalists
+                        WHERE final_table_id=? AND status='active'
+                        """,
+                        (table["id"],),
+                    ).fetchone()[0]
+                )
+                if finalist["status"] == "winner":
+                    return {
+                        **base,
+                        "state": "winner",
+                        "seed": int(finalist["seed"]),
+                        "active_count": 1,
+                        "message": "Вы победили за финальным столом!",
+                    }
+                if finalist["status"] == "eliminated":
+                    return {
+                        **base,
+                        "state": "eliminated",
+                        "seed": int(finalist["seed"]),
+                        "active_count": active_count,
+                        "eliminated_question": int(
+                            finalist["eliminated_question_index"] or 0
+                        )
+                        + 1,
+                        "message": "Вы выбыли из финального стола.",
+                    }
+                if table["status"] == "completed":
+                    return {
+                        **base,
+                        "state": "completed",
+                        "seed": int(finalist["seed"]),
+                        "active_count": active_count,
+                        "message": (
+                            "Финальные вопросы закончились. "
+                            "Результат сохранён для ведущего."
+                        ),
+                    }
+
+                try:
+                    questions = json.loads(table["questions_snapshot_json"] or "[]")
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Снимок финальных вопросов повреждён",
+                    ) from exc
+                if not isinstance(questions, list) or not questions:
+                    return {
+                        **base,
+                        "state": "unavailable",
+                        "message": (
+                            "Финальные вопросы ещё не опубликованы. "
+                            "Результат основного раунда и JACKCOIN сохранены."
+                        ),
+                    }
+                question_index, question_start, question_deadline = (
+                    final_question_window(table)
+                )
+                if question_index >= len(questions):
+                    return {
+                        **base,
+                        "state": "completed",
+                        "seed": int(finalist["seed"]),
+                        "active_count": active_count,
+                        "message": "Финальный стол завершён.",
+                    }
+                saved_answer = conn.execute(
+                    """
+                    SELECT id FROM daily_414_final_answers
+                    WHERE finalist_id=? AND question_index=?
+                    """,
+                    (finalist["id"], question_index),
+                ).fetchone()
+                public = public_questions([questions[question_index]])
+                if not public:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Финальный вопрос имеет некорректный формат",
+                    )
+                question = public[0]
+                question["final_number"] = question_index + 1
                 return {
                     **base,
-                    "state": "completed",
+                    "state": "final_question",
                     "seed": int(finalist["seed"]),
                     "active_count": active_count,
-                    "message": (
-                        "Финальные вопросы закончились. "
-                        "Результат сохранён для ведущего."
+                    "heads_up": active_count == 2,
+                    "question_index": question_index,
+                    "question_started_at": question_start.isoformat(
+                        timespec="milliseconds"
                     ),
+                    "question_deadline_at": question_deadline.isoformat(
+                        timespec="milliseconds"
+                    ),
+                    "answered": bool(saved_answer),
+                    "question": question,
                 }
 
-            questions = json.loads(table["questions_snapshot_json"] or "[]")
-            question_index, question_start, question_deadline = (
-                final_question_window(table)
-            )
-            if question_index >= len(questions):
-                return {
-                    **base,
-                    "state": "completed",
-                    "seed": int(finalist["seed"]),
-                    "active_count": active_count,
-                    "message": "Финальный стол завершён.",
-                }
-            saved_answer = conn.execute(
-                """
-                SELECT id FROM daily_414_final_answers
-                WHERE finalist_id=? AND question_index=?
-                """,
-                (finalist["id"], question_index),
-            ).fetchone()
-            question = public_questions([questions[question_index]])[0]
-            question["final_number"] = question_index + 1
-            return {
-                **base,
-                "state": "final_question",
-                "seed": int(finalist["seed"]),
-                "active_count": active_count,
-                "heads_up": active_count == 2,
-                "question_index": question_index,
-                "question_started_at": question_start.isoformat(
-                    timespec="milliseconds"
-                ),
-                "question_deadline_at": question_deadline.isoformat(
-                    timespec="milliseconds"
-                ),
-                "answered": bool(saved_answer),
-                "question": question,
-            }
+        last_error: Exception | None = None
+        for attempt in range(5):
+            try:
+                return build_status()
+            except HTTPException:
+                raise
+            except sqlite3.OperationalError as exc:
+                last_error = exc
+                if "locked" not in str(exc).lower() or attempt >= 4:
+                    break
+                time.sleep(0.05 * (attempt + 1))
+            except Exception as exc:
+                logging.exception("final-table status failed for %s", campaign)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Ошибка финального стола: {exc}",
+                ) from exc
+        raise HTTPException(
+            status_code=503,
+            detail="Финальный стол обновляется, подождите пару секунд",
+        ) from last_error
 
     @app.post("/api/quiz/final-table/answer")
     async def daily_final_table_answer(request: Request):

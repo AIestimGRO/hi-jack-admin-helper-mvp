@@ -15,6 +15,12 @@ def _timestamp(value: datetime) -> str:
     return value.isoformat(timespec="milliseconds")
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def ensure_final_table(
     conn: sqlite3.Connection,
     *,
@@ -57,21 +63,24 @@ def ensure_final_table(
             ).fetchone()
         return row
     waiting_status = "waiting" if questions else "unavailable"
-    conn.execute(
-        """
-        INSERT INTO daily_414_final_tables(
-            campaign_code, campaign_version, starts_at,
-            questions_snapshot_json, status
-        ) VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            campaign_code,
-            campaign_version,
-            _timestamp(starts_at),
-            payload,
-            waiting_status,
-        ),
-    )
+    try:
+        conn.execute(
+            """
+            INSERT INTO daily_414_final_tables(
+                campaign_code, campaign_version, starts_at,
+                questions_snapshot_json, status
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                campaign_code,
+                campaign_version,
+                _timestamp(starts_at),
+                payload,
+                waiting_status,
+            ),
+        )
+    except sqlite3.IntegrityError:
+        pass
     return conn.execute(
         """
         SELECT * FROM daily_414_final_tables
@@ -79,6 +88,40 @@ def ensure_final_table(
         """,
         (campaign_code, campaign_version),
     ).fetchone()
+
+
+def final_table_needs_reconcile(
+    table: sqlite3.Row | None,
+    *,
+    now: datetime,
+    schedule_starts_at: datetime | None = None,
+) -> bool:
+    if table is None:
+        return True
+    if table["status"] in {"completed", "unavailable"}:
+        return False
+    now_utc = _as_utc(now)
+    starts_at = _as_utc(
+        schedule_starts_at
+        if schedule_starts_at is not None
+        else datetime.fromisoformat(str(table["starts_at"]))
+    )
+    if table["status"] == "waiting":
+        return now_utc >= starts_at
+    if table["status"] != "live":
+        return False
+    try:
+        questions = json.loads(table["questions_snapshot_json"] or "[]")
+    except json.JSONDecodeError:
+        return True
+    if not isinstance(questions, list):
+        return True
+    elapsed = max(0.0, (now_utc - starts_at).total_seconds())
+    completed_count = min(
+        len(questions),
+        int(elapsed // DAILY_414_FINAL_QUESTION_SECONDS),
+    )
+    return completed_count > int(table["current_question_index"] or 0)
 
 
 def seed_finalists(
@@ -121,12 +164,6 @@ def seed_finalists(
             for seed, submission in enumerate(submissions, start=1)
         ],
     )
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
 
 
 def reconcile_final_table(

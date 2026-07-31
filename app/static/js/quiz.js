@@ -578,12 +578,24 @@
   }
 
   async function fetchFinalStatus() {
-    const response = await fetch(
-      `/api/quiz/final-table/status?campaign=${encodeURIComponent(campaign)}`,
-      { headers: { Accept: 'application/json' } },
-    );
+    let response;
+    try {
+      response = await fetch(
+        `/api/quiz/final-table/status?campaign=${encodeURIComponent(campaign)}`,
+        { headers: { Accept: 'application/json' } },
+      );
+    } catch (_) {
+      const error = new Error('Сеть недоступна. Повторяем…');
+      error.retryable = true;
+      throw error;
+    }
     const data = await readJson(response, 'Не удалось обновить финальный стол.');
-    if (!response.ok) throw new Error(data.detail || data.error || 'Не удалось обновить финальный стол');
+    if (!response.ok) {
+      const detail = data.detail || data.error || `Ошибка ${response.status}`;
+      const error = new Error(typeof detail === 'string' ? detail : 'Не удалось обновить финальный стол');
+      error.retryable = response.status >= 500 || response.status === 429;
+      throw error;
+    }
     applyServerNow(data.server_now);
     return data;
   }
@@ -646,39 +658,51 @@
     const countdownLabel = app.querySelector('.final-lobby-countdown small');
     if (countdownLabel) countdownLabel.textContent = 'Запускаем финальный стол';
     if (message) message.textContent = 'Запускаем финальный стол…';
+    let lastError = '';
     try {
       for (let attempt = 0; attempt < 90; attempt += 1) {
         if (openToken !== state.finalOpenToken) return;
-        const status = await fetchFinalStatus();
-        if (openToken !== state.finalOpenToken) return;
-        if (status.starts_at) {
-          state.finalResult = {
-            ...(state.finalResult || {}),
-            final_table_starts_at: status.starts_at,
-          };
+        try {
+          const status = await fetchFinalStatus();
+          if (openToken !== state.finalOpenToken) return;
+          if (status.starts_at) {
+            state.finalResult = {
+              ...(state.finalResult || {}),
+              final_table_starts_at: status.starts_at,
+            };
+          }
+          if (status.state && status.state !== 'lobby' && status.state !== 'main_round') {
+            handleFinalStatus(status);
+            return;
+          }
+          // Client hit 0:00 early — resume lobby countdown from server time.
+          if (!isPastFinalStart()) {
+            state.openingFinal = false;
+            renderFinalLobby(status);
+            return;
+          }
+          lastError = '';
+          if (message) {
+            message.textContent = attempt < 2
+              ? 'Запускаем финальный стол…'
+              : 'Ждём синхронный старт финального стола…';
+          }
+        } catch (error) {
+          lastError = errorText(error.message);
+          if (message) {
+            message.textContent = attempt < 3
+              ? 'Запускаем финальный стол…'
+              : `${lastError} Повторяем…`;
+          }
+          if (!error.retryable && attempt > 8) break;
         }
-        if (status.state && status.state !== 'lobby') {
-          handleFinalStatus(status);
-          return;
-        }
-        // Client hit 0:00 early — resume lobby countdown from server time.
-        if (!isPastFinalStart()) {
-          state.openingFinal = false;
-          renderFinalLobby(status);
-          return;
-        }
-        if (message) {
-          message.textContent = attempt < 2
-            ? 'Запускаем финальный стол…'
-            : 'Ждём синхронный старт финального стола…';
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        await new Promise((resolve) => window.setTimeout(resolve, attempt < 5 ? 400 : 800));
       }
       if (message) {
-        message.textContent = 'Не удалось открыть финальный стол. Обнови страницу.';
+        message.textContent = lastError
+          ? `${lastError} Обнови страницу.`
+          : 'Не удалось открыть финальный стол. Обнови страницу.';
       }
-    } catch (error) {
-      if (message) message.textContent = errorText(error.message);
     } finally {
       if (openToken === state.finalOpenToken) state.openingFinal = false;
     }
@@ -687,6 +711,7 @@
   function startFinalPolling() {
     if (state.finalPoll) return;
     state.finalPoll = window.setInterval(async () => {
+      if (state.openingFinal) return;
       try {
         const status = await fetchFinalStatus();
         if (status.state === 'lobby') {
@@ -699,9 +724,8 @@
         handleFinalStatus(status);
       } catch (error) {
         const lobbyActive = app.querySelector('[data-screen="final-lobby"]')?.classList.contains('active');
-        if (lobbyActive && isPastFinalStart()) {
-          const message = app.querySelector('.final-lobby-message');
-          if (message) message.textContent = errorText(error.message);
+        if (lobbyActive && isPastFinalStart() && !state.openingFinal) {
+          void openFinalTableNow();
         }
       }
     }, 1000);

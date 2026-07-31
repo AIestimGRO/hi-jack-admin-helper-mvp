@@ -420,11 +420,24 @@ def public_questions(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     }
     result = []
     for question in questions:
-        public = {key: value for key, value in question.items() if key in allowed and key != "options"}
-        public["options"] = [
-            {"id": option["id"], "text": option["text"]}
-            for option in question.get("options", [])
-        ]
+        if not isinstance(question, dict):
+            continue
+        public = {
+            key: value
+            for key, value in question.items()
+            if key in allowed and key != "options"
+        }
+        options = question.get("options") or []
+        public["options"] = []
+        if isinstance(options, list):
+            for option in options:
+                if not isinstance(option, dict):
+                    continue
+                option_id = option.get("id")
+                option_text = option.get("text")
+                if option_id is None or option_text is None:
+                    continue
+                public["options"].append({"id": option_id, "text": option_text})
         result.append(public)
     return result
 
