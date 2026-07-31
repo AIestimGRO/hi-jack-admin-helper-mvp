@@ -123,11 +123,18 @@ def seed_finalists(
     )
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def reconcile_final_table(
     conn: sqlite3.Connection,
     *,
     final_table_id: int,
     now: datetime,
+    schedule_starts_at: datetime | None = None,
 ) -> sqlite3.Row:
     table = conn.execute(
         "SELECT * FROM daily_414_final_tables WHERE id=?",
@@ -135,14 +142,29 @@ def reconcile_final_table(
     ).fetchone()
     if not table or table["status"] in {"completed", "unavailable"}:
         return table
-    starts_at = datetime.fromisoformat(str(table["starts_at"]))
-    if starts_at.tzinfo is None:
-        starts_at = starts_at.replace(tzinfo=timezone.utc)
-    now_utc = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
-    if now_utc.tzinfo != timezone.utc:
-        now_utc = now_utc.astimezone(timezone.utc)
-    if starts_at.tzinfo != timezone.utc:
-        starts_at = starts_at.astimezone(timezone.utc)
+    now_utc = _as_utc(now)
+    starts_at = _as_utc(
+        schedule_starts_at
+        if schedule_starts_at is not None
+        else datetime.fromisoformat(str(table["starts_at"]))
+    )
+    if (
+        schedule_starts_at is not None
+        and table["status"] in {"waiting", "unavailable"}
+        and _as_utc(datetime.fromisoformat(str(table["starts_at"]))) != starts_at
+    ):
+        conn.execute(
+            """
+            UPDATE daily_414_final_tables
+            SET starts_at=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (_timestamp(starts_at), table["id"]),
+        )
+        table = conn.execute(
+            "SELECT * FROM daily_414_final_tables WHERE id=?",
+            (table["id"],),
+        ).fetchone()
     if now_utc < starts_at:
         return table
 
@@ -164,6 +186,20 @@ def reconcile_final_table(
             WHERE id=?
             """,
             (_timestamp(now_utc), table["id"]),
+        )
+        return conn.execute(
+            "SELECT * FROM daily_414_final_tables WHERE id=?",
+            (table["id"],),
+        ).fetchone()
+
+    if not questions:
+        conn.execute(
+            """
+            UPDATE daily_414_final_tables
+            SET status='unavailable', updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (table["id"],),
         )
         return conn.execute(
             "SELECT * FROM daily_414_final_tables WHERE id=?",
@@ -288,7 +324,7 @@ def question_window(
     final_table: sqlite3.Row,
 ) -> tuple[int, datetime, datetime]:
     question_index = int(final_table["current_question_index"] or 0)
-    starts_at = datetime.fromisoformat(str(final_table["starts_at"])) + timedelta(
+    starts_at = _as_utc(datetime.fromisoformat(str(final_table["starts_at"]))) + timedelta(
         seconds=question_index * DAILY_414_FINAL_QUESTION_SECONDS
     )
     return (

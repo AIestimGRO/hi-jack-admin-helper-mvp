@@ -2435,7 +2435,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     final_start_utc = final_start_local.replace(
                         tzinfo=campaign_timezone
                     ).astimezone(timezone.utc)
-                    final_table_start_iso = final_start_utc.isoformat()
+                    final_table_start_iso = final_start_utc.isoformat(
+                        timespec="milliseconds"
+                    )
                     final_questions = load_final_questions(
                         conn, attempt["campaign_code"]
                     )
@@ -2678,8 +2680,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "ok": True,
             "campaign": campaign,
             "campaign_version": campaign_version,
-            "server_now": now.isoformat(),
-            "starts_at": final_start.isoformat(),
+            "server_now": now.isoformat(timespec="milliseconds"),
+            "starts_at": final_start.isoformat(timespec="milliseconds"),
             "entry_window_seconds": DAILY_414_ENTRY_WINDOW_SECONDS,
             "question_seconds": DAILY_414_FINAL_QUESTION_SECONDS,
             "table_size": DAILY_414_FINAL_TABLE_SIZE,
@@ -2715,6 +2717,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     conn,
                     final_table_id=int(table["id"]),
                     now=now,
+                    schedule_starts_at=final_start,
                 )
             if table["status"] == "unavailable":
                 return {
@@ -2872,8 +2875,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "active_count": active_count,
                 "heads_up": active_count == 2,
                 "question_index": question_index,
-                "question_started_at": question_start.isoformat(),
-                "question_deadline_at": question_deadline.isoformat(),
+                "question_started_at": question_start.isoformat(
+                    timespec="milliseconds"
+                ),
+                "question_deadline_at": question_deadline.isoformat(
+                    timespec="milliseconds"
+                ),
                 "answered": bool(saved_answer),
                 "question": question,
             }
@@ -2892,6 +2899,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ) from exc
         now = utc_now()
         campaign_version = max(1, int(campaign_row["current_version"] or 1))
+        final_start = daily_final_start_utc(campaign_row)
         with transaction(settings.db_path) as conn:
             table = conn.execute(
                 """
@@ -2908,6 +2916,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 conn,
                 final_table_id=int(table["id"]),
                 now=now,
+                schedule_starts_at=final_start,
             )
             if table["status"] != "live":
                 raise HTTPException(

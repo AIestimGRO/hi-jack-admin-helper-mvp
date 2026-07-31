@@ -913,7 +913,8 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         assert "standings" in (
             Path(__file__).resolve().parents[1] / "app" / "main_impl.py"
         ).read_text(encoding="utf-8")
-        assert "zeroFetchPending" in js_text
+        assert "openFinalTableNow" in js_text
+        assert "isPastFinalStart" in js_text
         assert "data.provisional_place ?? result?.daily_place" in js_text or "youStanding?.place ?? provisionalPlace" in js_text
 
         token = attempt["attempt_token"]

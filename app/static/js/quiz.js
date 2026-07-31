@@ -4,7 +4,7 @@
 
   const campaign = app.dataset.campaign || 'default';
   const isDaily414 = app.dataset.campaignType === 'daily_414';
-  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, scheduleTimer: null, serverOffset: 0, submitting: false, finishing: false, shareUrl: null, riverShown: false, finalPoll: null, finalTimer: null, finalQuestionIndex: null, finalAnswer: null, finalResult: null };
+  const state = { meta: null, verifiedIdentity: null, rememberedIdentity: null, attemptToken: null, questions: [], answers: {}, index: 0, deadline: null, timeLimit: 0, timer: null, scheduleTimer: null, serverOffset: 0, submitting: false, finishing: false, shareUrl: null, riverShown: false, finalPoll: null, finalTimer: null, finalQuestionIndex: null, finalAnswer: null, finalResult: null, openingFinal: false, finalVisibilityHandler: null, finalOpenToken: 0 };
   const screens = [...app.querySelectorAll('[data-screen]')];
   const show = (name) => screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
   const errorText = (message) => typeof message === 'string' ? message : 'Попробуй ещё раз чуть позже.';
@@ -614,17 +614,92 @@
     stopFinalQuestionTimer();
     if (state.finalPoll) window.clearInterval(state.finalPoll);
     state.finalPoll = null;
+    state.openingFinal = false;
+    state.finalOpenToken += 1;
+    if (state.finalVisibilityHandler) {
+      document.removeEventListener('visibilitychange', state.finalVisibilityHandler);
+      state.finalVisibilityHandler = null;
+    }
+  }
+
+  function finalStartsAtMs() {
+    return Date.parse(state.finalResult?.final_table_starts_at || '');
+  }
+
+  function isPastFinalStart() {
+    const startsAt = finalStartsAtMs();
+    return Number.isFinite(startsAt) && scheduledNow() >= startsAt;
+  }
+
+  function isFinalProgressScreen() {
+    return Boolean(
+      app.querySelector('[data-screen="final-question"]')?.classList.contains('active')
+      || app.querySelector('[data-screen="final-outcome"]')?.classList.contains('active'),
+    );
+  }
+
+  async function openFinalTableNow() {
+    if (state.openingFinal || isFinalProgressScreen()) return;
+    state.openingFinal = true;
+    const openToken = (state.finalOpenToken += 1);
+    const message = app.querySelector('.final-lobby-message');
+    const countdownLabel = app.querySelector('.final-lobby-countdown small');
+    if (countdownLabel) countdownLabel.textContent = 'Запускаем финальный стол';
+    if (message) message.textContent = 'Запускаем финальный стол…';
+    try {
+      for (let attempt = 0; attempt < 90; attempt += 1) {
+        if (openToken !== state.finalOpenToken) return;
+        const status = await fetchFinalStatus();
+        if (openToken !== state.finalOpenToken) return;
+        if (status.starts_at) {
+          state.finalResult = {
+            ...(state.finalResult || {}),
+            final_table_starts_at: status.starts_at,
+          };
+        }
+        if (status.state && status.state !== 'lobby') {
+          handleFinalStatus(status);
+          return;
+        }
+        // Client hit 0:00 early — resume lobby countdown from server time.
+        if (!isPastFinalStart()) {
+          state.openingFinal = false;
+          renderFinalLobby(status);
+          return;
+        }
+        if (message) {
+          message.textContent = attempt < 2
+            ? 'Запускаем финальный стол…'
+            : 'Ждём синхронный старт финального стола…';
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+      }
+      if (message) {
+        message.textContent = 'Не удалось открыть финальный стол. Обнови страницу.';
+      }
+    } catch (error) {
+      if (message) message.textContent = errorText(error.message);
+    } finally {
+      if (openToken === state.finalOpenToken) state.openingFinal = false;
+    }
   }
 
   function startFinalPolling() {
     if (state.finalPoll) return;
     state.finalPoll = window.setInterval(async () => {
       try {
-        handleFinalStatus(await fetchFinalStatus());
+        const status = await fetchFinalStatus();
+        if (status.state === 'lobby') {
+          if (isFinalProgressScreen()) return;
+          if (isPastFinalStart() || state.openingFinal) {
+            void openFinalTableNow();
+            return;
+          }
+        }
+        handleFinalStatus(status);
       } catch (error) {
         const lobbyActive = app.querySelector('[data-screen="final-lobby"]')?.classList.contains('active');
-        const startsAt = Date.parse(state.finalResult?.final_table_starts_at || '');
-        if (lobbyActive && Number.isFinite(startsAt) && scheduledNow() >= startsAt) {
+        if (lobbyActive && isPastFinalStart()) {
           const message = app.querySelector('.final-lobby-message');
           if (message) message.textContent = errorText(error.message);
         }
@@ -632,14 +707,14 @@
     }, 1000);
   }
 
-  function renderFinalLobby(data = {}) {
+  function updateFinalLobbyCopy(data = {}) {
     if (data.starts_at) {
       state.finalResult = {
         ...(state.finalResult || {}),
         final_table_starts_at: data.starts_at,
       };
     }
-    if (data.correct_count != null || data.provisional_place != null) {
+    if (data.correct_count != null || data.provisional_place != null || data.standings) {
       state.finalResult = {
         ...(state.finalResult || {}),
         correct_count: data.correct_count ?? state.finalResult?.correct_count,
@@ -648,13 +723,14 @@
         daily_place: data.provisional_place ?? state.finalResult?.daily_place,
       };
     }
-    const startsAt = Date.parse(data.starts_at || state.finalResult?.final_table_starts_at || '');
     const message = app.querySelector('.final-lobby-message');
     const place = app.querySelector('.final-lobby-place');
     const result = state.finalResult;
-    message.textContent = result?.correct_count != null
-      ? `${result.correct_count} из ${result.max_correct_count || result.correct_count} правильно · +${result.jackcoin_awarded || 0} JACKCOIN.`
-      : (data.message || 'Основной раунд завершён. Собираем десятку лучших игроков.');
+    if (!state.openingFinal) {
+      message.textContent = result?.correct_count != null
+        ? `${result.correct_count} из ${result.max_correct_count || result.correct_count} правильно · +${result.jackcoin_awarded || 0} JACKCOIN.`
+        : (data.message || 'Основной раунд завершён. Собираем десятку лучших игроков.');
+    }
     const provisionalPlace = data.provisional_place ?? result?.daily_place;
     const youStanding = Array.isArray(data.standings)
       ? data.standings.find((item) => item.is_you)
@@ -667,38 +743,41 @@
         : '';
       place.textContent = `Сейчас вы на ${placeValue}-м месте отбора${scoreHint}. В финал попадут не более 10 игроков.`;
     }
+  }
+
+  function renderFinalLobby(data = {}) {
+    if (isFinalProgressScreen()) return;
+    updateFinalLobbyCopy(data);
     const lobbyScreen = app.querySelector('[data-screen="final-lobby"]');
-    if (lobbyScreen.classList.contains('active') && state.finalTimer) {
-      startFinalPolling();
-      return;
+    const alreadyActive = lobbyScreen.classList.contains('active') && state.finalTimer;
+    if (!alreadyActive) {
+      stopFinalQuestionTimer();
+      const output = app.querySelector('.final-lobby-countdown strong');
+      const label = app.querySelector('.final-lobby-countdown small');
+      if (label) label.textContent = 'Финальный стол начнётся через';
+      const tick = () => {
+        if (isFinalProgressScreen() || state.openingFinal) return;
+        const startsAt = finalStartsAtMs();
+        const remaining = Number.isFinite(startsAt) ? Math.max(0, startsAt - scheduledNow()) : 0;
+        output.textContent = formatTime(remaining);
+        if (remaining <= 0) void openFinalTableNow();
+      };
+      tick();
+      state.finalTimer = window.setInterval(tick, 200);
+      if (state.finalVisibilityHandler) {
+        document.removeEventListener('visibilitychange', state.finalVisibilityHandler);
+      }
+      state.finalVisibilityHandler = () => {
+        if (document.visibilityState === 'visible') {
+          tick();
+          if (isPastFinalStart()) void openFinalTableNow();
+        }
+      };
+      document.addEventListener('visibilitychange', state.finalVisibilityHandler);
+      show('final-lobby');
     }
-    stopFinalQuestionTimer();
-    const output = app.querySelector('.final-lobby-countdown strong');
-    let zeroFetchPending = false;
-    let lastZeroFetchAt = 0;
-    const tick = () => {
-      const remaining = Number.isFinite(startsAt) ? Math.max(0, startsAt - scheduledNow()) : 0;
-      output.textContent = formatTime(remaining);
-      if (remaining > 0) return;
-      const now = Date.now();
-      if (zeroFetchPending || now - lastZeroFetchAt < 800) return;
-      zeroFetchPending = true;
-      lastZeroFetchAt = now;
-      fetchFinalStatus()
-        .then((status) => {
-          handleFinalStatus(status);
-        })
-        .catch((error) => {
-          message.textContent = errorText(error.message);
-        })
-        .finally(() => {
-          zeroFetchPending = false;
-        });
-    };
-    tick();
-    state.finalTimer = window.setInterval(tick, 250);
-    show('final-lobby');
     startFinalPolling();
+    if (isPastFinalStart()) void openFinalTableNow();
   }
 
   function startFinalLobby(result) {
@@ -715,81 +794,97 @@
   }
 
   function renderFinalQuestion(data) {
+    stopFinalQuestionTimer();
+    state.openingFinal = false;
+    state.finalOpenToken += 1;
     startFinalPolling();
     const isNewQuestion = state.finalQuestionIndex !== data.question_index;
     state.finalQuestionIndex = data.question_index;
     const question = data.question;
-    app.querySelector('.final-table-heading .quiz-section-label').textContent = data.heads_up ? 'ХЕДЗ-АП' : 'ФИНАЛЬНЫЙ СТОЛ';
-    app.querySelector('.final-active-count').textContent = `В игре: ${data.active_count}`;
-    app.querySelector('.final-question-number').textContent = `Вопрос финала ${question.final_number}`;
-    const media = app.querySelector('.final-question-media');
-    const image = media.querySelector('.final-question-image');
-    media.hidden = !question.image_path;
-    image.src = question.image_path || '';
-    image.alt = question.image_path ? question.title : '';
-    app.querySelector('.final-question-title').textContent = question.title;
-    const button = app.querySelector('.final-answer-button');
-    const waiting = app.querySelector('.final-answer-wait');
-    const validation = app.querySelector('.final-question-validation');
-    validation.textContent = '';
-    if (isNewQuestion) {
-      state.finalAnswer = question.type === 'multi_choice' ? [] : '';
-      const options = app.querySelector('.final-question-options');
-      options.replaceChildren();
-      if (question.type === 'text') {
-        const textarea = document.createElement('textarea');
-        textarea.maxLength = 1000;
-        textarea.placeholder = question.placeholder || 'Напишите ответ';
-        textarea.addEventListener('input', () => { state.finalAnswer = textarea.value; });
-        options.append(textarea);
-      } else {
-        (question.options || []).forEach((option) => {
-          const label = document.createElement('label');
-          label.className = 'quiz-option';
-          const input = document.createElement('input');
-          input.type = question.type === 'multi_choice' ? 'checkbox' : 'radio';
-          input.name = `final-${question.id}`;
-          input.value = option.id;
-          input.addEventListener('change', () => {
-            state.finalAnswer = question.type === 'multi_choice'
-              ? [...options.querySelectorAll('input:checked')].map((item) => item.value)
-              : option.id;
-            options.querySelectorAll('.quiz-option').forEach((item) => {
-              item.classList.toggle('selected', item.querySelector('input').checked);
-            });
-          });
-          const marker = document.createElement('span');
-          const text = document.createElement('strong');
-          text.textContent = option.text;
-          label.append(input, marker, text);
-          options.append(label);
-        });
-      }
+    if (!question) {
+      app.querySelector('.quiz-error-message').textContent = 'Финальный вопрос не загрузился. Обнови страницу.';
+      show('error');
+      return;
     }
-    button.hidden = data.answered;
-    button.disabled = data.answered;
-    waiting.hidden = !data.answered;
-    app.querySelectorAll('.final-question-options input, .final-question-options textarea').forEach((field) => {
-      field.disabled = data.answered;
-    });
-    stopFinalQuestionTimer();
-    const deadline = Date.parse(data.question_deadline_at || '');
-    const timer = app.querySelector('.final-question-timer');
-    const number = timer.querySelector('strong');
-    const bar = timer.querySelector('span');
-    const tick = () => {
-      const remaining = Math.max(0, deadline - scheduledNow());
-      number.textContent = formatTime(remaining);
-      bar.style.width = `${Math.min(100, (remaining / (Number(data.question_seconds || 30) * 1000)) * 100)}%`;
-      timer.classList.toggle('urgent', remaining <= 10000);
-      if (remaining <= 0) {
-        stopFinalQuestionTimer();
-        button.disabled = true;
+    try {
+      app.querySelector('.final-table-heading .quiz-section-label').textContent = data.heads_up ? 'ХЕДЗ-АП' : 'ФИНАЛЬНЫЙ СТОЛ';
+      app.querySelector('.final-active-count').textContent = `В игре: ${data.active_count}`;
+      app.querySelector('.final-question-number').textContent = `Вопрос финала ${question.final_number}`;
+      const media = app.querySelector('.final-question-media');
+      const image = (media && media.querySelector('.final-question-image')) || app.querySelector('.final-question-image');
+      if (media) media.hidden = !question.image_path;
+      if (image) {
+        image.hidden = !question.image_path;
+        image.src = question.image_path || '';
+        image.alt = question.image_path ? question.title : '';
       }
-    };
-    tick();
-    state.finalTimer = window.setInterval(tick, 200);
-    show('final-question');
+      app.querySelector('.final-question-title').textContent = question.title;
+      const button = app.querySelector('.final-answer-button');
+      const waiting = app.querySelector('.final-answer-wait');
+      const validation = app.querySelector('.final-question-validation');
+      validation.textContent = '';
+      if (isNewQuestion) {
+        state.finalAnswer = question.type === 'multi_choice' ? [] : '';
+        const options = app.querySelector('.final-question-options');
+        options.replaceChildren();
+        if (question.type === 'text') {
+          const textarea = document.createElement('textarea');
+          textarea.maxLength = 1000;
+          textarea.placeholder = question.placeholder || 'Напишите ответ';
+          textarea.addEventListener('input', () => { state.finalAnswer = textarea.value; });
+          options.append(textarea);
+        } else {
+          (question.options || []).forEach((option) => {
+            const label = document.createElement('label');
+            label.className = 'quiz-option';
+            const input = document.createElement('input');
+            input.type = question.type === 'multi_choice' ? 'checkbox' : 'radio';
+            input.name = `final-${question.id}`;
+            input.value = option.id;
+            input.addEventListener('change', () => {
+              state.finalAnswer = question.type === 'multi_choice'
+                ? [...options.querySelectorAll('input:checked')].map((item) => item.value)
+                : option.id;
+              options.querySelectorAll('.quiz-option').forEach((item) => {
+                item.classList.toggle('selected', item.querySelector('input').checked);
+              });
+            });
+            const marker = document.createElement('span');
+            const text = document.createElement('strong');
+            text.textContent = option.text;
+            label.append(input, marker, text);
+            options.append(label);
+          });
+        }
+      }
+      button.hidden = data.answered;
+      button.disabled = data.answered;
+      waiting.hidden = !data.answered;
+      app.querySelectorAll('.final-question-options input, .final-question-options textarea').forEach((field) => {
+        field.disabled = data.answered;
+      });
+      const deadline = Date.parse(data.question_deadline_at || '');
+      const timer = app.querySelector('.final-question-timer');
+      const number = timer.querySelector('strong');
+      const bar = timer.querySelector('span');
+      const tick = () => {
+        const remaining = Math.max(0, deadline - scheduledNow());
+        number.textContent = formatTime(remaining);
+        bar.style.width = `${Math.min(100, (remaining / (Number(data.question_seconds || 30) * 1000)) * 100)}%`;
+        timer.classList.toggle('urgent', remaining <= 10000);
+        if (remaining <= 0) {
+          stopFinalQuestionTimer();
+          button.disabled = true;
+        }
+      };
+      tick();
+      state.finalTimer = window.setInterval(tick, 200);
+      show('final-question');
+      setFlow('lobby');
+    } catch (error) {
+      app.querySelector('.quiz-error-message').textContent = errorText(error.message || 'Не удалось показать финальный вопрос.');
+      show('error');
+    }
   }
 
   function renderFinalOutcome(data) {
@@ -828,6 +923,11 @@
 
   function handleFinalStatus(data) {
     if (data.state === 'lobby') {
+      if (isFinalProgressScreen()) return;
+      if (isPastFinalStart() || state.openingFinal) {
+        void openFinalTableNow();
+        return;
+      }
       renderFinalLobby(data);
       return;
     }
