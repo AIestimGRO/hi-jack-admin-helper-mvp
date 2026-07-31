@@ -49,7 +49,9 @@ body {
   overflow: hidden;
   min-height: 520px;
   flex: 0 1 auto;
-  justify-content: flex-end;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
   padding: 34px;
   border: 1px solid #126660;
   border-radius: 28px;
@@ -61,7 +63,15 @@ body {
 
 .quiz-screen[data-screen="welcome"]::after { content: "♠"; position: absolute; z-index: -1; right: -25px; top: -65px; color: rgba(255, 255, 255, .055); font-size: 260px; transform: rotate(11deg); }
 .quiz-screen[data-screen="welcome"] > * { position: relative; z-index: 1; }
-.quiz-screen[data-screen="welcome"] .quiz-primary { align-self: stretch; }
+.quiz-screen[data-screen="welcome"] .quiz-kicker,
+.quiz-screen[data-screen="welcome"] h1,
+.quiz-screen[data-screen="welcome"] .quiz-lead,
+.quiz-screen[data-screen="welcome"] .quiz-welcome-meta {
+  align-self: center;
+  text-align: center;
+  max-width: 28rem;
+}
+.quiz-screen[data-screen="welcome"] .quiz-primary { align-self: stretch; max-width: 28rem; width: 100%; }
 
 .quiz-screen[data-screen="question"],
 .quiz-screen[data-screen="daily-prize"],

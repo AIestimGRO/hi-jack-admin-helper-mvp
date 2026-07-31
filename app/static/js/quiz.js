@@ -297,27 +297,28 @@
   function renderQuestion() {
     const question = currentQuestion();
     const savedAnswer = state.answers[question.id] ?? emptyAnswer(question);
-    app.querySelector('.quiz-step').textContent = `Вопрос ${state.index + 1} из ${state.questions.length}`;
-    app.querySelector('.quiz-progress span').style.width = `${((state.index + 1) / state.questions.length) * 100}%`;
     const screen = app.querySelector('[data-screen="question"]');
+    screen.querySelector('.quiz-step').textContent = `Вопрос ${state.index + 1} из ${state.questions.length}`;
+    screen.querySelector('.quiz-progress span').style.width = `${((state.index + 1) / state.questions.length) * 100}%`;
     const section = question.section || {};
     screen.dataset.theme = section.theme || 'theory';
     const questionBackground = section.background_image || app.dataset.campaignBackground || '';
     setBackground(questionBackground);
     if (questionBackground) screen.style.setProperty('--section-background', `url("${questionBackground}")`);
     else screen.style.removeProperty('--section-background');
-    const sectionLabel = app.querySelector('.quiz-section-label');
+    const sectionLabel = screen.querySelector('.quiz-section-label');
     const stageNames = { preflop: 'ПРЕФЛОП', flop: 'ФЛОП', turn: 'ТЕРН', river: 'РИВЕР' };
     const sectionTitle = isDaily414 ? stageNames[question.game_stage] : section.title;
     sectionLabel.hidden = !sectionTitle;
     sectionLabel.textContent = sectionTitle || '';
-    const questionImage = app.querySelector('.quiz-question-image');
+    const questionImage = screen.querySelector('.quiz-question-image');
     questionImage.hidden = !question.image_path;
     questionImage.src = question.image_path || '';
     questionImage.alt = question.image_path ? question.title : '';
-    app.querySelector('.quiz-question-title').textContent = question.title;
-    app.querySelector('[data-screen="question"] .quiz-validation').textContent = '';
-    const options = app.querySelector('.quiz-options');
+    screen.querySelector('.quiz-question-title').textContent = question.title;
+    screen.querySelector('.quiz-validation').textContent = '';
+    // Scope to the main question screen: daily_414 also has .quiz-options on the hidden final table.
+    const options = screen.querySelector('.quiz-options');
     options.replaceChildren();
     if (question.type === 'text') {
       const textarea = document.createElement('textarea');
@@ -340,8 +341,8 @@
         label.append(input, marker, text); options.append(label);
       });
     }
-    app.querySelector('[data-action="back"]').disabled = isDaily414 || state.index === 0;
-    app.querySelector('[data-action="next"]').textContent = state.index === state.questions.length - 1 ? 'Завершить тест' : 'Далее';
+    screen.querySelector('[data-action="back"]').disabled = isDaily414 || state.index === 0;
+    screen.querySelector('[data-action="next"]').textContent = state.index === state.questions.length - 1 ? 'Завершить тест' : 'Далее';
     show('question');
   }
 

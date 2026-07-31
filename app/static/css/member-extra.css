@@ -71,3 +71,41 @@
 .password-match-message {
   color: #ff8b9b !important;
 }
+
+.member-verify-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.member-verify-actions form {
+  margin: 0;
+}
+
+.member-verify-actions .member-secondary {
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.member-text-action {
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #9acbff;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.member-text-action:hover {
+  color: #c5e0ff;
+}
+
+.member-verify-hint {
+  margin: 18px 0 0;
+  font-size: 13px;
+  text-align: center;
+}

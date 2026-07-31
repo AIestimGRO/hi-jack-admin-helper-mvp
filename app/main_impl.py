@@ -723,12 +723,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             documents = active_legal_documents(conn)
         accepted = flow["accepted"]
         pending_id = request.session.get("member_registration_code_id")
+        pending_email = ""
+        draft = request.session.get("member_registration_draft") or {}
         if "privacy" not in accepted:
             step = "privacy"
         elif "rewards" not in accepted:
             step = "rewards"
         elif pending_id:
             step = "verify"
+            with connect(settings.db_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT email_normalized, used_at, expires_at, attempts_left
+                    FROM member_email_codes
+                    WHERE id=? AND purpose='register'
+                    """,
+                    (int(pending_id),),
+                ).fetchone()
+            if (
+                not row
+                or row["used_at"]
+                or row["expires_at"] <= quiz_timestamp(utc_now())
+                or int(row["attempts_left"]) <= 0
+            ):
+                request.session.pop("member_registration_code_id", None)
+                step = "profile"
+            else:
+                pending_email = str(row["email_normalized"])
+                draft = {**draft, "email": pending_email}
         else:
             step = "profile"
         return templates.TemplateResponse(
@@ -740,6 +762,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 documents=documents,
                 email_available=bool(settings.smtp_host and settings.smtp_from),
                 email_code_minutes=settings.email_code_minutes,
+                pending_email=pending_email,
+                draft=draft,
                 ok=ok,
                 error=error,
             ),
@@ -894,11 +918,150 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     error=True,
                 )
             request.session["member_registration_code_id"] = code_id
+            request.session["member_registration_draft"] = {
+                "email": normalized_email,
+                "phone": phone.strip()[:80],
+                "first_name": first_name.strip()[:100],
+            }
             return member_redirect(
                 "/account/register", "Код отправлен на указанную почту"
             )
         except ValueError as exc:
             return member_redirect("/account/register", str(exc), error=True)
+
+    @app.post("/account/register/resend-code")
+    async def member_register_resend_code(
+        request: Request,
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        if not settings.smtp_host or not settings.smtp_from:
+            return member_redirect(
+                "/account/register",
+                "Отправка писем пока не настроена",
+                error=True,
+            )
+        code_id = request.session.get("member_registration_code_id")
+        if not code_id:
+            return member_redirect(
+                "/account/register", "Сначала укажите почту и запросите код", error=True
+            )
+        try:
+            with connect(settings.db_path) as conn:
+                row = conn.execute(
+                    "SELECT * FROM member_email_codes WHERE id=? AND purpose='register'",
+                    (int(code_id),),
+                ).fetchone()
+            if not row or row["used_at"]:
+                request.session.pop("member_registration_code_id", None)
+                raise ValueError("Сессия подтверждения устарела. Укажите почту снова")
+            payload = json.loads(row["payload_json"])
+            normalized_email = str(row["email_normalized"])
+            code = generate_member_email_code()
+            expires_at = quiz_timestamp(
+                utc_now() + timedelta(minutes=settings.email_code_minutes)
+            )
+            with transaction(settings.db_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP
+                    WHERE email_normalized=? AND purpose='register' AND used_at IS NULL
+                    """,
+                    (normalized_email,),
+                )
+                cursor = conn.execute(
+                    """
+                    INSERT INTO member_email_codes(
+                        email_normalized, purpose, code_hash, payload_json, expires_at
+                    ) VALUES (?, 'register', ?, ?, ?)
+                    """,
+                    (
+                        normalized_email,
+                        member_code_hash(
+                            settings.secret_key, "register", normalized_email, code
+                        ),
+                        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                        expires_at,
+                    ),
+                )
+                new_code_id = int(cursor.lastrowid)
+            try:
+                await run_in_threadpool(
+                    send_member_email_code,
+                    host=settings.smtp_host,
+                    port=settings.smtp_port,
+                    username=settings.smtp_username,
+                    password=settings.smtp_password,
+                    sender=settings.smtp_from,
+                    starttls=settings.smtp_starttls,
+                    recipient=normalized_email,
+                    code=code,
+                    purpose="register",
+                    expires_minutes=settings.email_code_minutes,
+                )
+            except Exception:
+                with transaction(settings.db_path) as conn:
+                    conn.execute(
+                        "UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (new_code_id,),
+                    )
+                return member_redirect(
+                    "/account/register",
+                    "Не удалось отправить письмо. Попробуйте позже или укажите другую почту",
+                    error=True,
+                )
+            request.session["member_registration_code_id"] = new_code_id
+            request.session["member_registration_draft"] = {
+                "email": normalized_email,
+                "phone": str(payload.get("phone") or ""),
+                "first_name": str(payload.get("first_name") or ""),
+            }
+            return member_redirect(
+                "/account/register", f"Новый код отправлен на {normalized_email}"
+            )
+        except (ValueError, json.JSONDecodeError) as exc:
+            return member_redirect("/account/register", str(exc), error=True)
+
+    @app.post("/account/register/change-email")
+    async def member_register_change_email(
+        request: Request,
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        code_id = request.session.get("member_registration_code_id")
+        draft = request.session.get("member_registration_draft") or {}
+        if code_id:
+            with connect(settings.db_path) as conn:
+                row = conn.execute(
+                    "SELECT payload_json FROM member_email_codes WHERE id=? AND purpose='register'",
+                    (int(code_id),),
+                ).fetchone()
+            if row:
+                try:
+                    payload = json.loads(row["payload_json"])
+                    draft = {
+                        "email": str(payload.get("email") or draft.get("email") or ""),
+                        "phone": str(payload.get("phone") or draft.get("phone") or ""),
+                        "first_name": str(
+                            payload.get("first_name") or draft.get("first_name") or ""
+                        ),
+                    }
+                except json.JSONDecodeError:
+                    pass
+            with transaction(settings.db_path) as conn:
+                conn.execute(
+                    "UPDATE member_email_codes SET used_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (int(code_id),),
+                )
+        request.session.pop("member_registration_code_id", None)
+        if draft:
+            request.session["member_registration_draft"] = draft
+        return member_redirect(
+            "/account/register",
+            "Укажите другую почту и запросите новый код",
+        )
 
     @app.post("/account/register/verify")
     async def member_register_verify(
@@ -1021,6 +1184,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise ValueError("Неверный код")
             request.session.pop("member_registration_code_id", None)
             request.session.pop("member_registration_flow", None)
+            request.session.pop("member_registration_draft", None)
             response = RedirectResponse("/account/telegram", status_code=303)
             set_member_cookie(response, member_token)
             return response

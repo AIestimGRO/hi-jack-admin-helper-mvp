@@ -155,6 +155,74 @@ def request_registration_code(
     assert "register" in captured
 
 
+def test_registration_allows_resend_and_change_email(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    captured: dict[str, list[str]] = {"register": []}
+
+    def fake_send(**kwargs):
+        captured.setdefault(kwargs["purpose"], []).append(kwargs["code"])
+        captured["recipient"] = kwargs["recipient"]
+
+    monkeypatch.setattr("app.main_impl.send_member_email_code", fake_send)
+    with client:
+        accept_registration_documents(client)
+        profile = client.get("/account/register")
+        sent = client.post(
+            "/account/register/request-code",
+            data={
+                "email": "wrong@example.com",
+                "password": "PokerPlayer2026",
+                "password_confirmation": "PokerPlayer2026",
+                "phone": "+7 999 123-45-67",
+                "first_name": "Алекс",
+                "csrf_token": csrf_from(profile),
+            },
+            follow_redirects=False,
+        )
+        assert sent.status_code == 303
+        assert captured["recipient"] == "wrong@example.com"
+        first_code = captured["register"][-1]
+
+        verify = client.get("/account/register")
+        assert "Введите код" in verify.text
+        assert "wrong@example.com" in verify.text
+        assert "Отправить код ещё раз" in verify.text
+        assert "Указать другую почту" in verify.text
+
+        resent = client.post(
+            "/account/register/resend-code",
+            data={"csrf_token": csrf_from(verify)},
+            follow_redirects=False,
+        )
+        assert resent.status_code == 303
+        second_code = captured["register"][-1]
+        assert second_code != first_code
+        assert len(captured["register"]) == 2
+
+        verify = client.get("/account/register")
+        changed = client.post(
+            "/account/register/change-email",
+            data={"csrf_token": csrf_from(verify)},
+            follow_redirects=False,
+        )
+        assert changed.status_code == 303
+        profile = client.get("/account/register")
+        assert "Личные данные" in profile.text
+        assert "wrong@example.com" in profile.text
+        assert "Введите код" not in profile.text
+
+        with connect(settings.db_path) as conn:
+            open_codes = conn.execute(
+                """
+                SELECT COUNT(*) FROM member_email_codes
+                WHERE purpose='register' AND used_at IS NULL
+                """
+            ).fetchone()[0]
+        assert open_codes == 0
+
+
 def test_password_hash_is_salted_and_verifiable() -> None:
     first = hash_password("abcdef")
     second = hash_password("abcdef")
@@ -706,6 +774,9 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
             "river",
         ]
         assert attempt["questions"][-1]["river_reveal"] is True
+        assert all(len(item.get("options") or []) >= 2 for item in attempt["questions"])
+        quiz_js = Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "quiz.js"
+        assert "screen.querySelector('.quiz-options')" in quiz_js.read_text(encoding="utf-8")
 
         token = attempt["attempt_token"]
         first = client.post(

@@ -37,9 +37,9 @@
     {% endif %}
     <form class="member-form" action="/account/register/request-code" method="post" data-registration-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Имя <small>Будет отображаться в личном кабинете. Поле можно оставить пустым.</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться"></label>
-      <label>Электронная почта <small>На неё придёт код подтверждения. После регистрации почта станет вашим логином.</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" required></label>
-      <label>Номер телефона <small>Укажите российский номер, привязанный к вашей карточке участника Hi Jack UP!</small><input name="phone" type="tel" maxlength="80" autocomplete="tel" inputmode="tel" placeholder="+7 999 123-45-67" required></label>
+      <label>Имя <small>Будет отображаться в личном кабинете. Поле можно оставить пустым.</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться" value="{{ draft.first_name if draft else '' }}"></label>
+      <label>Электронная почта <small>На неё придёт код подтверждения. После регистрации почта станет вашим логином.</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" value="{{ draft.email if draft else '' }}" required></label>
+      <label>Номер телефона <small>Укажите российский номер, привязанный к вашей карточке участника Hi Jack UP!</small><input name="phone" type="tel" maxlength="80" autocomplete="tel" inputmode="tel" placeholder="+7 999 123-45-67" value="{{ draft.phone if draft else '' }}" required></label>
       <label>Пароль <small>Минимум 6 символов и хотя бы одна буква. Цифры и специальные символы — по желанию.</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password></label>
       <label>Повторите пароль <small>Введите тот же пароль ещё раз.</small><input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password-confirmation><small class="password-match-message" data-password-match-message hidden>Пароли не совпадают</small></label>
       <button class="member-primary" type="submit" {% if not email_available %}disabled{% endif %} data-registration-submit>Получить код на почту</button>
@@ -47,12 +47,23 @@
   {% else %}
     <p class="member-eyebrow">Подтверждение почты</p>
     <h1>Введите код</h1>
-    <p class="member-muted">Введите 6 цифр из письма. Код действует {{ email_code_minutes }} минут; после нескольких неверных попыток потребуется запросить новый.</p>
+    <p class="member-muted">Мы отправили 6 цифр на <strong>{{ pending_email }}</strong>. Код действует {{ email_code_minutes }} минут; после нескольких неверных попыток потребуется запросить новый.</p>
     <form class="member-form" action="/account/register/verify" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Код из письма <small>Только 6 цифр без пробелов.</small><input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000000" required></label>
+      <label>Код из письма <small>Только 6 цифр без пробелов.</small><input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000000" required autofocus></label>
       <button class="member-primary" type="submit">Подтвердить и создать аккаунт</button>
     </form>
+    <div class="member-verify-actions">
+      <form action="/account/register/resend-code" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="member-secondary" type="submit">Отправить код ещё раз</button>
+      </form>
+      <form action="/account/register/change-email" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="member-text-action" type="submit">Указать другую почту</button>
+      </form>
+    </div>
+    <p class="member-muted member-verify-hint">Если письма нет во входящих, проверьте «Спам». Можно запросить код повторно или сменить адрес.</p>
   {% endif %}
 
   <p class="member-switch">Уже есть аккаунт? <a href="/account/login">Войти</a></p>
