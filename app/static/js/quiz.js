@@ -58,6 +58,29 @@
     if (Number.isFinite(serverNow)) state.serverOffset = serverNow - Date.now();
   }
 
+  function isPastCampaignStart() {
+    const start = Date.parse(app.dataset.activeFrom || '');
+    return Number.isFinite(start) && scheduledNow() >= start;
+  }
+
+  async function startQuizAfterCountdown() {
+    show('loading');
+    app.dataset.scheduleState = 'active';
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      try {
+        await startQuiz({ fromCountdown: true });
+        return;
+      } catch (error) {
+        if (!/Квиз начнётся/.test(error.message) || attempt === 29) {
+          app.querySelector('.quiz-error-message').textContent = errorText(error.message);
+          show('error');
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+    }
+  }
+
   function startCountdown({ onComplete } = {}) {
     if (state.scheduleTimer) {
       window.clearInterval(state.scheduleTimer);
@@ -75,6 +98,19 @@
       seconds: app.querySelector('[data-countdown-seconds]'),
     };
     app.querySelector('.quiz-schedule-time').textContent = `Старт: ${new Date(start).toLocaleString('ru-RU')}`;
+    let completing = false;
+    const finish = () => {
+      if (completing) return;
+      completing = true;
+      window.clearInterval(state.scheduleTimer);
+      state.scheduleTimer = null;
+      if (state.countdownVisibilityHandler) {
+        document.removeEventListener('visibilitychange', state.countdownVisibilityHandler);
+        state.countdownVisibilityHandler = null;
+      }
+      app.dataset.scheduleState = 'active';
+      (onComplete || loadMeta)();
+    };
     const tick = () => {
       const remaining = Math.max(0, start - scheduledNow());
       const totalSeconds = Math.ceil(remaining / 1000);
@@ -82,13 +118,15 @@
       output.hours.textContent = String(Math.floor((totalSeconds % 86400) / 3600)).padStart(2, '0');
       output.minutes.textContent = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
       output.seconds.textContent = String(totalSeconds % 60).padStart(2, '0');
-      if (remaining <= 0) {
-        window.clearInterval(state.scheduleTimer);
-        state.scheduleTimer = null;
-        app.dataset.scheduleState = 'active';
-        (onComplete || loadMeta)();
-      }
+      if (remaining <= 0) finish();
     };
+    if (state.countdownVisibilityHandler) {
+      document.removeEventListener('visibilitychange', state.countdownVisibilityHandler);
+    }
+    state.countdownVisibilityHandler = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', state.countdownVisibilityHandler);
     show('countdown');
     tick();
     state.scheduleTimer = window.setInterval(tick, 250);
@@ -251,14 +289,14 @@
 
   async function requestDailySeat() {
     if (state.submitting) return;
-    if (app.dataset.scheduleState === 'upcoming') {
-      startCountdown({ onComplete: () => { startQuiz(); } });
+    if (app.dataset.scheduleState === 'upcoming' && !isPastCampaignStart()) {
+      startCountdown({ onComplete: () => { void startQuizAfterCountdown(); } });
       return;
     }
-    await startQuiz();
+    await startQuiz({ fromCountdown: true });
   }
 
-  async function startQuiz() {
+  async function startQuiz({ fromCountdown = false } = {}) {
     if (state.submitting) return;
     const activeUntil = Date.parse(app.dataset.activeUntil || '');
     if (Number.isFinite(activeUntil) && scheduledNow() >= activeUntil) {
@@ -266,7 +304,11 @@
       return;
     }
     const values = identityValues();
-    try { validateIdentity(values); } catch (error) { setIdentityError(error.message); return; }
+    if (!isDaily414) {
+      try { validateIdentity(values); } catch (error) { setIdentityError(error.message); return; }
+    } else if (!state.verifiedIdentity?.verified) {
+      state.verifiedIdentity = { verified: true, method: 'member' };
+    }
     state.submitting = true;
     const button = isDaily414
       ? app.querySelector('[data-action="daily-start"]')
@@ -299,14 +341,19 @@
       if (/Квиз завершён/.test(error.message)) {
         showEnded();
       } else if (/Квиз начнётся/.test(error.message)) {
+        if (fromCountdown || isPastCampaignStart()) {
+          throw error;
+        }
         app.dataset.scheduleState = 'upcoming';
-        startCountdown({ onComplete: () => { startQuiz(); } });
+        startCountdown({ onComplete: () => { void startQuizAfterCountdown(); } });
       } else if (/исчерпан|успешно пройден/.test(error.message)) {
         if (isDaily414 && await resumeFinalFlow({ force: true })) {
           return;
         }
         app.querySelector('.quiz-error-message').textContent = errorText(error.message);
         show('error');
+      } else if (fromCountdown) {
+        throw error;
       } else if (isDaily414) {
         app.querySelector('.quiz-error-message').textContent = errorText(error.message);
         show('error');
@@ -515,8 +562,13 @@
     state.finalPoll = window.setInterval(async () => {
       try {
         handleFinalStatus(await fetchFinalStatus());
-      } catch (_) {
-        // A later poll can recover from a short network interruption.
+      } catch (error) {
+        const lobbyActive = app.querySelector('[data-screen="final-lobby"]')?.classList.contains('active');
+        const startsAt = Date.parse(state.finalResult?.final_table_starts_at || '');
+        if (lobbyActive && Number.isFinite(startsAt) && scheduledNow() >= startsAt) {
+          const message = app.querySelector('.final-lobby-message');
+          if (message) message.textContent = errorText(error.message);
+        }
       }
     }, 1000);
   }
@@ -528,6 +580,15 @@
         final_table_starts_at: data.starts_at,
       };
     }
+    if (data.correct_count != null || data.provisional_place != null) {
+      state.finalResult = {
+        ...(state.finalResult || {}),
+        correct_count: data.correct_count ?? state.finalResult?.correct_count,
+        max_correct_count: data.max_correct_count ?? state.finalResult?.max_correct_count,
+        jackcoin_awarded: data.jackcoin_awarded ?? state.finalResult?.jackcoin_awarded,
+        daily_place: data.provisional_place ?? state.finalResult?.daily_place,
+      };
+    }
     const startsAt = Date.parse(data.starts_at || state.finalResult?.final_table_starts_at || '');
     const message = app.querySelector('.final-lobby-message');
     const place = app.querySelector('.final-lobby-place');
@@ -535,9 +596,9 @@
     message.textContent = result?.correct_count != null
       ? `${result.correct_count} из ${result.max_correct_count || result.correct_count} правильно · +${result.jackcoin_awarded || 0} JACKCOIN.`
       : (data.message || 'Основной раунд завершён. Собираем десятку лучших игроков.');
-    const provisionalPlace = data.provisional_place || result?.daily_place;
-    place.hidden = !provisionalPlace;
-    if (provisionalPlace) {
+    const provisionalPlace = data.provisional_place ?? result?.daily_place;
+    place.hidden = provisionalPlace == null;
+    if (provisionalPlace != null) {
       place.textContent = `Сейчас вы на ${provisionalPlace}-м месте отбора. В финал попадут не более 10 игроков.`;
     }
     const lobbyScreen = app.querySelector('[data-screen="final-lobby"]');
@@ -554,7 +615,7 @@
       output.textContent = formatTime(remaining);
       if (remaining > 0) return;
       const now = Date.now();
-      if (zeroFetchPending || now - lastZeroFetchAt < 1000) return;
+      if (zeroFetchPending || now - lastZeroFetchAt < 800) return;
       zeroFetchPending = true;
       lastZeroFetchAt = now;
       fetchFinalStatus()

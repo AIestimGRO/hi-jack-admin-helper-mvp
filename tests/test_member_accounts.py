@@ -762,10 +762,91 @@ def test_daily_414_upcoming_allows_welcome_meta_but_blocks_start(
         body = meta.json()
         assert body["schedule_state"] == "upcoming"
         assert body["questions_count"] == 10
+        identity = client.get("/api/quiz/identity?campaign=daily_test")
+        assert identity.status_code == 200
+        assert identity.json()["verified"] is True
+        assert identity.json()["method"] == "member"
         assert client.post(
             "/api/quiz/start",
             json={"campaign": "daily_test"},
         ).status_code == 403
+
+
+def test_daily_414_lobby_ranks_by_correct_count(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    with client:
+        first_id = seed_daily_member(client, settings)
+        seed_daily_campaign(settings)
+        with transaction(settings.db_path) as conn:
+            second = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(phone_raw, phone_local, first_name)
+                    VALUES ('79001112233', '9001112233', 'Second')
+                    """
+                ).lastrowid
+            )
+            account_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO member_accounts(
+                        client_id, email, email_normalized, password_hash,
+                        email_verified_at
+                    ) VALUES (?, 'second@example.test', 'second@example.test', ?,
+                              CURRENT_TIMESTAMP)
+                    """,
+                    (second, hash_password("abcdef")),
+                ).lastrowid
+            )
+            for document in conn.execute(
+                "SELECT * FROM legal_documents WHERE is_active=1"
+            ).fetchall():
+                conn.execute(
+                    """
+                    INSERT INTO member_consents(
+                        account_id, document_id, document_code, document_version,
+                        ip_hash, user_agent
+                    ) VALUES (?, ?, ?, ?, 'test-ip-2', 'pytest')
+                    """,
+                    (
+                        account_id,
+                        document["id"],
+                        document["code"],
+                        document["version"],
+                    ),
+                )
+            # first finishes with 8, second with 9 — second must be place 1
+            conn.execute(
+                """
+                INSERT INTO quiz_submissions(
+                    campaign_code, campaign_version, client_id, phone_raw, phone_local,
+                    answers_json, questions_snapshot_json, score, max_score,
+                    correct_count, max_correct_count, passed,
+                    completion_time_ms, main_prize_eligible, jackcoin_awarded, ip_hash
+                ) VALUES
+                  ('daily_test', 1, ?, '', '', '{}', '[]', 8, 10, 8, 10, 1, 20000, 1, 40, 'h1'),
+                  ('daily_test', 1, ?, '', '', '{}', '[]', 9, 10, 9, 10, 1, 25000, 1, 50, 'h2')
+                """,
+                (first_id, second),
+            )
+            token = issue_session(
+                conn,
+                secret_key=settings.secret_key,
+                account_id=account_id,
+                session_version=1,
+                days=30,
+                ip_hash="test-ip-2",
+                user_agent="pytest",
+            )
+        client.cookies.set(MEMBER_COOKIE_NAME, token)
+        lobby = client.get("/api/quiz/final-table/status?campaign=daily_test")
+        assert lobby.status_code == 200
+        body = lobby.json()
+        assert body["state"] == "lobby"
+        assert body["correct_count"] == 9
+        assert body["provisional_place"] == 1
 
 
 def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
@@ -821,8 +902,9 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         assert 'class="quiz-options final-question-options"' not in html_text
         assert "final-question-options" in html_text
         assert "requestDailySeat" in js_text
-        assert "startCountdown({ onComplete:" in js_text or "onComplete: () => { startQuiz(); }" in js_text
+        assert "startQuizAfterCountdown" in js_text
         assert "zeroFetchPending" in js_text
+        assert "provisional_place ?? result?.daily_place" in js_text or "data.provisional_place ?? result?.daily_place" in js_text
 
         token = attempt["attempt_token"]
         first = client.post(

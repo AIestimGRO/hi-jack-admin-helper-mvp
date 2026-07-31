@@ -1796,7 +1796,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/quiz/identity")
     async def quiz_identity_status(request: Request, campaign: str = "default"):
         campaign = normalize_campaign(campaign)
-        campaign_row = quiz_campaign_or_404(campaign)
+        campaign_row = quiz_campaign_for_meta(campaign)
         if campaign_row["campaign_type"] == "daily_414":
             member = daily_member(request, campaign_row)
             return {
@@ -1813,6 +1813,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                 ),
             }
+        campaign_row = quiz_campaign_or_404(campaign)
         device_token = quiz_device_cookie(request)
         if device_token:
             with transaction(settings.db_path) as conn:
@@ -2483,9 +2484,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 OR (
                                   correct_count = ?
                                   AND (
-                                    completion_time_ms < ?
+                                    IFNULL(completion_time_ms, 2147483647) < IFNULL(?, 2147483647)
                                     OR (
-                                      completion_time_ms = ?
+                                      IFNULL(completion_time_ms, 2147483647) = IFNULL(?, 2147483647)
                                       AND id < ?
                                     )
                                   )
@@ -2707,7 +2708,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "state": "main_round",
                     "message": "Сначала завершите основной раунд из 10 вопросов.",
                 }
-            final_questions = load_final_questions(conn, campaign)
+            try:
+                final_questions = load_final_questions(conn, campaign)
+            except ValueError:
+                final_questions = []
             table = ensure_final_table(
                 conn,
                 campaign_code=campaign,
@@ -2746,9 +2750,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             OR (
                               correct_count = ?
                               AND (
-                                completion_time_ms < ?
+                                IFNULL(completion_time_ms, 2147483647) < IFNULL(?, 2147483647)
                                 OR (
-                                  completion_time_ms = ? AND id < ?
+                                  IFNULL(completion_time_ms, 2147483647) = IFNULL(?, 2147483647)
+                                  AND id < ?
                                 )
                               )
                             )
@@ -2765,12 +2770,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         ),
                     ).fetchone()[0]
                 )
+            lobby_stats = {
+                "correct_count": int(submission["correct_count"] or 0),
+                "max_correct_count": int(submission["max_correct_count"] or 0),
+                "completion_time_ms": submission["completion_time_ms"],
+                "jackcoin_awarded": int(submission["jackcoin_awarded"] or 0),
+            }
             if now < final_start:
                 return {
                     **base,
                     "state": "lobby" if candidate else "not_eligible",
                     "candidate": candidate,
                     "provisional_place": provisional_place,
+                    **lobby_stats,
                     "message": (
                         "Основной раунд завершён. Ждём финальный стол."
                         if candidate

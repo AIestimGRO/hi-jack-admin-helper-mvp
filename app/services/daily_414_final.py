@@ -96,7 +96,7 @@ def seed_finalists(
         SELECT id, client_id
         FROM quiz_submissions
         WHERE campaign_code=? AND campaign_version=? AND main_prize_eligible=1
-        ORDER BY correct_count DESC, completion_time_ms ASC, id ASC
+        ORDER BY correct_count DESC, IFNULL(completion_time_ms, 2147483647) ASC, id ASC
         LIMIT ?
         """,
         (
