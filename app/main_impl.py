@@ -421,6 +421,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=410, detail=f"Квиз завершён {format_campaign_datetime(row['active_until'])}")
         return row
 
+    def quiz_campaign_for_meta(code: str):
+        """Allow reading welcome/meta while the campaign is still upcoming."""
+        row = quiz_campaign_row(code)
+        state = campaign_schedule_state(row)
+        if state == "ended":
+            raise HTTPException(
+                status_code=410,
+                detail=f"Квиз завершён {format_campaign_datetime(row['active_until'])}",
+            )
+        return row
+
+    def quiz_campaign_for_final(code: str):
+        """Final table continues after the main quiz window may already be ended."""
+        row = quiz_campaign_row(code)
+        if row["campaign_type"] != "daily_414":
+            raise HTTPException(
+                status_code=404,
+                detail="Финальный стол доступен только в JACKSIDE 4:14",
+            )
+        return row
+
     def campaign_datetime_iso(value: str | None) -> str:
         if not value:
             return ""
@@ -1652,7 +1673,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/quiz/questions")
     async def quiz_questions(request: Request, campaign: str = "default"):
         campaign = normalize_campaign(campaign)
-        campaign_row = quiz_campaign_or_404(campaign)
+        campaign_row = quiz_campaign_for_meta(campaign)
+        schedule_state = campaign_schedule_state(campaign_row)
         try:
             with connect(settings.db_path) as conn:
                 questions = load_db_questions(conn, campaign)
@@ -1681,6 +1703,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "campaign_version": int(campaign_row["current_version"] or 1),
             "title": campaign_row["title"],
             "campaign_type": campaign_row["campaign_type"],
+            "schedule_state": schedule_state,
+            "active_from": campaign_datetime_iso(campaign_row["active_from"]),
+            "active_until": campaign_datetime_iso(campaign_row["active_until"]),
             "questions": [],
             "questions_count": len(questions),
             "timed": campaign_row["quiz_time_limit_seconds"] > 0,
@@ -2652,12 +2677,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request, campaign: str = "default"
     ):
         campaign = normalize_campaign(campaign)
-        campaign_row = quiz_campaign_or_404(campaign)
-        if campaign_row["campaign_type"] != "daily_414":
-            raise HTTPException(
-                status_code=404,
-                detail="Финальный стол доступен только в JACKSIDE 4:14",
-            )
+        campaign_row = quiz_campaign_for_final(campaign)
         member = daily_member(request, campaign_row, required=True)
         now = utc_now()
         campaign_version = max(1, int(campaign_row["current_version"] or 1))
@@ -2863,9 +2883,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def daily_final_table_answer(request: Request):
         payload = await request_json(request)
         campaign = normalize_campaign(payload.get("campaign"))
-        campaign_row = quiz_campaign_or_404(campaign)
-        if campaign_row["campaign_type"] != "daily_414":
-            raise HTTPException(status_code=404, detail="Финальный стол не найден")
+        campaign_row = quiz_campaign_for_final(campaign)
         member = daily_member(request, campaign_row, required=True)
         try:
             requested_index = int(payload.get("question_index"))

@@ -53,10 +53,19 @@
     show('ended');
   }
 
-  function startCountdown() {
+  function applyServerNow(value) {
+    const serverNow = Date.parse(value || '');
+    if (Number.isFinite(serverNow)) state.serverOffset = serverNow - Date.now();
+  }
+
+  function startCountdown({ onComplete } = {}) {
+    if (state.scheduleTimer) {
+      window.clearInterval(state.scheduleTimer);
+      state.scheduleTimer = null;
+    }
     const start = Date.parse(app.dataset.activeFrom || '');
     if (!Number.isFinite(start)) {
-      loadMeta();
+      (onComplete || loadMeta)();
       return;
     }
     const output = {
@@ -77,7 +86,7 @@
         window.clearInterval(state.scheduleTimer);
         state.scheduleTimer = null;
         app.dataset.scheduleState = 'active';
-        loadMeta();
+        (onComplete || loadMeta)();
       }
     };
     show('countdown');
@@ -86,11 +95,14 @@
   }
 
   function initialize() {
-    const serverNow = Date.parse(app.dataset.serverNow || '');
-    if (Number.isFinite(serverNow)) state.serverOffset = serverNow - Date.now();
+    applyServerNow(app.dataset.serverNow);
     setBackground(app.dataset.campaignBackground || '');
-    if (app.dataset.scheduleState === 'upcoming') startCountdown();
-    else if (app.dataset.scheduleState === 'ended') showEnded();
+    if (app.dataset.scheduleState === 'ended') {
+      showEnded();
+      return;
+    }
+    // 4:14: welcome screens first; countdown only after "СЕСТЬ ЗА СТОЛ".
+    if (app.dataset.scheduleState === 'upcoming' && !isDaily414) startCountdown();
     else loadMeta();
   }
 
@@ -123,8 +135,11 @@
     try {
       const response = await fetch(`/api/quiz/questions?campaign=${encodeURIComponent(campaign)}`, { headers: { Accept: 'application/json' } });
       const data = await readJson(response, 'Не удалось загрузить квиз. Обнови страницу и попробуй ещё раз.');
-      if (!response.ok) throw new Error(data.error || 'Не удалось загрузить квиз');
+      if (!response.ok) throw new Error(data.error || data.detail || 'Не удалось загрузить квиз');
       state.meta = data;
+      if (data.schedule_state) app.dataset.scheduleState = data.schedule_state;
+      if (data.active_from) app.dataset.activeFrom = data.active_from;
+      if (data.active_until) app.dataset.activeUntil = data.active_until;
       const countLabel = data.questions_count === 1 ? '1 вопрос' : `${data.questions_count} вопросов`;
       const timeLabel = data.time_limit_seconds > 0 ? ` · общее время ${formatTime(data.time_limit_seconds * 1000)}` : ' · без ограничения времени';
       app.querySelector('.quiz-welcome-meta').textContent = `${countLabel}${timeLabel} · попыток: ${data.max_attempts}`;
@@ -153,7 +168,8 @@
       }
       if (/Квиз начнётся/.test(error.message)) {
         app.dataset.scheduleState = 'upcoming';
-        startCountdown();
+        if (isDaily414) show('welcome');
+        else startCountdown();
         return;
       }
       app.querySelector('.quiz-error-message').textContent = errorText(error.message);
@@ -233,6 +249,15 @@
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
+  async function requestDailySeat() {
+    if (state.submitting) return;
+    if (app.dataset.scheduleState === 'upcoming') {
+      startCountdown({ onComplete: () => { startQuiz(); } });
+      return;
+    }
+    await startQuiz();
+  }
+
   async function startQuiz() {
     if (state.submitting) return;
     const activeUntil = Date.parse(app.dataset.activeUntil || '');
@@ -246,8 +271,10 @@
     const button = isDaily414
       ? app.querySelector('[data-action="daily-start"]')
       : identityForm.querySelector('[data-action="start"]');
-    button.disabled = true;
-    button.textContent = 'Открываем…';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Открываем…';
+    }
     setIdentityError('');
     try {
       const data = await jsonRequest('/api/quiz/start', { campaign, referrer_id: app.dataset.referrer, source: app.dataset.source, ...values });
@@ -273,8 +300,11 @@
         showEnded();
       } else if (/Квиз начнётся/.test(error.message)) {
         app.dataset.scheduleState = 'upcoming';
-        startCountdown();
+        startCountdown({ onComplete: () => { startQuiz(); } });
       } else if (/исчерпан|успешно пройден/.test(error.message)) {
+        if (isDaily414 && await resumeFinalFlow({ force: true })) {
+          return;
+        }
         app.querySelector('.quiz-error-message').textContent = errorText(error.message);
         show('error');
       } else if (isDaily414) {
@@ -285,8 +315,10 @@
       }
     } finally {
       state.submitting = false;
-      button.disabled = false;
-      button.textContent = isDaily414 ? 'СЕСТЬ ЗА СТОЛ' : 'Продолжить';
+      if (button) {
+        button.disabled = false;
+        button.textContent = isDaily414 ? 'СЕСТЬ ЗА СТОЛ' : 'Продолжить';
+      }
     }
   }
 
@@ -446,16 +478,22 @@
     );
     const data = await readJson(response, 'Не удалось обновить финальный стол.');
     if (!response.ok) throw new Error(data.detail || data.error || 'Не удалось обновить финальный стол');
+    applyServerNow(data.server_now);
     return data;
   }
 
-  async function resumeFinalFlow() {
+  async function resumeFinalFlow({ force = false } = {}) {
     try {
       const data = await fetchFinalStatus();
       if (data.state === 'main_round') return false;
       handleFinalStatus(data);
       return true;
-    } catch (_) {
+    } catch (error) {
+      if (force) {
+        app.querySelector('.quiz-error-message').textContent = errorText(error.message);
+        show('error');
+        return true;
+      }
       return false;
     }
   }
@@ -483,26 +521,53 @@
   }
 
   function renderFinalLobby(data = {}) {
-    stopFinalQuestionTimer();
+    if (data.starts_at) {
+      state.finalResult = {
+        ...(state.finalResult || {}),
+        final_table_starts_at: data.starts_at,
+      };
+    }
     const startsAt = Date.parse(data.starts_at || state.finalResult?.final_table_starts_at || '');
     const message = app.querySelector('.final-lobby-message');
     const place = app.querySelector('.final-lobby-place');
     const result = state.finalResult;
-    message.textContent = result
-      ? `${result.correct_count} из ${result.max_correct_count} правильно · +${result.jackcoin_awarded} JACKCOIN.`
+    message.textContent = result?.correct_count != null
+      ? `${result.correct_count} из ${result.max_correct_count || result.correct_count} правильно · +${result.jackcoin_awarded || 0} JACKCOIN.`
       : (data.message || 'Основной раунд завершён. Собираем десятку лучших игроков.');
     const provisionalPlace = data.provisional_place || result?.daily_place;
     place.hidden = !provisionalPlace;
     if (provisionalPlace) {
       place.textContent = `Сейчас вы на ${provisionalPlace}-м месте отбора. В финал попадут не более 10 игроков.`;
     }
+    const lobbyScreen = app.querySelector('[data-screen="final-lobby"]');
+    if (lobbyScreen.classList.contains('active') && state.finalTimer) {
+      startFinalPolling();
+      return;
+    }
+    stopFinalQuestionTimer();
     const output = app.querySelector('.final-lobby-countdown strong');
+    let zeroFetchPending = false;
+    let lastZeroFetchAt = 0;
     const tick = () => {
       const remaining = Number.isFinite(startsAt) ? Math.max(0, startsAt - scheduledNow()) : 0;
       output.textContent = formatTime(remaining);
+      if (remaining > 0) return;
+      const now = Date.now();
+      if (zeroFetchPending || now - lastZeroFetchAt < 1000) return;
+      zeroFetchPending = true;
+      lastZeroFetchAt = now;
+      fetchFinalStatus()
+        .then((status) => {
+          handleFinalStatus(status);
+        })
+        .catch((error) => {
+          message.textContent = errorText(error.message);
+        })
+        .finally(() => {
+          zeroFetchPending = false;
+        });
     };
     tick();
-    stopFinalQuestionTimer();
     state.finalTimer = window.setInterval(tick, 250);
     show('final-lobby');
     startFinalPolling();
@@ -734,7 +799,7 @@
   app.querySelector('[data-action="share"]').addEventListener('click', shareQuiz);
   app.querySelector('[data-action="copy-share"]').addEventListener('click', copyShareLink);
   app.querySelector('[data-action="daily-prize-next"]')?.addEventListener('click', () => show('daily-jackcoin'));
-  app.querySelector('[data-action="daily-start"]')?.addEventListener('click', startQuiz);
+  app.querySelector('[data-action="daily-start"]')?.addEventListener('click', requestDailySeat);
   app.querySelector('[data-action="river-open"]')?.addEventListener('click', renderQuestion);
   app.querySelector('[data-action="final-answer"]')?.addEventListener('click', submitFinalAnswer);
   window.addEventListener('beforeunload', () => {

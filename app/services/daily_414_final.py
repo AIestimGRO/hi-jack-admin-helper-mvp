@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.daily_414 import (
@@ -30,9 +30,33 @@ def ensure_final_table(
         """,
         (campaign_code, campaign_version),
     ).fetchone()
+    payload = json.dumps(questions, ensure_ascii=False, sort_keys=True)
     if row:
+        if row["status"] in {"waiting", "unavailable"}:
+            snapshot = payload if questions else row["questions_snapshot_json"]
+            has_questions = bool(questions) or bool(
+                str(row["questions_snapshot_json"] or "").strip() not in {"", "[]"}
+            )
+            conn.execute(
+                """
+                UPDATE daily_414_final_tables
+                SET starts_at=?, questions_snapshot_json=?, status=?,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (
+                    _timestamp(starts_at),
+                    snapshot,
+                    "waiting" if has_questions else "unavailable",
+                    row["id"],
+                ),
+            )
+            return conn.execute(
+                "SELECT * FROM daily_414_final_tables WHERE id=?",
+                (row["id"],),
+            ).fetchone()
         return row
-    status = "waiting" if questions else "unavailable"
+    waiting_status = "waiting" if questions else "unavailable"
     conn.execute(
         """
         INSERT INTO daily_414_final_tables(
@@ -44,8 +68,8 @@ def ensure_final_table(
             campaign_code,
             campaign_version,
             _timestamp(starts_at),
-            json.dumps(questions, ensure_ascii=False, sort_keys=True),
-            status,
+            payload,
+            waiting_status,
         ),
     )
     return conn.execute(
@@ -112,7 +136,14 @@ def reconcile_final_table(
     if not table or table["status"] in {"completed", "unavailable"}:
         return table
     starts_at = datetime.fromisoformat(str(table["starts_at"]))
-    if now < starts_at:
+    if starts_at.tzinfo is None:
+        starts_at = starts_at.replace(tzinfo=timezone.utc)
+    now_utc = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    if now_utc.tzinfo != timezone.utc:
+        now_utc = now_utc.astimezone(timezone.utc)
+    if starts_at.tzinfo != timezone.utc:
+        starts_at = starts_at.astimezone(timezone.utc)
+    if now_utc < starts_at:
         return table
 
     seed_finalists(conn, final_table=table)
@@ -132,14 +163,14 @@ def reconcile_final_table(
             SET status='completed', completed_at=?, updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (_timestamp(now), table["id"]),
+            (_timestamp(now_utc), table["id"]),
         )
         return conn.execute(
             "SELECT * FROM daily_414_final_tables WHERE id=?",
             (table["id"],),
         ).fetchone()
 
-    elapsed = max(0.0, (now - starts_at).total_seconds())
+    elapsed = max(0.0, (now_utc - starts_at).total_seconds())
     completed_count = min(
         len(questions),
         int(elapsed // DAILY_414_FINAL_QUESTION_SECONDS),
@@ -226,7 +257,7 @@ def reconcile_final_table(
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (winner["submission_id"], _timestamp(now), table["id"]),
+            (winner["submission_id"], _timestamp(now_utc), table["id"]),
         )
     elif next_index >= len(questions):
         conn.execute(
@@ -236,7 +267,7 @@ def reconcile_final_table(
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (_timestamp(now), table["id"]),
+            (_timestamp(now_utc), table["id"]),
         )
     else:
         conn.execute(

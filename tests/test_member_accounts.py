@@ -731,6 +731,43 @@ def seed_daily_campaign(settings: Settings) -> None:
         )
 
 
+def test_daily_414_upcoming_allows_welcome_meta_but_blocks_start(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    with client:
+        seed_daily_member(client, settings)
+        seed_daily_campaign(settings)
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE quiz_campaigns
+                SET active_from=?, active_until=NULL
+                WHERE code='daily_test'
+                """,
+                (
+                    (
+                        datetime.now(ZoneInfo(settings.timezone_name)).replace(
+                            tzinfo=None
+                        )
+                        + timedelta(hours=1)
+                    ).strftime("%Y-%m-%dT%H:%M:%S"),
+                ),
+            )
+        page = client.get("/quiz?campaign=daily_test")
+        assert page.status_code == 200
+        assert 'data-schedule-state="upcoming"' in page.text
+        meta = client.get("/api/quiz/questions?campaign=daily_test")
+        assert meta.status_code == 200
+        body = meta.json()
+        assert body["schedule_state"] == "upcoming"
+        assert body["questions_count"] == 10
+        assert client.post(
+            "/api/quiz/start",
+            json={"campaign": "daily_test"},
+        ).status_code == 403
+
+
 def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
     tmp_path: Path,
 ) -> None:
@@ -783,6 +820,9 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         assert 'data-role="question-options"' in html_text
         assert 'class="quiz-options final-question-options"' not in html_text
         assert "final-question-options" in html_text
+        assert "requestDailySeat" in js_text
+        assert "startCountdown({ onComplete:" in js_text or "onComplete: () => { startQuiz(); }" in js_text
+        assert "zeroFetchPending" in js_text
 
         token = attempt["attempt_token"]
         first = client.post(
@@ -860,6 +900,36 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
             json={"campaign": "daily_test"},
         )
         assert blocked.status_code == 409
+
+        # Closing the lobby and reopening the link must return to final flow,
+        # not treat the finished attempt as a hard lockout with no recovery.
+        resumed = client.get(
+            "/api/quiz/final-table/status?campaign=daily_test"
+        )
+        assert resumed.status_code == 200
+        assert resumed.json()["state"] == "lobby"
+
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE quiz_campaigns
+                SET active_until=?
+                WHERE code='daily_test'
+                """,
+                (
+                    (
+                        datetime.now(ZoneInfo(settings.timezone_name)).replace(
+                            tzinfo=None
+                        )
+                        - timedelta(minutes=1)
+                    ).strftime("%Y-%m-%dT%H:%M:%S"),
+                ),
+            )
+        after_window = client.get(
+            "/api/quiz/final-table/status?campaign=daily_test"
+        )
+        assert after_window.status_code == 200
+        assert after_window.json()["state"] == "lobby"
 
         account = client.get("/account?tab=stats")
         assert "+80 JC" in account.text
