@@ -87,6 +87,15 @@ server {
         proxy_pass http://127.0.0.1:8091;
     }
 
+    location = /api/quiz/final-table/status {
+        proxy_pass http://127.0.0.1:8091;
+    }
+
+    location = /api/quiz/final-table/answer {
+        limit_req zone=hjc_v2_quiz_answer burst=20 nodelay;
+        proxy_pass http://127.0.0.1:8091;
+    }
+
     location = /account {
         proxy_pass http://127.0.0.1:8091;
     }

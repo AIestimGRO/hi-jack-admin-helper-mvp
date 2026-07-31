@@ -13,7 +13,10 @@
   async function readJson(response, fallbackMessage) {
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-      throw new Error(fallbackMessage || 'Сервис временно недоступен. Обнови страницу и попробуй ещё раз.');
+      throw new Error(
+        fallbackMessage
+          || `Сервис вернул ${response.status}. Обнови страницу и попробуй ещё раз.`,
+      );
     }
     try {
       return await response.json();
@@ -589,7 +592,10 @@
       error.retryable = true;
       throw error;
     }
-    const data = await readJson(response, 'Не удалось обновить финальный стол.');
+    const data = await readJson(
+      response,
+      `Не удалось обновить финальный стол (HTTP ${response.status}).`,
+    );
     if (!response.ok) {
       const detail = data.detail || data.error || `Ошибка ${response.status}`;
       const error = new Error(typeof detail === 'string' ? detail : 'Не удалось обновить финальный стол');

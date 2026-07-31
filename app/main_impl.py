@@ -2958,14 +2958,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         last_error: Exception | None = None
         for attempt in range(5):
             try:
-                return build_status()
+                return await run_in_threadpool(build_status)
             except HTTPException:
                 raise
             except sqlite3.OperationalError as exc:
                 last_error = exc
                 if "locked" not in str(exc).lower() or attempt >= 4:
                     break
-                time.sleep(0.05 * (attempt + 1))
+                await run_in_threadpool(time.sleep, 0.05 * (attempt + 1))
             except Exception as exc:
                 logging.exception("final-table status failed for %s", campaign)
                 raise HTTPException(
