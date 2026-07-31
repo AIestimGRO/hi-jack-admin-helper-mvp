@@ -776,7 +776,13 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         assert attempt["questions"][-1]["river_reveal"] is True
         assert all(len(item.get("options") or []) >= 2 for item in attempt["questions"])
         quiz_js = Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "quiz.js"
-        assert "screen.querySelector('.quiz-options')" in quiz_js.read_text(encoding="utf-8")
+        quiz_html = Path(__file__).resolve().parents[1] / "app" / "templates" / "quiz.html"
+        js_text = quiz_js.read_text(encoding="utf-8")
+        html_text = quiz_html.read_text(encoding="utf-8")
+        assert 'data-role="question-options"' in js_text
+        assert 'data-role="question-options"' in html_text
+        assert 'class="quiz-options final-question-options"' not in html_text
+        assert "final-question-options" in html_text
 
         token = attempt["attempt_token"]
         first = client.post(

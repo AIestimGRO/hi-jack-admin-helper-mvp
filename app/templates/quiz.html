@@ -97,7 +97,7 @@
       <p class="quiz-step final-question-number"></p>
       <img class="quiz-question-image final-question-image" alt="" hidden>
       <h2 class="final-question-title"></h2>
-      <div class="quiz-options final-question-options"></div>
+      <div class="final-question-options"></div>
       <p class="quiz-validation final-question-validation" role="alert"></p>
       <button class="quiz-primary final-answer-button" type="button" data-action="final-answer">Зафиксировать ответ</button>
       <p class="final-answer-wait" hidden>Ответ принят. Ждём остальных игроков.</p>
@@ -156,7 +156,7 @@
       <p class="quiz-section-label" hidden></p>
       <img class="quiz-question-image" alt="" hidden>
       <h2 class="quiz-question-title"></h2>
-      <div class="quiz-options"></div>
+      <div class="quiz-options" data-role="question-options"></div>
       <p class="quiz-validation" role="alert"></p>
       <div class="quiz-actions {{ 'daily-actions' if campaign_type == 'daily_414' else '' }}"><button class="quiz-secondary" type="button" data-action="back" {% if campaign_type == 'daily_414' %}hidden{% endif %}>Назад</button><button class="quiz-primary" type="button" data-action="next">Далее</button></div>
     </section>

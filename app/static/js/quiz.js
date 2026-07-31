@@ -317,8 +317,9 @@
     questionImage.alt = question.image_path ? question.title : '';
     screen.querySelector('.quiz-question-title').textContent = question.title;
     screen.querySelector('.quiz-validation').textContent = '';
-    // Scope to the main question screen: daily_414 also has .quiz-options on the hidden final table.
-    const options = screen.querySelector('.quiz-options');
+    // Prefer the dedicated question container; never write into final-table options.
+    const options = screen.querySelector('[data-role="question-options"]') || screen.querySelector('.quiz-options');
+    if (!options) throw new Error('Не найден блок вариантов ответа');
     options.replaceChildren();
     if (question.type === 'text') {
       const textarea = document.createElement('textarea');
@@ -328,7 +329,11 @@
       textarea.addEventListener('input', () => { state.answers[question.id] = textarea.value; });
       options.append(textarea);
     } else {
-      (question.options || []).forEach((option) => {
+      const optionList = question.options || [];
+      if (!optionList.length) {
+        screen.querySelector('.quiz-validation').textContent = 'Варианты ответа пока не настроены. Обнови страницу или сообщи администратору.';
+      }
+      optionList.forEach((option) => {
         const label = document.createElement('label'); label.className = 'quiz-option';
         const input = document.createElement('input'); input.type = question.type === 'multi_choice' ? 'checkbox' : 'radio'; input.name = question.id; input.value = option.id;
         input.checked = Array.isArray(savedAnswer) ? savedAnswer.includes(option.id) : savedAnswer === option.id;
