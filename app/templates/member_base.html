@@ -7,21 +7,41 @@
   <title>{% block title %}Hi, Jack Club{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-extra.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member-dashboard.css') }}?v={{ asset_version }}">
 </head>
-<body>
+<body class="{{ 'member-app-body' if member else 'member-auth-body' }}">
   <header class="member-topbar">
     <a class="member-brand" href="{{ '/account' if member else '/account/login' }}">
       <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="">
-      <span><strong>HI, JACK CLUB!</strong><small>Личный кабинет</small></span>
+      <span><strong>{{ 'JACKSIDE' if member else 'HI, JACK CLUB!' }}</strong><small>{{ 'HI, JACK CLUB!' if member else 'Личный кабинет' }}</small></span>
     </a>
     {% if member %}
-    <form action="/account/logout" method="post">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="member-link" type="submit">Выйти</button>
-    </form>
+    {% set header_name = member.first_name or member.nickname or member.username or 'HJ' %}
+    <a class="member-profile-button" href="/account?tab=profile" aria-label="Открыть профиль">{{ header_name[:1]|upper }}</a>
     {% endif %}
   </header>
   <main class="member-shell">{% block content %}{% endblock %}</main>
+  {% if member %}
+  <nav class="member-bottom-nav" aria-label="Основная навигация">
+    <a class="{{ 'active' if current_tab|default('home') == 'home' else '' }}" href="/account">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.1a1.1 1.1 0 0 1-1.1 1.1H15v-6H9v6H4.1A1.1 1.1 0 0 1 3 19.9Z"/></svg>
+      <span>Главная</span>
+    </a>
+    <a class="{{ 'active' if current_tab|default('') == 'quizzes' else '' }}" href="/account?tab=quizzes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2.5 5.2h5M9.5 12h5M9.5 15.8h3"/></svg>
+      <span>Квизы</span>
+    </a>
+    <a class="{{ 'active' if current_tab|default('') == 'vault' else '' }}" href="/account?tab=vault">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM6.5 4h11v3.5h-11zM9.3 12.2h5.4M12 9.5v5.4"/></svg>
+      <span>Хранилище</span>
+      {% if vault_active_rewards|default([])|length %}<i>{{ vault_active_rewards|length }}</i>{% endif %}
+    </a>
+    <a class="{{ 'active' if current_tab|default('') == 'profile' else '' }}" href="/account?tab=profile">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Zm-7.5 8.5c.5-4 3.3-6.2 7.5-6.2s7 2.2 7.5 6.2"/></svg>
+      <span>Профиль</span>
+    </a>
+  </nav>
+  {% endif %}
   <script src="{{ url_for('static', path='/js/member.js') }}?v={{ asset_version }}" defer></script>
 </body>
 </html>

@@ -36,3 +36,31 @@ document.querySelectorAll("[data-registration-form]").forEach((form) => {
   form.addEventListener("change", sync);
   sync();
 });
+
+document.querySelectorAll("[data-member-countdown]").forEach((output) => {
+  const target = Date.parse(output.dataset.memberCountdown || "");
+  if (!Number.isFinite(target)) return;
+
+  const render = () => {
+    const remaining = Math.max(0, target - Date.now());
+    if (remaining <= 0) {
+      output.textContent = "Можно играть";
+      return false;
+    }
+    const totalSeconds = Math.floor(remaining / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const clock = [hours, minutes, seconds]
+      .map((value) => String(value).padStart(2, "0"))
+      .join(":");
+    output.textContent = days ? `${days} дн. · ${clock}` : clock;
+    return true;
+  };
+
+  if (!render()) return;
+  const timer = window.setInterval(() => {
+    if (!render()) window.clearInterval(timer);
+  }, 1000);
+});

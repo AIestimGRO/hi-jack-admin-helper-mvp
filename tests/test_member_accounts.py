@@ -325,15 +325,24 @@ def test_registration_consents_account_session_and_profile(
         assert "Подключить" in skipped_profile.text
         connect_member_telegram(client, monkeypatch)
 
-        profile = client.get("/account")
+        home = client.get("/account")
+        assert home.status_code == 200
+        assert "Привет, Алекс" in home.text
+        assert "player@example.com" not in home.text
+        assert 'data-account-tab="home"' in home.text
+        assert "Главная" in home.text
+        assert "Квизы" in home.text
+        assert "Хранилище" in home.text
+        assert "Профиль" in home.text
+        assert "Личные данные и настройки" in home.text
+        assert "Статистика" in home.text
+        assert "Награды" in home.text
+
+        profile = client.get("/account?tab=profile")
         assert profile.status_code == 200
-        assert "Алекс" in profile.text
         assert "player@example.com" in profile.text
         assert "@poker_player" in profile.text
-        assert "0 <small>JC</small>" in profile.text
         assert "Личные данные" in profile.text
-        assert "Статистика" in profile.text
-        assert "Награды" in profile.text
 
         stats = client.get("/account?tab=stats")
         assert "Рейтинг HI, JACK CLUB!" in stats.text
@@ -404,7 +413,7 @@ def test_login_logout_and_password_reset(tmp_path: Path, monkeypatch) -> None:
             data={"code": captured["register"], "csrf_token": csrf_from(verify)},
         )
 
-        account_page = client.get("/account")
+        account_page = client.get("/account?tab=profile")
         logged_out = client.post(
             "/account/logout",
             data={"csrf_token": csrf_from(account_page)},
@@ -516,7 +525,7 @@ def test_telegram_connect_requires_account_and_accepts_missing_username(
             follow_redirects=False,
         )
         connect_member_telegram(client, monkeypatch, username=None)
-        account_page = client.get("/account")
+        account_page = client.get("/account?tab=profile")
         assert "Подключён" in account_page.text
 
     with connect(settings.db_path) as conn:
@@ -655,6 +664,56 @@ def seed_daily_member(client: TestClient, settings: Settings) -> int:
         )
     client.cookies.set(MEMBER_COOKIE_NAME, token)
     return client_id
+
+
+def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    local_now = datetime.now(ZoneInfo(settings.timezone_name)).replace(
+        tzinfo=None
+    )
+    with client:
+        seed_daily_member(client, settings)
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO quiz_campaigns(
+                    code, title, campaign_type, active_from, active_until
+                ) VALUES ('next_table', 'Следующий стол JACKSIDE', 'daily_414', ?, ?)
+                """,
+                (
+                    (local_now + timedelta(hours=2)).strftime(
+                        "%Y-%m-%dT%H:%M:%S"
+                    ),
+                    (local_now + timedelta(hours=4)).strftime(
+                        "%Y-%m-%dT%H:%M:%S"
+                    ),
+                ),
+            )
+
+        home = client.get("/account")
+        assert home.status_code == 200
+        assert 'data-account-tab="home"' in home.text
+        assert 'class="jc-wallet-card"' in home.text
+        assert "Награды за JACKCOIN" in home.text
+        assert "Все квизы" in home.text
+        assert "daily@example.test" not in home.text
+
+        quizzes = client.get("/account?tab=quizzes")
+        assert quizzes.status_code == 200
+        assert 'data-account-tab="quizzes"' in quizzes.text
+        assert "Следующий стол JACKSIDE" in quizzes.text
+        assert 'data-member-countdown="' in quizzes.text
+        assert "/quiz?campaign=next_table" in quizzes.text
+
+        legacy_profile = client.get("/account?tab=personal")
+        assert 'data-account-tab="profile"' in legacy_profile.text
+        assert "daily@example.test" in legacy_profile.text
+        legacy_stats = client.get("/account?tab=stats")
+        assert 'data-account-tab="profile"' in legacy_stats.text
+        legacy_vault = client.get("/account?tab=rewards")
+        assert 'data-account-tab="vault"' in legacy_vault.text
 
 
 def seed_daily_campaign(settings: Settings) -> None:

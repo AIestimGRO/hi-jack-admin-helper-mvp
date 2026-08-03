@@ -1,161 +1,287 @@
 {% extends "member_base.html" %}
-{% block title %}Личный кабинет — Hi, Jack Club{% endblock %}
+{% block title %}JACKSIDE — Hi, Jack Club{% endblock %}
+{% set display_name = member.first_name or member.nickname or ('@' ~ member.username if member.username else 'Игрок') %}
+{% set category_marks = {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'} %}
+{% set category_labels = {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'} %}
 {% block content %}
-<section class="member-hero">
-  <div>
-    <p class="member-eyebrow">Личный кабинет</p>
-    <h1>{{ member.first_name or member.nickname or ('@' ~ member.username if member.username else 'Участник клуба') }}</h1>
-  </div>
-  <div class="jackcoin-balance"><span>Баланс</span><strong>{{ balance }} <small>JC</small></strong></div>
-</section>
+<div class="member-app-page" data-account-tab="{{ current_tab }}">
+  {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
 
-{% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
-{% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
-
-<nav class="account-tabs">
-  <a class="{{ 'active' if current_tab == 'personal' else '' }}" href="/account?tab=personal">Личные данные</a>
-  <a class="{{ 'active' if current_tab == 'stats' else '' }}" href="/account?tab=stats">Статистика</a>
-  <a class="{{ 'active' if current_tab == 'rewards' else '' }}" href="/account?tab=rewards">Награды</a>
-</nav>
-
-{% if current_tab == 'personal' %}
-<section class="member-card account-panel">
-  <h2>Личные данные</h2>
-  <dl class="profile-data">
-    <div><dt>Почта</dt><dd>{{ member.email }}</dd></div>
+  {% if current_tab == 'home' %}
+  <header class="app-page-heading home-heading">
     <div>
-      <dt>Telegram</dt>
-      <dd>
-        {% if member.telegram_user_id %}
-          {{ '@' ~ member.username if member.username else 'Подключён' }}
-        {% else %}
-          <a class="profile-action" href="/account/telegram">Подключить</a>
-        {% endif %}
-      </dd>
+      <p class="member-eyebrow">JACKSIDE</p>
+      <h1>Привет, {{ display_name }}</h1>
+      <p class="member-muted">Твоя игра, награды и JACKCOIN — в одном месте.</p>
     </div>
-    <div><dt>Телефон</dt><dd>{{ display_phone(member.phone_local) if member.phone_local else 'Не указан' }}</dd></div>
-  </dl>
-  <div class="consent-list">
-    <h3>Принятые документы</h3>
-    {% for consent in consents %}
-    <p><span>{{ consent.title }}</span><small>Редакция {{ consent.document_version }} · {{ consent.accepted_at[:10] }}</small></p>
-    {% endfor %}
-  </div>
-</section>
-{% elif current_tab == 'stats' %}
-<section class="account-grid">
-  <article class="member-card rating-card">
-    <p class="member-eyebrow">Рейтинг HI, JACK CLUB!</p>
-    {% if rating %}
-      <strong class="rating-place">#{{ rating.place or '—' }}</strong>
-      <p>{{ rating.points }} очков</p>
-      <small>Состояние на {{ rating.snapshot_date }}</small>
-    {% else %}
-      <h2>Пока нет данных</h2>
-      <p class="member-muted">Рейтинг появится после первой синхронизации с клубной системой.</p>
-    {% endif %}
-  </article>
-  <article class="member-card rating-card">
-    <p class="member-eyebrow">JACKCOIN</p>
-    <strong class="rating-place">{{ balance }}</strong>
-    <p>Доступно JC</p>
-  </article>
-</section>
+  </header>
 
-<section class="member-card account-panel">
-  <h2>История участия в квизах</h2>
-  <div class="member-history">
-    {% for item in history %}
-    <article>
-      <div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div>
-      <span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span>
-      <span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int if item.score is not none else 0 }} балл.{% endif %}</span>
-    </article>
-    {% else %}
-    <p class="member-empty">Завершённых квизов пока нет.</p>
-    {% endfor %}
-  </div>
-</section>
+  <section class="jc-wallet-card" aria-label="Баланс JACKCOIN">
+    <div class="jc-wallet-top">
+      <span>JACKCOIN</span>
+      <span class="jc-wallet-chip">JC</span>
+    </div>
+    <div class="jc-wallet-balance"><strong>{{ balance }}</strong><small>JC</small></div>
+    <div class="jc-wallet-bottom">
+      <p>Играй в квизы, собирай JACKCOIN и меняй их на клубные награды.</p>
+      <a href="/account?tab=vault">В хранилище <span aria-hidden="true">→</span></a>
+    </div>
+  </section>
 
-{% if ledger %}
-<section class="member-card account-panel">
-  <h2>История JACKCOIN</h2>
-  <div class="member-history">
-    {% for item in ledger %}
-    <article>
-      <div><strong>{{ item.comment or item.operation_type }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div>
-      <span class="{{ 'jc-plus' if item.amount > 0 else 'jc-minus' }}">{{ '+' if item.amount > 0 else '' }}{{ item.amount }} JC</span>
-    </article>
-    {% endfor %}
-  </div>
-</section>
-{% endif %}
-{% else %}
-<section class="member-card account-panel vault-intro">
-  <p class="member-eyebrow">THE VAULT · Хранилище</p>
-  <h2>Награды за JACKCOIN</h2>
-  <p class="member-muted">JACKCOIN нельзя купить или обменять на деньги. Выберите награду — цифровая карта сразу появится ниже.</p>
-</section>
+  {% if not member.telegram_user_id %}
+  <a class="account-nudge" href="/account/telegram">
+    <span class="account-nudge-icon">✦</span>
+    <span><strong>Подключить Telegram</strong><small>Быстрый вход и восстановление участия</small></span>
+    <span aria-hidden="true">›</span>
+  </a>
+  {% endif %}
 
-<section class="vault-section">
-  <div class="vault-section-head"><div><p class="member-eyebrow">Каталог наград</p><h2>Доступные награды</h2></div><span>{{ balance }} JC</span></div>
-  <div class="vault-catalog-grid">
-    {% for reward in vault_catalog %}
-      {% set sold_out = reward.inventory_total is not none and reward.allocated_count >= reward.inventory_total %}
-      <article class="member-card vault-catalog-card category-{{ reward.category }} {{ 'sold-out' if sold_out else '' }}">
-        <div class="vault-card-mark">{{ {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'}[reward.category] }}</div>
-        <div class="vault-card-copy">
-          <p class="member-eyebrow">{{ {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'}[reward.category] }}</p>
-          <h3>{{ reward.title }}</h3>
-          <p>{{ reward.description or 'Клубная награда Hi, Jack Club.' }}</p>
-          <small>{% if reward.validity_days %}Действует {{ reward.validity_days }} дн. после получения{% else %}Без срока{% endif %}{% if reward.inventory_total is not none %} · осталось {{ [reward.inventory_total - reward.allocated_count, 0]|max }}{% endif %}</small>
+  <section class="home-section">
+    <div class="app-section-head">
+      <div><p class="member-eyebrow">Игра</p><h2>{{ 'Сейчас в клубе' if featured_campaign and featured_campaign.schedule_state == 'active' else 'Ближайшая игра' }}</h2></div>
+      <a href="/account?tab=quizzes">Все квизы</a>
+    </div>
+    {% if featured_campaign %}
+    <article class="quiz-feature-card {{ featured_campaign.schedule_state }}">
+      <div class="quiz-feature-art" aria-hidden="true"><span>4</span><i>:</i><span>14</span></div>
+      <div class="quiz-feature-copy">
+        <div class="status-row">
+          <span class="live-status {{ featured_campaign.schedule_state }}">{{ 'Можно играть' if featured_campaign.schedule_state == 'active' else 'Скоро' }}</span>
+          <small>{{ 'JACKSIDE 4:14' if featured_campaign.campaign_type == 'daily_414' else 'КВИЗ HI, JACK' }}</small>
         </div>
-        <form action="/account/rewards/{{ reward.id }}/purchase" method="post" onsubmit="return confirm('Обменять {{ reward.price_jc }} JC на «{{ reward.title|e }}»?');">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="purchase_id" value="{{ vault_purchase_tokens[reward.id] }}">
-          <input type="hidden" name="expected_price_jc" value="{{ reward.price_jc }}">
-          <button class="vault-buy-button" type="submit" {% if sold_out or balance < reward.price_jc %}disabled{% endif %}>
-            {% if sold_out %}Тираж закончился{% elif balance < reward.price_jc %}Нужно {{ reward.price_jc }} JC{% else %}Получить за {{ reward.price_jc }} JC{% endif %}
-          </button>
-        </form>
-      </article>
-    {% else %}
-      <div class="member-card vault-empty"><div class="reward-placeholder-icon">♠</div><h3>Хранилище готовится</h3><p class="member-muted">Мастер-администратор ещё не опубликовал награды.</p></div>
-    {% endfor %}
-  </div>
-</section>
-
-<section class="vault-section">
-  <div class="vault-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>{{ vault_active_rewards|length }}</span></div>
-  <div class="vault-active-grid">
-    {% for reward in vault_active_rewards %}
-    <article class="member-card jack-card category-{{ reward.category }}">
-      <div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'THE VAULT' }}</small></div>
-      <div class="jack-card-main">
-        <div><p class="member-eyebrow">Цифровая карта</p><h3>{{ reward.title }}</h3><strong>{{ reward.code }}</strong></div>
-        <img src="/account/rewards/{{ reward.id }}/qr.png" alt="QR-код карты {{ reward.code }}" loading="lazy">
+        <h3>{{ featured_campaign.title }}</h3>
+        {% if featured_campaign.schedule_state == 'upcoming' %}
+          <p>Старт {{ featured_campaign.active_from_display }}</p>
+          <strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>
+        {% elif featured_campaign.active_until %}
+          <p>Доступен до {{ featured_campaign.active_until_display }}</p>
+        {% else %}
+          <p>Открывай стол и забирай свои JACKCOIN.</p>
+        {% endif %}
+        <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">
+          {{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}
+        </a>
       </div>
-      <p>{{ reward.redeem_instructions or 'Покажите QR-код администратору клуба.' }}</p>
-      <small>{% if reward.valid_until %}Действует до {{ reward.valid_until[:16]|replace('T', ' ') }}{% else %}Без срока{% endif %}</small>
     </article>
     {% else %}
-    <div class="member-card vault-empty"><h3>Активных карт пока нет</h3><p class="member-muted">Полученные награды появятся здесь вместе с QR-кодом.</p></div>
-    {% endfor %}
-  </div>
-</section>
+    <div class="member-card smart-empty">
+      <span>♠</span><div><h3>Новый квиз уже готовится</h3><p>Как только откроется следующий стол, он появится здесь.</p></div>
+    </div>
+    {% endif %}
+  </section>
 
-{% if vault_reward_history %}
-<section class="member-card account-panel">
-  <h2>Сыгранные и завершённые карты</h2>
-  <div class="member-history">
-    {% for reward in vault_reward_history %}
-    <article>
-      <div><strong>{{ reward.title }}</strong><small>{{ reward.code }} · {{ reward.created_at[:16]|replace('T', ' ') }}</small></div>
-      <span>{{ {'redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span>
+  <section class="home-section">
+    <div class="app-section-head">
+      <div><p class="member-eyebrow">THE VAULT</p><h2>Награды за JACKCOIN</h2></div>
+      <a href="/account?tab=vault">Смотреть все</a>
+    </div>
+    <div class="home-reward-rail">
+      {% for reward in home_rewards %}
+      <a class="home-reward-card {{ 'affordable' if reward.affordable else '' }}" href="/account?tab=vault#reward-{{ reward.id }}">
+        <div class="reward-visual category-{{ reward.category }}"><span>{{ category_marks[reward.category] }}</span></div>
+        <p>{{ category_labels[reward.category] }}</p>
+        <h3>{{ reward.title }}</h3>
+        <strong>{{ reward.price_jc }} JC</strong>
+        <small>{% if reward.sold_out %}Тираж закончился{% elif reward.affordable %}Доступно сейчас{% else %}Ещё {{ reward.price_jc - balance }} JC{% endif %}</small>
+      </a>
+      {% else %}
+      <div class="member-card smart-empty compact">
+        <span>♦</span><div><h3>Каталог наполняется</h3><p>Новые награды скоро появятся.</p></div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if vault_active_rewards %}
+  <section class="home-section">
+    <div class="app-section-head">
+      <div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div>
+      <a href="/account?tab=vault">Открыть</a>
+    </div>
+    <div class="active-card-preview-list">
+      {% for reward in vault_active_rewards[:2] %}
+      <a class="active-card-preview" href="/account?tab=vault#card-{{ reward.id }}">
+        <span class="active-card-suit">{{ category_marks[reward.category] }}</span>
+        <span><strong>{{ reward.title }}</strong><small>{{ reward.code }}{% if reward.valid_until %} · до {{ reward.valid_until[:10] }}{% endif %}</small></span>
+        <span aria-hidden="true">›</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="home-section home-stats">
+    <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p><h2>Статистика</h2></div><a href="/account?tab=profile#activity">Подробнее</a></div>
+    <div class="stat-chip-grid">
+      <article><small>Рейтинг клуба</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'Нет данных' }}</span></article>
+      <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>дней подряд</span></article>
+      <article><small>Сыграно квизов</small><strong>{{ history|length }}</strong><span>завершено</span></article>
+    </div>
+    <a class="profile-settings-link" href="/account?tab=profile">Личные данные и настройки <span aria-hidden="true">→</span></a>
+  </section>
+
+  {% elif current_tab == 'quizzes' %}
+  <header class="app-page-heading">
+    <p class="member-eyebrow">JACKSIDE</p>
+    <h1>Квизы</h1>
+    <p class="member-muted">Играй, поднимайся в рейтинге и собирай JACKCOIN.</p>
+  </header>
+  <section class="campaign-list">
+    {% for item in campaign_cards %}
+    <article class="campaign-card {{ item.schedule_state }}">
+      <div class="campaign-card-top">
+        <span class="live-status {{ item.schedule_state }}">{{ 'Доступен' if item.schedule_state == 'active' else 'Скоро' }}</span>
+        {% if item.completed_count %}<span class="campaign-played">Сыграно: {{ item.completed_count }}</span>{% endif %}
+      </div>
+      <div class="campaign-card-symbol" aria-hidden="true">{{ '4:14' if item.campaign_type == 'daily_414' else 'HJ' }}</div>
+      <p class="member-eyebrow">{{ 'Ежедневная игра' if item.campaign_type == 'daily_414' else 'Клубный квиз' }}</p>
+      <h2>{{ item.title }}</h2>
+      <p class="campaign-time">
+        {% if item.schedule_state == 'upcoming' %}Старт {{ item.active_from_display }}
+        {% elif item.active_until %}До {{ item.active_until_display }}
+        {% else %}Доступен сейчас{% endif %}
+      </p>
+      {% if item.campaign_type == 'daily_414' %}
+      <div class="campaign-rewards"><span>+{{ item.jackcoin_per_correct }} JC за ответ</span><span>+{{ item.jackcoin_completion_bonus }} JC за игру</span></div>
+      {% endif %}
+      {% if item.schedule_state == 'upcoming' %}<strong class="member-countdown" data-member-countdown="{{ item.active_from_iso }}">Готовим стол</strong>{% endif %}
+      <a class="app-primary-action" href="/quiz?campaign={{ item.code }}">
+        {{ 'Продолжить' if item.has_active_attempt else ('Играть' if item.schedule_state == 'active' else 'Открыть анонс') }}
+      </a>
     </article>
+    {% else %}
+    <div class="member-card smart-empty"><span>♠</span><div><h3>Активных квизов пока нет</h3><p>Новая игра появится здесь сразу после публикации.</p></div></div>
     {% endfor %}
-  </div>
-</section>
-{% endif %}
-{% endif %}
+  </section>
+
+  {% elif current_tab == 'vault' %}
+  <header class="app-page-heading vault-page-heading">
+    <div><p class="member-eyebrow">THE VAULT</p><h1>Хранилище</h1><p class="member-muted">Твои JACKCOIN превращаются в клубные награды.</p></div>
+    <div class="mini-balance"><span>Баланс</span><strong>{{ balance }} <small>JC</small></strong></div>
+  </header>
+
+  {% if vault_active_rewards %}
+  <section class="vault-section vault-active-section">
+    <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>{{ vault_active_rewards|length }}</span></div>
+    <div class="vault-active-grid">
+      {% for reward in vault_active_rewards %}
+      <article id="card-{{ reward.id }}" class="member-card jack-card category-{{ reward.category }}">
+        <div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'THE VAULT' }}</small></div>
+        <div class="jack-card-main">
+          <div><p class="member-eyebrow">Цифровая карта</p><h3>{{ reward.title }}</h3><strong>{{ reward.code }}</strong></div>
+          <img src="/account/rewards/{{ reward.id }}/qr.png" alt="QR-код карты {{ reward.code }}" loading="lazy">
+        </div>
+        <p>{{ reward.redeem_instructions or 'Покажите QR-код администратору клуба.' }}</p>
+        <small>{% if reward.valid_until %}Действует до {{ reward.valid_until[:16]|replace('T', ' ') }}{% else %}Без срока{% endif %}</small>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="vault-section">
+    <div class="app-section-head"><div><p class="member-eyebrow">Каталог наград</p><h2>Что можно получить</h2></div><span>{{ vault_catalog|length }}</span></div>
+    <div class="vault-catalog-grid">
+      {% for reward in vault_catalog %}
+        {% set sold_out = reward.inventory_total is not none and reward.allocated_count >= reward.inventory_total %}
+        <article id="reward-{{ reward.id }}" class="member-card vault-catalog-card category-{{ reward.category }} {{ 'sold-out' if sold_out else '' }}">
+          <div class="vault-card-mark">{{ category_marks[reward.category] }}</div>
+          <div class="vault-card-copy">
+            <p class="member-eyebrow">{{ category_labels[reward.category] }}</p>
+            <h3>{{ reward.title }}</h3>
+            <p>{{ reward.description or 'Клубная награда Hi, Jack Club.' }}</p>
+            <small>{% if reward.validity_days %}Действует {{ reward.validity_days }} дн. после получения{% else %}Без срока{% endif %}{% if reward.inventory_total is not none %} · осталось {{ [reward.inventory_total - reward.allocated_count, 0]|max }}{% endif %}</small>
+          </div>
+          <form action="/account/rewards/{{ reward.id }}/purchase" method="post" onsubmit="return confirm('Обменять {{ reward.price_jc }} JC на «{{ reward.title|e }}»?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="purchase_id" value="{{ vault_purchase_tokens[reward.id] }}">
+            <input type="hidden" name="expected_price_jc" value="{{ reward.price_jc }}">
+            <button class="vault-buy-button" type="submit" {% if sold_out or balance < reward.price_jc %}disabled{% endif %}>
+              {% if sold_out %}Тираж закончился{% elif balance < reward.price_jc %}Не хватает {{ reward.price_jc - balance }} JC{% else %}Получить за {{ reward.price_jc }} JC{% endif %}
+            </button>
+          </form>
+        </article>
+      {% else %}
+        <div class="member-card smart-empty"><span>♦</span><div><h3>Хранилище готовится</h3><p>Мастер-администратор ещё не опубликовал награды.</p></div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if not vault_active_rewards %}
+  <section class="vault-section">
+    <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>0</span></div>
+    <div class="member-card smart-empty"><span>♠</span><div><h3>Активных карт пока нет</h3><p>Полученные награды появятся здесь вместе с QR-кодом.</p></div></div>
+  </section>
+  {% endif %}
+
+  {% if vault_reward_history %}
+  <details class="member-card account-details">
+    <summary>История JACK CARDS <span>{{ vault_reward_history|length }}</span></summary>
+    <div class="member-history">
+      {% for reward in vault_reward_history %}
+      <article><div><strong>{{ reward.title }}</strong><small>{{ reward.code }} · {{ reward.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ {'redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span></article>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  {% else %}
+  <header class="app-page-heading profile-heading">
+    <div class="profile-avatar-large">{{ display_name[:1]|upper }}</div>
+    <div><p class="member-eyebrow">Профиль игрока</p><h1>{{ display_name }}</h1><p class="member-muted">{{ '@' ~ member.username if member.username else member.email }}</p></div>
+  </header>
+
+  <section id="activity" class="profile-section">
+    <div class="app-section-head"><div><p class="member-eyebrow">Моя игра</p><h2>Статистика</h2></div></div>
+    <div class="profile-metric-grid">
+      <article><small>Рейтинг HI, JACK CLUB!</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'После синхронизации' }}</span></article>
+      <article><small>Баланс</small><strong>{{ balance }}</strong><span>JACKCOIN</span></article>
+      <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>лучшее: {{ streak.best_streak if streak else 0 }}</span></article>
+      <article><small>Заработано</small><strong>{{ lifetime_earned }}</strong><span>JC за всё время</span></article>
+    </div>
+  </section>
+
+  <section class="member-card account-panel profile-panel">
+    <div class="app-section-head"><div><p class="member-eyebrow">Аккаунт</p><h2>Личные данные</h2></div></div>
+    <dl class="profile-data">
+      <div><dt>Почта</dt><dd>{{ member.email }}</dd></div>
+      <div><dt>Telegram</dt><dd>{% if member.telegram_user_id %}{{ '@' ~ member.username if member.username else 'Подключён' }}{% else %}<a class="profile-action" href="/account/telegram">Подключить</a>{% endif %}</dd></div>
+      <div><dt>Телефон</dt><dd>{{ display_phone(member.phone_local) if member.phone_local else 'Не указан' }}</dd></div>
+    </dl>
+  </section>
+
+  <details class="member-card account-details" open>
+    <summary>История участия в квизах <span>{{ history|length }}</span></summary>
+    <div class="member-history">
+      {% for item in history %}
+      <article><div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span><span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int if item.score is not none else 0 }} балл.{% endif %}</span></article>
+      {% else %}<p class="member-empty">Завершённых квизов пока нет.</p>{% endfor %}
+    </div>
+  </details>
+
+  {% if ledger %}
+  <details class="member-card account-details">
+    <summary>История JACKCOIN <span>{{ ledger|length }}</span></summary>
+    <div class="member-history">
+      {% for item in ledger %}
+      <article><div><strong>{{ item.comment or item.operation_type }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span class="{{ 'jc-plus' if item.amount > 0 else 'jc-minus' }}">{{ '+' if item.amount > 0 else '' }}{{ item.amount }} JC</span></article>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+  <details class="member-card account-details legal-details">
+    <summary>Принятые документы <span>{{ consents|length }}</span></summary>
+    <div class="consent-list">
+      {% for consent in consents %}<p><span>{{ consent.title }}</span><small>Редакция {{ consent.document_version }} · {{ consent.accepted_at[:10] }}</small></p>{% endfor %}
+    </div>
+  </details>
+
+  <form class="profile-logout" action="/account/logout" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Выйти из аккаунта</button>
+  </form>
+  {% endif %}
+</div>
 {% endblock %}

@@ -1543,17 +1543,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/account", response_class=HTMLResponse)
     async def member_account_page(
-        request: Request, tab: str = "personal", ok: str = "", error: str = ""
+        request: Request, tab: str = "home", ok: str = "", error: str = ""
     ):
         member_portal_or_404()
         member = current_member(request, required=True)
         if missing_member_documents(int(member["id"])):
             return RedirectResponse("/account/consents", status_code=303)
-        if tab not in {"personal", "stats", "rewards"}:
-            tab = "personal"
+        tab = {
+            "personal": "profile",
+            "stats": "profile",
+            "rewards": "vault",
+        }.get(tab, tab)
+        if tab not in {"home", "quizzes", "vault", "profile"}:
+            tab = "home"
         vault_catalog = []
         vault_active_rewards = []
         vault_reward_history = []
+        campaign_cards: list[dict[str, Any]] = []
+        streak = None
+        lifetime_earned = 0
         with connect(settings.db_path) as conn:
             balance = jackcoin_balance(conn, int(member["client_id"]))
             history = conn.execute(
@@ -1591,39 +1599,120 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (member["id"],),
             ).fetchall()
-            if tab == "rewards":
-                expire_vault_rewards(conn, client_id=int(member["client_id"]))
-                vault_catalog = conn.execute(
+            lifetime_earned = int(
+                conn.execute(
                     """
-                    SELECT vcr.*,
-                           COUNT(vmr.id) AS allocated_count
-                    FROM vault_catalog_rewards vcr
-                    LEFT JOIN vault_member_rewards vmr
-                      ON vmr.catalog_reward_id=vcr.id
-                     AND vmr.status<>'cancelled'
-                    WHERE vcr.is_active=1
-                    GROUP BY vcr.id
-                    ORDER BY vcr.position, vcr.id
-                    """
-                ).fetchall()
-                member_rewards = conn.execute(
-                    """
-                    SELECT vmr.*, vcr.title, vcr.description, vcr.category,
-                           vcr.redeem_instructions
-                    FROM vault_member_rewards vmr
-                    JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
-                    WHERE vmr.client_id=?
-                    ORDER BY CASE vmr.status WHEN 'active' THEN 0 ELSE 1 END,
-                             vmr.created_at DESC, vmr.id DESC
+                    SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0)
+                    FROM jackcoin_ledger WHERE client_id=?
                     """,
                     (member["client_id"],),
-                ).fetchall()
-                vault_active_rewards = [
-                    reward for reward in member_rewards if reward["status"] == "active"
-                ]
-                vault_reward_history = [
-                    reward for reward in member_rewards if reward["status"] != "active"
-                ]
+                ).fetchone()[0]
+            )
+            streak = conn.execute(
+                "SELECT * FROM daily_414_progress WHERE client_id=?",
+                (member["client_id"],),
+            ).fetchone()
+
+            campaign_rows = conn.execute(
+                """
+                SELECT qc.*,
+                       (SELECT COUNT(*) FROM quiz_submissions qs
+                        WHERE qs.client_id=? AND qs.campaign_code=qc.code) AS completed_count,
+                       EXISTS(
+                           SELECT 1 FROM quiz_attempts qa
+                           WHERE qa.client_id=? AND qa.campaign_code=qc.code
+                             AND qa.status='in_progress'
+                       ) AS has_active_attempt
+                FROM quiz_campaigns qc
+                WHERE qc.is_active=1
+                  AND qc.archived_at IS NULL
+                  AND qc.deleted_at IS NULL
+                ORDER BY qc.active_from IS NOT NULL, qc.active_from, qc.id
+                """,
+                (member["client_id"], member["client_id"]),
+            ).fetchall()
+            for campaign_row in campaign_rows:
+                schedule_state = campaign_schedule_state(campaign_row)
+                if schedule_state not in {"active", "upcoming"}:
+                    continue
+                item = dict(campaign_row)
+                item["schedule_state"] = schedule_state
+                item["active_from_iso"] = campaign_datetime_iso(
+                    campaign_row["active_from"]
+                )
+                item["active_until_iso"] = campaign_datetime_iso(
+                    campaign_row["active_until"]
+                )
+                item["active_from_display"] = (
+                    format_campaign_datetime(campaign_row["active_from"])
+                    if campaign_row["active_from"]
+                    else "Доступен сейчас"
+                )
+                item["active_until_display"] = (
+                    format_campaign_datetime(campaign_row["active_until"])
+                    if campaign_row["active_until"]
+                    else "Без ограничения по времени"
+                )
+                campaign_cards.append(item)
+            campaign_cards.sort(
+                key=lambda item: (
+                    0 if item["schedule_state"] == "active" else 1,
+                    0 if item["campaign_type"] == "daily_414" else 1,
+                    item["active_from"] or "9999-12-31T23:59:59",
+                    int(item["id"]),
+                )
+            )
+
+            expire_vault_rewards(conn, client_id=int(member["client_id"]))
+            vault_catalog = conn.execute(
+                """
+                SELECT vcr.*,
+                       COUNT(vmr.id) AS allocated_count
+                FROM vault_catalog_rewards vcr
+                LEFT JOIN vault_member_rewards vmr
+                  ON vmr.catalog_reward_id=vcr.id
+                 AND vmr.status<>'cancelled'
+                WHERE vcr.is_active=1
+                GROUP BY vcr.id
+                ORDER BY vcr.position, vcr.id
+                """
+            ).fetchall()
+            member_rewards = conn.execute(
+                """
+                SELECT vmr.*, vcr.title, vcr.description, vcr.category,
+                       vcr.redeem_instructions
+                FROM vault_member_rewards vmr
+                JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
+                WHERE vmr.client_id=?
+                ORDER BY CASE vmr.status WHEN 'active' THEN 0 ELSE 1 END,
+                         vmr.created_at DESC, vmr.id DESC
+                """,
+                (member["client_id"],),
+            ).fetchall()
+            vault_active_rewards = [
+                reward for reward in member_rewards if reward["status"] == "active"
+            ]
+            vault_reward_history = [
+                reward for reward in member_rewards if reward["status"] != "active"
+            ]
+        home_rewards = []
+        for reward in vault_catalog:
+            item = dict(reward)
+            item["sold_out"] = (
+                reward["inventory_total"] is not None
+                and int(reward["allocated_count"]) >= int(reward["inventory_total"])
+            )
+            item["affordable"] = (
+                not item["sold_out"] and balance >= int(reward["price_jc"])
+            )
+            home_rewards.append(item)
+        home_rewards.sort(
+            key=lambda item: (
+                0 if item["affordable"] else 1,
+                int(item["price_jc"]),
+                int(item["position"]),
+            )
+        )
         vault_purchase_tokens = {
             int(reward["id"]): vault_purchase_token(
                 settings.secret_key,
@@ -1645,6 +1734,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 rating=rating,
                 ledger=ledger,
                 consents=consents,
+                lifetime_earned=lifetime_earned,
+                streak=streak,
+                campaign_cards=campaign_cards,
+                featured_campaign=campaign_cards[0] if campaign_cards else None,
+                home_rewards=home_rewards[:4],
                 vault_catalog=vault_catalog,
                 vault_active_rewards=vault_active_rewards,
                 vault_reward_history=vault_reward_history,
