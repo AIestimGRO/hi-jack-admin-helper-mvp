@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from app.db import connect, init_db, transaction
 from app.services.daily_414 import (
@@ -10,6 +10,7 @@ from app.services.daily_414 import (
 )
 from app.services.daily_414_final import (
     ensure_final_table,
+    question_window,
     reconcile_final_table,
 )
 from app.services.quiz import load_builder_questions
@@ -452,3 +453,71 @@ def test_daily_414_final_question_time_is_snapshotted(tmp_path) -> None:
     assert live["question_time_seconds"] == 45
     assert still_first["current_question_index"] == 0
     assert second["current_question_index"] == 1
+
+
+def test_daily_414_final_questions_use_individual_snapshotted_times(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-individual-times.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 8, 3, 18, 14)
+    with transaction(db_path) as conn:
+        for index in range(1, 3):
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=10,
+                completion_time_ms=10_000 + index,
+            )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[
+                {"id": "f1", "time_limit_seconds": 10},
+                {"id": "f2", "time_limit_seconds": 20},
+                {"id": "f3"},
+            ],
+            question_time_seconds=45,
+        )
+        first = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=9),
+        )
+        first_window = question_window(first)
+        second = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=10),
+        )
+        second_window = question_window(second)
+        still_second = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=29),
+        )
+        third = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=30),
+        )
+        third_window = question_window(third)
+
+    assert first["current_question_index"] == 0
+    utc_start = start.replace(tzinfo=timezone.utc)
+    assert first_window[1:] == (
+        utc_start,
+        utc_start + timedelta(seconds=10),
+    )
+    assert second["current_question_index"] == 1
+    assert second_window[1:] == (
+        utc_start + timedelta(seconds=10),
+        utc_start + timedelta(seconds=30),
+    )
+    assert still_second["current_question_index"] == 1
+    assert third["current_question_index"] == 2
+    assert third_window[1:] == (
+        utc_start + timedelta(seconds=30),
+        utc_start + timedelta(seconds=75),
+    )

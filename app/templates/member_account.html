@@ -129,18 +129,22 @@
         <span class="live-status {{ item.schedule_state }}">{{ 'Доступен' if item.schedule_state == 'active' else 'Скоро' }}</span>
         {% if item.completed_count %}<span class="campaign-played">Сыграно: {{ item.completed_count }}</span>{% endif %}
       </div>
-      <div class="campaign-card-symbol" aria-hidden="true">{{ '4:14' if item.campaign_type == 'daily_414' else 'HJ' }}</div>
-      <p class="member-eyebrow">{{ 'Ежедневная игра' if item.campaign_type == 'daily_414' else 'Клубный квиз' }}</p>
-      <h2>{{ item.title }}</h2>
-      <p class="campaign-time">
-        {% if item.schedule_state == 'upcoming' %}Старт {{ item.active_from_display }}
-        {% elif item.active_until %}До {{ item.active_until_display }}
-        {% else %}Доступен сейчас{% endif %}
-      </p>
-      {% if item.campaign_type == 'daily_414' %}
-      <div class="campaign-rewards"><span>+{{ item.jackcoin_per_correct }} JC за ответ</span><span>+{{ item.jackcoin_completion_bonus }} JC за игру</span></div>
-      {% endif %}
-      {% if item.schedule_state == 'upcoming' %}<strong class="member-countdown" data-member-countdown="{{ item.active_from_iso }}">Готовим стол</strong>{% endif %}
+      <div class="campaign-card-body">
+        <div class="campaign-card-symbol" aria-hidden="true">{{ '4:14' if item.campaign_type == 'daily_414' else 'HJ' }}</div>
+        <div class="campaign-card-copy">
+          <p class="member-eyebrow">{{ 'Ежедневная игра' if item.campaign_type == 'daily_414' else 'Клубный квиз' }}</p>
+          <h2>{{ item.title }}</h2>
+          <p class="campaign-time">
+            {% if item.schedule_state == 'upcoming' %}Старт {{ item.active_from_display }}
+            {% elif item.active_until %}До {{ item.active_until_display }}
+            {% else %}Доступен сейчас{% endif %}
+          </p>
+          {% if item.campaign_type == 'daily_414' %}
+          <div class="campaign-rewards"><span>+{{ item.jackcoin_per_correct }} JC за ответ</span><span>+{{ item.jackcoin_completion_bonus }} JC за игру</span></div>
+          {% endif %}
+          {% if item.schedule_state == 'upcoming' %}<strong class="member-countdown" data-member-countdown="{{ item.active_from_iso }}">Готовим стол</strong>{% endif %}
+        </div>
+      </div>
       <a class="app-primary-action" href="/quiz?campaign={{ item.code }}">
         {{ 'Продолжить' if item.has_active_attempt else ('Играть' if item.schedule_state == 'active' else 'Открыть анонс') }}
       </a>
@@ -153,12 +157,12 @@
   {% elif current_tab == 'rating' %}
   <header class="rating-hub-hero">
     <div class="hj-hero-mark" aria-hidden="true"><span>HJ</span></div>
-    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Личные показатели, рейтинг JACKSIDE и позиция в Hi, Jack App.</p></div>
+    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Личные показатели, рейтинг JACKSIDE и позиция в HI JACK!</p></div>
   </header>
 
   <nav class="rating-section-tabs" aria-label="Раздел рейтинга">
     <a class="{{ 'active' if current_rating_section == 'quiz' else '' }}" href="/account?tab=rating&amp;section=quiz">JACKSIDE</a>
-    <a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">Hi, Jack App</a>
+    <a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">HI JACK!</a>
   </nav>
 
   {% if current_rating_section == 'quiz' %}
@@ -183,7 +187,7 @@
     <div class="club-leaderboard jackside-leaderboard">
       {% for row in jackside_leaderboard %}
       <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium podium-' ~ row.place if row.place and row.place <= 3 else '' }} {{ 'is-calibrating' if not row.place else '' }}">
-        <span class="leaderboard-place">{{ row.place if row.place else '•••' }}</span>
+        <span class="leaderboard-place">{{ row.place if row.place and row.place <= 30 else '•••' }}</span>
         <span class="leaderboard-player"><strong>{{ row.display_name }}</strong><small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% точности · {{ row.completed_count }} игр · {{ row.active_days }} активн. дн.</small></span>
         {% if row.place %}<strong class="leaderboard-points">{{ row.rating_score }}<small>балл</small></strong>{% else %}<strong class="leaderboard-calibration">Калибровка<small>{{ row.completed_count }}/3 игр · {{ row.question_total }}/30 ответов</small></strong>{% endif %}
       </article>
@@ -194,19 +198,20 @@
   </section>
   {% else %}
   <section class="club-rating-summary">
-    <div><p class="member-eyebrow">Hi, Jack App</p><h2>{% if rating_snapshot %}Рейтинг на {{ rating_snapshot.snapshot_date[8:10] }}.{{ rating_snapshot.snapshot_date[5:7] }}.{{ rating_snapshot.snapshot_date[:4] }}{% else %}Рейтинг ещё не загружен{% endif %}</h2><span>{{ 'Последнее обновление рейтинга клуба' if rating_snapshot else 'После следующей синхронизации здесь появятся места игроков' }}</span></div>
+    <div><p class="member-eyebrow">HI JACK!</p><h2>{% if rating_snapshot %}Рейтинг на {{ rating_snapshot.snapshot_date[8:10] }}.{{ rating_snapshot.snapshot_date[5:7] }}.{{ rating_snapshot.snapshot_date[:4] }}{% else %}Рейтинг ещё не загружен{% endif %}</h2><span>{{ 'Последнее обновление рейтинга клуба' if rating_snapshot else 'После следующей синхронизации здесь появятся места игроков' }}</span></div>
     <article class="my-club-rank"><small>Твоё место</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'Нет данных в текущем рейтинге' }}</span></article>
   </section>
 
   <section class="club-leaderboard">
     {% for row in rating_leaderboard %}
     <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium' if row.place and row.place <= 3 else '' }}">
-      <span class="leaderboard-place">{{ row.place or loop.index }}</span>
+      {% set displayed_place = row.place or loop.index %}
+      <span class="leaderboard-place">{{ displayed_place if displayed_place <= 30 else '•••' }}</span>
       <span class="leaderboard-player"><strong>{{ row.display_name }}</strong>{% if row.client_id == member.client_id %}<small>Это ты</small>{% endif %}</span>
       <strong class="leaderboard-points">{{ row.points }} <small>очков</small></strong>
     </article>
     {% else %}
-    <div class="member-card smart-empty"><span>★</span><div><h3>Рейтинг клуба готовится</h3><p>Он появится после импорта свежего снимка из Hi, Jack App.</p></div></div>
+    <div class="member-card smart-empty"><span>★</span><div><h3>Рейтинг клуба готовится</h3><p>Он появится после импорта свежего снимка из HI JACK!</p></div></div>
     {% endfor %}
   </section>
   {% endif %}
@@ -226,16 +231,19 @@
         <div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'THE VAULT' }}</small></div>
         <div class="jack-card-main">
           <div>
-            <p class="member-eyebrow">Цифровая карта</p>
+            <div class="jack-card-label-row">
+              <p class="member-eyebrow">Цифровая карта</p>
+              {% if not reward.activated_at or not reward.activation_code %}
+              <form action="/account/rewards/{{ reward.id }}/activate" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="reward-activate-button" type="submit">Активировать</button>
+              </form>
+              {% endif %}
+            </div>
             <h3>{{ reward.title }}</h3>
             {% if reward.activated_at and reward.activation_code %}
             <strong class="reward-activation-code" aria-label="Код активации {{ reward.activation_code }}">{{ reward.activation_code }}</strong>
             <span class="reward-activation-timer" data-reward-activation-countdown="{{ reward.activation_expires_at }}" aria-live="polite">Код активен {{ vault_activation_minutes }}:00</span>
-            {% else %}
-            <form action="/account/rewards/{{ reward.id }}/activate" method="post">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="reward-activate-button" type="submit">Активировать</button>
-            </form>
             {% endif %}
           </div>
           {% if reward.activated_at and reward.activation_code %}

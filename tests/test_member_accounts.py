@@ -774,6 +774,22 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
                 """,
                 (snapshot_id, member_client_id, snapshot_id),
             )
+            for place in range(3, 32):
+                conn.execute(
+                    """
+                    INSERT INTO club_rating_entries(
+                        snapshot_id, external_user_id, display_name,
+                        points, place
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot_id,
+                        f"leader-{place}",
+                        f"Игрок {place}",
+                        1500 - place,
+                        place,
+                    ),
+                )
 
         home = client.get("/account")
         assert home.status_code == 200
@@ -806,10 +822,16 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         assert "балл" in rating.text
         assert "Последние игры" not in rating.text
         club_rating = client.get("/account?tab=rating&section=club")
-        assert "Hi, Jack App" in club_rating.text
+        assert "HI JACK!" in club_rating.text
+        assert "Hi, Jack App" not in club_rating.text
         assert "#2" in club_rating.text
         assert "Лидер" in club_rating.text
         assert "Это ты" in club_rating.text
+        displayed_places = re.findall(
+            r'class="leaderboard-place">([^<]+)', club_rating.text
+        )
+        assert displayed_places[:30] == [str(place) for place in range(1, 31)]
+        assert displayed_places[30] == "•••"
 
         legacy_profile = client.get("/account?tab=personal")
         assert 'data-account-tab="profile"' in legacy_profile.text
@@ -1250,10 +1272,10 @@ def test_daily_414_final_answer_is_saved_once(tmp_path: Path) -> None:
                     """
                     INSERT INTO quiz_questions(
                         campaign_code, code, type, title, game_round,
-                        position, is_active
+                        time_limit_seconds, position, is_active
                     ) VALUES (
                         'daily_live_final', 'final_live_1',
-                        'single_choice', 'Кто победил?', 'final', 10, 1
+                        'single_choice', 'Кто победил?', 'final', 73, 10, 1
                     )
                     """
                 ).lastrowid
@@ -1307,6 +1329,7 @@ def test_daily_414_final_answer_is_saved_once(tmp_path: Path) -> None:
         assert status.status_code == 200
         assert status.json()["state"] == "final_question"
         assert status.json()["active_count"] == 2
+        assert status.json()["question_seconds"] == 73
 
         saved = client.post(
             "/api/quiz/final-table/answer",

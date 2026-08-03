@@ -2,7 +2,7 @@
 {% block title %}Конструктор «{{ campaign.title }}» — Hi Jack Club{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/builder.css') }}?v={{ asset_version }}">{% endblock %}
 {% block content %}
-<div class="hj-builder" data-quiz-builder data-campaign-id="{{ campaign.id }}" data-campaign-type="{{ campaign.campaign_type }}" data-csrf-token="{{ csrf_token }}">
+<div class="hj-builder" data-quiz-builder data-campaign-id="{{ campaign.id }}" data-campaign-type="{{ campaign.campaign_type }}" data-final-default-seconds="{{ campaign.final_question_time_seconds }}" data-csrf-token="{{ csrf_token }}">
   <a class="back" href="/master?tab=campaigns">← Кампании квиза</a>
 
   <section class="hj-builder-hero">
@@ -22,7 +22,7 @@
         <span>Бонус <strong>{{ campaign.bonus_title or 'не назначен' }}</strong></span>
         {% if campaign.campaign_type == 'daily_414' %}
         <span>JACKCOIN <strong>{{ campaign.jackcoin_per_correct }} за ответ · {{ campaign.jackcoin_completion_bonus }} за финиш · {{ campaign.jackcoin_perfect_bonus }} за 10/10</strong></span>
-        <span>Финальный вопрос <strong>{{ campaign.final_question_time_seconds }} сек.</strong></span>
+        <span>Финальный вопрос <strong>своё время · по умолчанию {{ campaign.final_question_time_seconds }} сек.</strong></span>
         <span>Главный приз <strong>{% if campaign.final_prize_type=='jackcoin' %}{{ campaign.final_prize_jackcoin_amount }} JACKCOIN{% elif campaign.final_prize_type=='reward_card' %}{{ campaign.final_prize_title or 'карточка не выбрана' }}{% else %}не назначен{% endif %}</strong></span>
         {% endif %}
       </div>
@@ -48,7 +48,8 @@
   <div class="alert daily-order-note">
     Основной раунд содержит ровно 10 вопросов:
     <strong>1–2 Префлоп · 3–5 Флоп · 6–8 Тёрн · 9–10 Ривер</strong>.
-    Вопросы финального стола идут отдельным списком и открываются синхронно на {{ campaign.final_question_time_seconds }} сек.
+    Вопросы финального стола идут отдельным списком и открываются синхронно.
+    Время задаётся отдельно для каждого вопроса; значение по умолчанию — {{ campaign.final_question_time_seconds }} сек.
   </div>
   {% endif %}
 
@@ -86,6 +87,7 @@
       <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice">Один правильный</option><option value="multi_choice">Несколько правильных</option><option value="text">Свободный текст</option></select></label>
       {% if campaign.campaign_type == 'daily_414' %}
       <label>Этап игры<select name="game_round"><option value="main">Основной раунд — 10 вопросов</option><option value="final">Финальный стол — на вылет</option></select></label>
+      <label data-final-question-time hidden>Время на этот финальный вопрос, сек.<input name="time_limit_seconds" type="number" min="5" max="300" value="{{ campaign.final_question_time_seconds }}" inputmode="numeric"><small>От 5 до 300 секунд</small></label>
       {% endif %}
       <label>{{ 'Фон / оформление' if campaign.campaign_type == 'daily_414' else 'Блок' }}<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}">{{ section.title }}</option>{% endfor %}</select></label>
       <label>Вид вопроса<select name="visual_type"><option value="standard">Обычный текстовый</option><option value="rebus">Ребус с картинкой</option><option value="photo">Фотовопрос / раздача</option></select></label>
@@ -126,7 +128,7 @@
   {% if campaign.campaign_type == 'daily_414' %}
     {% set question_groups = [
       {'title': 'Основной раунд', 'eyebrow': '10 вопросов · 4:14', 'questions': main_questions, 'empty': 'Добавьте ровно 10 вопросов основного раунда.'},
-      {'title': 'Финальный стол', 'eyebrow': 'Вопросы на вылет · 30 секунд', 'questions': final_questions, 'empty': 'Добавьте вопросы для синхронного финального стола.'}
+      {'title': 'Финальный стол', 'eyebrow': 'Вопросы на вылет · индивидуальное время', 'questions': final_questions, 'empty': 'Добавьте вопросы для синхронного финального стола.'}
     ] %}
   {% else %}
     {% set question_groups = [

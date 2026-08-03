@@ -21,12 +21,55 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _question_seconds(final_table: sqlite3.Row | dict[str, Any]) -> int:
+def _default_question_seconds(
+    final_table: sqlite3.Row | dict[str, Any],
+) -> int:
     try:
         value = int(final_table["question_time_seconds"] or 0)
     except (KeyError, TypeError, ValueError, IndexError):
         value = DAILY_414_FINAL_QUESTION_SECONDS
     return min(300, max(5, value or DAILY_414_FINAL_QUESTION_SECONDS))
+
+
+def _questions(final_table: sqlite3.Row | dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(final_table["questions_snapshot_json"] or "[]")
+    except (KeyError, TypeError, json.JSONDecodeError, IndexError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [item if isinstance(item, dict) else {} for item in payload]
+
+
+def _question_durations(
+    final_table: sqlite3.Row | dict[str, Any],
+) -> list[int]:
+    fallback = _default_question_seconds(final_table)
+    durations: list[int] = []
+    for question in _questions(final_table):
+        try:
+            value = int(question.get("time_limit_seconds") or fallback)
+        except (TypeError, ValueError):
+            value = fallback
+        durations.append(min(300, max(5, value)))
+    return durations
+
+
+def _completed_question_count(
+    final_table: sqlite3.Row | dict[str, Any],
+    *,
+    now: datetime,
+    starts_at: datetime,
+) -> int:
+    elapsed = max(0.0, (_as_utc(now) - _as_utc(starts_at)).total_seconds())
+    completed = 0
+    boundary = 0
+    for duration in _question_durations(final_table):
+        boundary += duration
+        if elapsed < boundary:
+            break
+        completed += 1
+    return completed
 
 
 def ensure_final_table(
@@ -135,16 +178,13 @@ def final_table_needs_reconcile(
         return now_utc >= starts_at
     if table["status"] != "live":
         return False
-    try:
-        questions = json.loads(table["questions_snapshot_json"] or "[]")
-    except json.JSONDecodeError:
+    questions = _questions(table)
+    if not questions:
         return True
-    if not isinstance(questions, list):
-        return True
-    elapsed = max(0.0, (now_utc - starts_at).total_seconds())
-    completed_count = min(
-        len(questions),
-        int(elapsed // _question_seconds(table)),
+    completed_count = _completed_question_count(
+        table,
+        now=now_utc,
+        starts_at=starts_at,
     )
     return completed_count > int(table["current_question_index"] or 0)
 
@@ -231,7 +271,7 @@ def reconcile_final_table(
         return table
 
     seed_finalists(conn, final_table=table)
-    questions = json.loads(table["questions_snapshot_json"] or "[]")
+    questions = _questions(table)
     finalists = conn.execute(
         """
         SELECT * FROM daily_414_finalists
@@ -268,10 +308,10 @@ def reconcile_final_table(
             (table["id"],),
         ).fetchone()
 
-    elapsed = max(0.0, (now_utc - starts_at).total_seconds())
-    completed_count = min(
-        len(questions),
-        int(elapsed // _question_seconds(table)),
+    completed_count = _completed_question_count(
+        table,
+        now=now_utc,
+        starts_at=starts_at,
     )
     current_index = int(table["current_question_index"] or 0)
     for question_index in range(current_index, completed_count):
@@ -386,9 +426,15 @@ def question_window(
     final_table: sqlite3.Row,
 ) -> tuple[int, datetime, datetime]:
     question_index = int(final_table["current_question_index"] or 0)
-    question_seconds = _question_seconds(final_table)
+    durations = _question_durations(final_table)
+    fallback = _default_question_seconds(final_table)
+    question_seconds = (
+        durations[question_index]
+        if question_index < len(durations)
+        else fallback
+    )
     starts_at = _as_utc(datetime.fromisoformat(str(final_table["starts_at"]))) + timedelta(
-        seconds=question_index * question_seconds
+        seconds=sum(durations[:question_index])
     )
     return (
         question_index,

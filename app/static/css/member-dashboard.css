@@ -349,8 +349,8 @@
 .quiz-feature-card {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(150px, .72fr) 1.3fr;
-  min-height: 285px;
+  grid-template-columns: minmax(104px, .46fr) 1.54fr;
+  min-height: 150px;
   overflow: hidden;
   border: 1px solid var(--app-line);
   border-radius: 26px;
@@ -377,7 +377,7 @@
     repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 12px),
     rgba(49, 219, 197, .05);
   color: var(--app-accent);
-  font-size: clamp(42px, 9vw, 70px);
+  font-size: clamp(28px, 6vw, 46px);
   font-weight: 950;
   letter-spacing: -5px;
 }
@@ -395,7 +395,7 @@
   align-items: flex-start;
   flex-direction: column;
   justify-content: center;
-  padding: 26px;
+  padding: 14px 18px;
 }
 
 .status-row,
@@ -409,7 +409,7 @@
 
 .status-row {
   width: 100%;
-  margin-bottom: 18px;
+  margin-bottom: 6px;
 }
 
 .status-row > small {
@@ -449,21 +449,21 @@
 }
 
 .quiz-feature-copy h3 {
-  margin-bottom: 10px;
-  font-size: clamp(24px, 5vw, 34px);
+  margin-bottom: 4px;
+  font-size: clamp(19px, 4vw, 25px);
   line-height: 1.05;
   letter-spacing: -1px;
 }
 
 .quiz-feature-copy > p {
-  margin-bottom: 7px;
+  margin-bottom: 3px;
   color: var(--app-muted);
   font-size: 13px;
 }
 
 .member-countdown {
   display: block;
-  margin: 2px 0 13px;
+  margin: 2px 0 5px;
   color: var(--app-accent);
   font-size: 13px;
 }
@@ -473,8 +473,8 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 50px;
-  margin-top: 16px;
+  min-height: 40px;
+  margin-top: 8px;
   border-radius: 14px;
   background: var(--app-accent);
   color: #06100f;
@@ -637,7 +637,8 @@
 .stat-chip-grid article,
 .profile-metric-grid article {
   min-width: 0;
-  padding: 18px;
+  min-height: 84px;
+  padding: 12px;
   border: 1px solid var(--app-line);
   border-radius: 20px;
   background: var(--app-surface);
@@ -658,9 +659,9 @@
 .stat-chip-grid strong,
 .profile-metric-grid strong {
   display: block;
-  margin: 13px 0 5px;
+  margin: 8px 0 3px;
   color: var(--app-accent);
-  font-size: clamp(28px, 6vw, 42px);
+  font-size: clamp(24px, 5vw, 32px);
   line-height: 1;
   letter-spacing: -1.5px;
 }
@@ -691,7 +692,7 @@
   position: relative;
   min-width: 0;
   overflow: hidden;
-  padding: 22px;
+  padding: 14px;
   border: 1px solid var(--app-line);
   border-radius: 24px;
   background:
@@ -715,21 +716,22 @@
 .campaign-card-symbol {
   display: grid;
   place-items: center;
-  width: 78px;
-  height: 78px;
-  margin: 26px 0 20px;
+  width: 58px;
+  height: 58px;
+  margin: 0;
   border: 1px solid rgba(49, 219, 197, .2);
-  border-radius: 24px;
+  border-radius: 18px;
   background: rgba(49, 219, 197, .08);
   color: var(--app-accent);
-  font-size: 23px;
+  font-size: 17px;
   font-weight: 950;
   letter-spacing: -1px;
 }
 
 .campaign-card h2 {
-  min-height: 58px;
-  margin-bottom: 10px;
+  min-height: 0;
+  margin: 2px 0 3px;
+  font-size: 18px;
   line-height: 1.1;
 }
 
@@ -739,24 +741,50 @@
 }
 
 .campaign-time {
-  min-height: 40px;
+  min-height: 0;
+  margin: 0;
   color: var(--app-muted);
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .campaign-rewards {
   justify-content: flex-start;
   flex-wrap: wrap;
-  margin: 16px 0 0;
+  margin: 5px 0 0;
 }
 
 .campaign-rewards span {
-  padding: 7px 9px;
+  padding: 4px 6px;
   border-radius: 9px;
   background: rgba(49, 219, 197, .08);
   color: #a9dcd5;
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 800;
+}
+
+.campaign-card-top {
+  min-height: 28px;
+  margin-bottom: 8px;
+}
+
+.campaign-card-body {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.campaign-card-copy {
+  min-width: 0;
+}
+
+.campaign-card-copy .member-eyebrow {
+  margin-bottom: 0;
+  font-size: 8px;
+}
+
+.campaign-card > .app-primary-action {
+  margin-top: 9px;
 }
 
 .vault-page-heading {
@@ -806,9 +834,40 @@
 
 .member-app-page .vault-catalog-card {
   scroll-margin-top: 90px;
+  grid-template-columns: 42px 1fr;
+  gap: 10px;
+  padding: 13px;
   background:
     radial-gradient(circle at 100% 0, rgba(49, 219, 197, .1), transparent 42%),
     var(--app-surface);
+}
+
+.member-app-page .vault-card-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  font-size: 19px;
+}
+
+.member-app-page .vault-card-copy h3 {
+  margin: 1px 0 4px;
+  font-size: 16px;
+}
+
+.member-app-page .vault-card-copy p:not(.member-eyebrow) {
+  min-height: 0;
+  margin-bottom: 5px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.member-app-page .vault-card-copy small {
+  font-size: 9px;
+}
+
+.member-app-page .vault-buy-button {
+  min-height: 38px;
+  font-size: 12px;
 }
 
 .member-app-page .vault-card-mark {
@@ -831,6 +890,8 @@
 
 .member-app-page .jack-card {
   scroll-margin-top: 90px;
+  min-height: 186px;
+  padding: 13px;
   background:
     radial-gradient(circle at 95% 5%, var(--reward-soft, rgba(49, 219, 197, .28)), transparent 38%),
     linear-gradient(135deg, #17211f, #0b100f 68%);
@@ -840,16 +901,49 @@
   color: var(--reward-accent, var(--app-accent));
 }
 
+.member-app-page .jack-card-top {
+  margin-bottom: 9px;
+  font-size: 9px;
+}
+
+.member-app-page .jack-card-main > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.member-app-page .jack-card-main h3 {
+  margin: 3px 0 8px;
+  font-size: 18px;
+}
+
+.member-app-page .jack-card-main img {
+  width: 72px;
+  height: 72px;
+  padding: 5px;
+}
+
+.jack-card-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.jack-card-label-row .member-eyebrow {
+  margin: 0;
+  font-size: 8px;
+}
+
 .reward-activate-button {
-  min-width: 150px;
-  min-height: 48px;
-  padding: 0 18px;
+  min-width: 108px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 1px solid var(--reward-accent, var(--app-accent));
   border-radius: 14px;
   background: var(--reward-accent, var(--app-accent));
   color: #07100f;
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 950;
   cursor: pointer;
 }
@@ -861,7 +955,7 @@
   border-radius: 13px;
   background: var(--reward-soft, rgba(49, 219, 197, .1));
   color: var(--reward-accent, var(--app-accent));
-  font-size: 31px;
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 7px;
   line-height: 1;
@@ -878,10 +972,27 @@
 }
 
 .jack-card.awaiting-activation .jack-card-main {
-  align-items: flex-end;
+  align-items: flex-start;
 }
 
 .jack-card.awaiting-activation > p {
+  max-width: 100%;
+}
+
+.member-app-page .jack-card > p,
+.member-app-page .jack-card > small {
+  max-width: calc(100% - 90px);
+  margin: 8px 0 3px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.member-app-page .jack-card > small {
+  margin-top: 0;
+}
+
+.member-app-page .jack-card.awaiting-activation > p,
+.member-app-page .jack-card.awaiting-activation > small {
   max-width: 100%;
 }
 
@@ -1116,8 +1227,8 @@
   display: flex;
   align-items: center;
   gap: 22px;
-  min-height: 178px;
-  padding: 28px;
+  min-height: 118px;
+  padding: 17px 19px;
   overflow: hidden;
   border: 1px solid rgba(49, 219, 197, .2);
   border-radius: 28px;
@@ -1129,7 +1240,7 @@
 
 .rating-hub-hero h1 {
   margin: 0;
-  font-size: clamp(30px, 7vw, 46px);
+  font-size: clamp(26px, 6vw, 36px);
 }
 
 .rating-hub-hero p:last-child {
@@ -1139,10 +1250,10 @@
 .hj-hero-mark {
   position: relative;
   display: grid;
-  flex: 0 0 96px;
+  flex: 0 0 64px;
   place-items: center;
-  width: 96px;
-  height: 104px;
+  width: 64px;
+  height: 70px;
   clip-path: polygon(50% 0, 94% 17%, 84% 72%, 50% 100%, 16% 72%, 6% 17%);
   background: linear-gradient(145deg, #73f0e4, #078291 64%, #d09e40);
   filter: drop-shadow(0 18px 24px rgba(0, 138, 149, .22));
@@ -1160,7 +1271,7 @@
   position: relative;
   z-index: 1;
   color: #7cf0e5;
-  font-size: 34px;
+  font-size: 23px;
   font-style: italic;
   font-weight: 1000;
   letter-spacing: -3px;
@@ -1207,18 +1318,36 @@
     linear-gradient(135deg, #101c23, #09100f 70%);
 }
 
+.rating-overview-card {
+  min-height: 78px;
+  gap: 14px;
+  padding: 9px 15px;
+  border-radius: 20px;
+}
+
+.club-rating-summary {
+  padding: 17px 19px;
+  border-radius: 22px;
+}
+
+.rating-overview-card .member-eyebrow {
+  margin-bottom: 2px;
+  font-size: 7px;
+  letter-spacing: 1px;
+}
+
 .rating-overview-copy {
   display: grid;
 }
 
 .rating-overview-copy > strong {
-  font-size: 58px;
+  font-size: 29px;
   line-height: 1;
 }
 
 .rating-overview-copy > strong small {
   color: #62c9e3;
-  font-size: 24px;
+  font-size: 12px;
 }
 
 .rating-overview-copy > span,
@@ -1228,12 +1357,17 @@
   font-size: 12px;
 }
 
+.rating-overview-copy > span {
+  margin-top: 3px;
+  font-size: 8px;
+}
+
 .rating-progress-ring {
   display: grid;
-  flex: 0 0 112px;
+  flex: 0 0 56px;
   place-items: center;
-  width: 112px;
-  height: 112px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: conic-gradient(#54cce1 calc(var(--rating-progress) * 1%), rgba(255, 255, 255, .07) 0);
 }
@@ -1241,8 +1375,8 @@
 .rating-progress-ring::before {
   content: "";
   grid-area: 1 / 1;
-  width: 88px;
-  height: 88px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: #0d1518;
 }
@@ -1250,7 +1384,7 @@
 .rating-progress-ring span {
   z-index: 1;
   grid-area: 1 / 1;
-  font-size: 20px;
+  font-size: 10px;
   font-weight: 950;
 }
 
@@ -1264,8 +1398,8 @@
 .my-club-rank {
   display: grid;
   gap: 4px;
-  min-height: 126px;
-  padding: 18px;
+  min-height: 84px;
+  padding: 12px;
   border: 1px solid var(--app-line);
   border-radius: 20px;
   background: linear-gradient(145deg, #101a18, #090e0d);
@@ -1282,7 +1416,7 @@
 .quiz-stat-board strong,
 .my-club-rank strong {
   align-self: end;
-  font-size: 30px;
+  font-size: 22px;
 }
 
 .rating-history-section,
@@ -1422,7 +1556,7 @@
 
 .my-club-rank {
   flex: 0 0 170px;
-  min-height: 112px;
+  min-height: 75px;
   border-color: rgba(207, 164, 62, .28);
   background: linear-gradient(145deg, rgba(142, 98, 33, .18), #0b0f0e);
 }
@@ -1517,15 +1651,16 @@
   }
 
   .quiz-feature-card {
-    display: block;
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
   }
 
   .quiz-feature-art {
-    min-height: 126px;
+    min-height: 100%;
   }
 
   .quiz-feature-copy {
-    padding: 22px;
+    padding: 12px 14px;
   }
 
   .stat-chip-grid {
@@ -1533,7 +1668,7 @@
   }
 
   .stat-chip-grid article {
-    padding: 14px 11px;
+    padding: 10px 9px;
     border-radius: 17px;
   }
 
@@ -1599,21 +1734,22 @@
   .rating-hub-hero {
     align-items: flex-start;
     gap: 16px;
-    padding: 22px 20px;
+    min-height: 108px;
+    padding: 14px 15px;
   }
 
   .hj-hero-mark {
-    flex-basis: 70px;
-    width: 70px;
-    height: 77px;
+    flex-basis: 54px;
+    width: 54px;
+    height: 59px;
   }
 
   .hj-hero-mark span {
-    font-size: 25px;
+    font-size: 20px;
   }
 
   .rating-hub-hero h1 {
-    font-size: 29px;
+    font-size: 25px;
   }
 
   .rating-hub-hero p:last-child {
@@ -1673,22 +1809,22 @@
   }
 
   .rating-overview-card {
-    padding: 21px 18px;
+    padding: 8px 12px;
   }
 
   .rating-overview-copy > strong {
-    font-size: 48px;
+    font-size: 29px;
   }
 
   .rating-progress-ring {
-    flex-basis: 92px;
-    width: 92px;
-    height: 92px;
+    flex-basis: 56px;
+    width: 56px;
+    height: 56px;
   }
 
   .rating-progress-ring::before {
-    width: 72px;
-    height: 72px;
+    width: 44px;
+    height: 44px;
   }
 }
 

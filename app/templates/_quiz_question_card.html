@@ -7,6 +7,7 @@
         {% if campaign.campaign_type == 'daily_414' %}
           {% if question.game_round == 'final' %}
           <span class="hj-stage-badge final">Финальный стол</span> ·
+          {{ question.time_limit_seconds or campaign.final_question_time_seconds }} сек. ·
           {% else %}
           <span class="hj-stage-badge">{{ 'Префлоп' if question_number <= 2 else ('Флоп' if question_number <= 5 else ('Тёрн' if question_number <= 8 else 'Ривер')) }}</span> ·
           {% endif %}
@@ -24,6 +25,7 @@
       <label class="hj-type-field">Формат ответа<select name="question_type"><option value="single_choice" {% if question.type=='single_choice' %}selected{% endif %}>Один правильный</option><option value="multi_choice" {% if question.type=='multi_choice' %}selected{% endif %}>Несколько правильных</option><option value="text" {% if question.type=='text' %}selected{% endif %}>Свободный текст</option></select></label>
       {% if campaign.campaign_type == 'daily_414' %}
       <label>Этап игры<select name="game_round"><option value="main" {% if question.game_round=='main' %}selected{% endif %}>Основной раунд</option><option value="final" {% if question.game_round=='final' %}selected{% endif %}>Финальный стол</option></select></label>
+      <label data-final-question-time {% if question.game_round!='final' %}hidden{% endif %}>Время на этот финальный вопрос, сек.<input name="time_limit_seconds" type="number" min="5" max="300" value="{{ question.time_limit_seconds or campaign.final_question_time_seconds }}" inputmode="numeric"><small>От 5 до 300 секунд</small></label>
       {% endif %}
       <label>{{ 'Фон / оформление' if campaign.campaign_type == 'daily_414' else 'Блок' }}<select name="section_id"><option value="">Без блока</option>{% for section in sections %}<option value="{{ section.id }}" {% if question.section_id==section.id %}selected{% endif %}>{{ section.title }}</option>{% endfor %}</select></label>
       <label>Вид вопроса<select name="visual_type"><option value="standard" {% if question.visual_type=='standard' %}selected{% endif %}>Обычный текстовый</option><option value="rebus" {% if question.visual_type=='rebus' %}selected{% endif %}>Ребус с картинкой</option><option value="photo" {% if question.visual_type=='photo' %}selected{% endif %}>Фотовопрос / раздача</option></select></label>

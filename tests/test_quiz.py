@@ -677,6 +677,72 @@ def test_master_can_create_complete_question_in_one_action(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM quiz_options WHERE question_id=?", (question["id"],)).fetchone()[0] == 2
 
 
+def test_master_sets_time_for_each_daily_final_question(tmp_path):
+    client, settings = make_client(tmp_path)
+    init_db(settings.db_path)
+    with transaction(settings.db_path) as conn:
+        campaign_id = int(
+            conn.execute(
+                """
+                INSERT INTO quiz_campaigns(
+                    code, title, campaign_type, final_question_time_seconds
+                ) VALUES ('timed_final', 'Финал с разным временем', 'daily_414', 30)
+                """
+            ).lastrowid
+        )
+    with client:
+        login(client)
+        page = client.get(f"/master/quiz-builder/{campaign_id}")
+        token = re.search(r'data-csrf-token="([^"]+)"', page.text).group(1)
+        assert "Время на этот финальный вопрос" in page.text
+        assert "индивидуальное время" in page.text
+        payload = {
+            "csrf_token": token,
+            "title": "Сколько времени дать на эту сложную раздачу?",
+            "question_type": "single_choice",
+            "game_round": "final",
+            "points": 1,
+            "time_limit_seconds": 47,
+            "required": True,
+            "options": [
+                {"text": "Первый вариант", "is_correct": True},
+                {"text": "Второй вариант", "is_correct": False},
+            ],
+        }
+        created = client.post(
+            f"/api/master/quiz-campaigns/{campaign_id}/questions/create-complete",
+            json=payload,
+        )
+        assert created.status_code == 200
+        question_id = int(created.json()["question_id"])
+        builder = client.get(f"/master/quiz-builder/{campaign_id}")
+        assert "47 сек." in builder.text
+        assert 'name="time_limit_seconds" type="number" min="5" max="300" value="47"' in builder.text
+
+        payload["title"] = "Обновлённая сложная раздача"
+        payload["time_limit_seconds"] = 73
+        updated = client.post(
+            f"/api/master/quiz-questions/{question_id}/update-complete",
+            json=payload,
+        )
+        assert updated.status_code == 200
+
+        payload["time_limit_seconds"] = 301
+        invalid = client.post(
+            f"/api/master/quiz-questions/{question_id}/update-complete",
+            json=payload,
+        )
+        assert invalid.status_code == 422
+        assert "от 5 до 300" in invalid.text
+
+    with connect(settings.db_path) as conn:
+        question = conn.execute(
+            "SELECT game_round, time_limit_seconds FROM quiz_questions WHERE id=?",
+            (question_id,),
+        ).fetchone()
+        assert tuple(question) == ("final", 73)
+
+
 def test_complete_question_update_preserves_option_identity_and_order(tmp_path):
     client, settings = make_client(tmp_path)
     with client:

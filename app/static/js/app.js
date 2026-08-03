@@ -124,6 +124,7 @@ const quizBuilder = document.querySelector('[data-quiz-builder]');
 if (quizBuilder) {
   const campaignId = quizBuilder.dataset.campaignId;
   const isDaily414 = quizBuilder.dataset.campaignType === 'daily_414';
+  const defaultFinalQuestionSeconds = Number(quizBuilder.dataset.finalDefaultSeconds || 30);
   const csrfToken = quizBuilder.dataset.csrfToken;
 
   async function builderRequest(url, payload) {
@@ -156,6 +157,21 @@ if (quizBuilder) {
     const visualSelect = form.elements.visual_type;
     const mediaInput = form.elements.image;
     const existingImage = form.elements.image_path?.value || '';
+    const roundSelect = form.elements.game_round;
+    const finalTimeField = form.querySelector('[data-final-question-time]');
+    const finalTimeInput = form.elements.time_limit_seconds;
+
+    function syncRound() {
+      if (!roundSelect || !finalTimeField || !finalTimeInput) return;
+      const isFinal = roundSelect.value === 'final';
+      finalTimeField.hidden = !isFinal;
+      finalTimeInput.required = isFinal;
+      if (isFinal && Number(finalTimeInput.value || 0) < 5) {
+        finalTimeInput.value = String(defaultFinalQuestionSeconds);
+      }
+    }
+    roundSelect?.addEventListener('change', syncRound);
+    syncRound();
 
     function syncVisual() {
       const needsImage = visualSelect.value !== 'standard';
@@ -293,17 +309,18 @@ if (quizBuilder) {
           if (!response.ok) throw new Error(uploaded.detail || 'Не удалось загрузить изображение');
           imagePath = uploaded.path;
         }
+        const gameRound = roundSelect?.value || 'main';
         const payload = {
           title: form.elements.title.value,
           question_type: typeSelect.value,
-          game_round: form.elements.game_round?.value || 'main',
+          game_round: gameRound,
           visual_type: visualSelect.value,
           image_path: imagePath,
           section_id: form.elements.section_id.value,
           options,
           accepted_text_answers: form.elements.accepted_text_answers.value,
           points: form.elements.points.value,
-          time_limit_seconds: 0,
+          time_limit_seconds: gameRound === 'final' ? finalTimeInput?.value : 0,
           required: form.elements.required.checked,
           placeholder: form.elements.placeholder.value,
         };

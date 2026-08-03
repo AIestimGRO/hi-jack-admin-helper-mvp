@@ -3417,6 +3417,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return {
                     **base,
                     "state": "final_question",
+                    "question_seconds": max(
+                        1,
+                        int((question_deadline - question_start).total_seconds()),
+                    ),
                     "seed": int(finalist["seed"]),
                     "active_count": active_count,
                     "heads_up": active_count == 2,
@@ -5192,7 +5196,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ValueError("Баллы и таймер должны быть целыми числами") from exc
         if points < 0 or points > 1000:
             raise ValueError("Баллы должны быть от 0 до 1000")
-        if time_limit_seconds < 0 or time_limit_seconds > 600:
+        if game_round == "final":
+            if time_limit_seconds != 0 and not 5 <= time_limit_seconds <= 300:
+                raise ValueError(
+                    "Время финального вопроса должно быть от 5 до 300 секунд"
+                )
+        elif time_limit_seconds < 0 or time_limit_seconds > 600:
             raise ValueError("Таймер должен быть от 0 до 600 секунд")
         options: list[dict[str, Any]] = []
         accepted_text_answers: list[str] = []
@@ -5413,7 +5422,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """
                 UPDATE quiz_questions SET type=?, title=?, placeholder=?, required=?, points=?,
                     visual_type=?, image_path=?, section_id=?, accepted_text_answers_json=?,
-                    game_round=?, time_limit_seconds=NULL, is_active=1,
+                    game_round=?, time_limit_seconds=?, is_active=1,
                     updated_at=CURRENT_TIMESTAMP WHERE id=?
                 """,
                 (
@@ -5422,6 +5431,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     question["image_path"], question["section_id"],
                     json.dumps(question["accepted_text_answers"], ensure_ascii=False),
                     question["game_round"],
+                    question["time_limit_seconds"],
                     question_id,
                 ),
             )
