@@ -7,6 +7,12 @@
   <input name="q" placeholder="Телефон, имя, никнейм или username" autocomplete="off" autofocus>
   <button class="primary" type="submit">Найти</button>
 </form>
+<section class="admin-workflow-grid" aria-label="Частые действия">
+  <a class="admin-workflow-card clients" href="/clients"><span>01</span><div><strong>Найти клиента</strong><small>Телефон, имя, никнейм или ID</small></div><b>→</b></a>
+  <a class="admin-workflow-card vault" href="/admin/vault"><span>02</span><div><strong>Выдать награду</strong><small>QR или короткий код JACK CARD</small></div><b>→</b></a>
+  <a class="admin-workflow-card quiz" href="/admin/quiz-results"><span>03</span><div><strong>Проверить квизы</strong><small>Результаты и участники</small></div><b>→</b></a>
+  {% if admin_role == 'master_admin' %}<a class="admin-workflow-card master" href="/master"><span>04</span><div><strong>Настроить сервис</strong><small>Кампании, награды и доступы</small></div><b>→</b></a>{% endif %}
+</section>
 <section class="stat-grid">
   <div class="stat card"><strong>{{ counts.clients }}</strong><span>клиентов</span></div>
   <div class="stat card"><strong>{{ counts.operations }}</strong><span>операций</span></div>
@@ -15,14 +21,13 @@
 <section class="section-head"><h2>Последние операции</h2><a href="/logs">Все логи →</a></section>
 <div class="card table-wrap">
   {% if recent %}
-  <table><thead><tr><th>Время</th><th>Клиент</th><th>Операция</th><th>Админ</th></tr></thead>
+  <table class="admin-card-table"><thead><tr><th>Время</th><th>Клиент</th><th>Операция</th><th>Админ</th></tr></thead>
   <tbody>{% for item in recent %}<tr>
-    <td>{{ item.created_at[5:16] }}</td>
-    <td><a href="/clients/{{ item.client_id }}">{{ item.first_name or item.nickname or 'Без имени' }}</a></td>
-    <td>{% if item.kind == 'counter' %}<span class="delta {{ 'plus' if item.delta_int > 0 else 'minus' }}">{{ '+' if item.delta_int > 0 else '' }}{{ item.delta_int }}</span> {{ item.title }}{% else %}{{ item.old_percent_value|int }}% → {{ item.new_percent_value|int }}%{% endif %}</td>
-    <td>{{ item.admin_name }}</td>
+    <td data-label="Время">{{ item.created_at[5:16] }}</td>
+    <td data-label="Клиент"><a href="/clients/{{ item.client_id }}">{{ item.first_name or item.nickname or 'Без имени' }}</a></td>
+    <td data-label="Операция">{% if item.kind == 'counter' %}<span class="delta {{ 'plus' if item.delta_int > 0 else 'minus' }}">{{ '+' if item.delta_int > 0 else '' }}{{ item.delta_int }}</span> {{ item.title }}{% else %}{{ item.old_percent_value|int }}% → {{ item.new_percent_value|int }}%{% endif %}</td>
+    <td data-label="Администратор">{{ item.admin_name }}</td>
   </tr>{% endfor %}</tbody></table>
   {% else %}<div class="empty">Операций пока нет</div>{% endif %}
 </div>
 {% endblock %}
-

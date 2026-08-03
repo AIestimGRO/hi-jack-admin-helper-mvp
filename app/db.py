@@ -512,6 +512,7 @@ CREATE TABLE IF NOT EXISTS vault_member_rewards (
     code TEXT NOT NULL UNIQUE,
     activation_code TEXT,
     activated_at TEXT,
+    activation_expires_at TEXT,
     catalog_reward_id INTEGER NOT NULL REFERENCES vault_catalog_rewards(id),
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     source_type TEXT NOT NULL
@@ -772,6 +773,17 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "daily_414_final_tables", "prize_catalog_reward_id INTEGER")
         _ensure_column(conn, "vault_member_rewards", "activation_code TEXT")
         _ensure_column(conn, "vault_member_rewards", "activated_at TEXT")
+        activation_expiry_added = _ensure_column(
+            conn, "vault_member_rewards", "activation_expires_at TEXT"
+        )
+        if activation_expiry_added:
+            conn.execute(
+                """
+                UPDATE vault_member_rewards
+                SET activation_expires_at=activated_at
+                WHERE activation_code IS NOT NULL AND activated_at IS NOT NULL
+                """
+            )
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS ux_vault_active_activation_code
@@ -854,11 +866,13 @@ def init_db(db_path: str | Path) -> None:
         )
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, definition: str) -> None:
+def _ensure_column(conn: sqlite3.Connection, table: str, definition: str) -> bool:
     column = definition.split()[0]
     columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+        return True
+    return False
 
 
 @contextmanager

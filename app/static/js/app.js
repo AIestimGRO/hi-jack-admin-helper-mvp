@@ -86,6 +86,27 @@ document.querySelectorAll('[data-row-href]').forEach((row) => {
   });
 });
 
+const adminMenu = document.querySelector('[data-admin-menu]');
+const adminMenuToggles = document.querySelectorAll('[data-admin-menu-toggle]');
+const adminMenuClose = document.querySelector('[data-admin-menu-close]');
+if (adminMenu && adminMenuToggles.length) {
+  const setAdminMenuOpen = (open) => {
+    adminMenu.hidden = !open;
+    document.body.classList.toggle('admin-menu-open', open);
+    adminMenuToggles.forEach((button) => button.setAttribute('aria-expanded', open ? 'true' : 'false'));
+  };
+  adminMenuToggles.forEach((button) => button.addEventListener('click', () => {
+    setAdminMenuOpen(adminMenu.hidden);
+  }));
+  adminMenuClose?.addEventListener('click', () => setAdminMenuOpen(false));
+  adminMenu.addEventListener('click', (event) => {
+    if (event.target === adminMenu) setAdminMenuOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !adminMenu.hidden) setAdminMenuOpen(false);
+  });
+}
+
 const quizBuilder = document.querySelector('[data-quiz-builder]');
 if (quizBuilder) {
   const campaignId = quizBuilder.dataset.campaignId;

@@ -108,6 +108,7 @@ from app.services.vault import (
     attach_final_table_reward,
     cancel_reward as cancel_vault_reward,
     create_catalog_reward,
+    expire_activations as expire_vault_activations,
     expire_rewards as expire_vault_rewards,
     purchase_reward as purchase_vault_reward,
     purchase_token as vault_purchase_token,
@@ -1544,7 +1545,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/account", response_class=HTMLResponse)
     async def member_account_page(
-        request: Request, tab: str = "home", ok: str = "", error: str = ""
+        request: Request,
+        tab: str = "home",
+        section: str = "quiz",
+        ok: str = "",
+        error: str = "",
     ):
         member_portal_or_404()
         member = current_member(request, required=True)
@@ -1555,14 +1560,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "stats": "profile",
             "rewards": "vault",
         }.get(tab, tab)
-        if tab not in {"home", "quizzes", "vault", "profile"}:
+        if tab not in {"home", "quizzes", "rating", "vault", "profile"}:
             tab = "home"
+        if section not in {"quiz", "club"}:
+            section = "quiz"
         vault_catalog = []
         vault_active_rewards = []
         vault_reward_history = []
         campaign_cards: list[dict[str, Any]] = []
         streak = None
         lifetime_earned = 0
+        quiz_stats: dict[str, Any] = {}
+        rating_leaderboard = []
+        rating_snapshot = None
         with connect(settings.db_path) as conn:
             balance = jackcoin_balance(conn, int(member["client_id"]))
             history = conn.execute(
@@ -1575,16 +1585,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (member["client_id"],),
             ).fetchall()
-            rating = conn.execute(
+            rating_snapshot = conn.execute(
                 """
-                SELECT cre.*, crs.snapshot_date
-                FROM club_rating_entries cre
-                JOIN club_rating_snapshots crs ON crs.id=cre.snapshot_id
-                WHERE cre.client_id=?
-                ORDER BY crs.snapshot_date DESC, crs.id DESC LIMIT 1
+                SELECT * FROM club_rating_snapshots
+                ORDER BY snapshot_date DESC, id DESC LIMIT 1
+                """
+            ).fetchone()
+            rating = None
+            if rating_snapshot:
+                rating = conn.execute(
+                    """
+                    SELECT cre.*, crs.snapshot_date
+                    FROM club_rating_entries cre
+                    JOIN club_rating_snapshots crs ON crs.id=cre.snapshot_id
+                    WHERE cre.snapshot_id=? AND cre.client_id=?
+                    LIMIT 1
+                    """,
+                    (rating_snapshot["id"], member["client_id"]),
+                ).fetchone()
+                rating_leaderboard = conn.execute(
+                    """
+                    SELECT * FROM club_rating_entries
+                    WHERE snapshot_id=?
+                    ORDER BY CASE WHEN place IS NULL THEN 1 ELSE 0 END,
+                             place, points DESC, display_name
+                    LIMIT 100
+                    """,
+                    (rating_snapshot["id"],),
+                ).fetchall()
+            quiz_stats_row = conn.execute(
+                """
+                SELECT COUNT(*) AS completed_count,
+                       COALESCE(SUM(correct_count), 0) AS correct_total,
+                       COALESCE(SUM(max_correct_count), 0) AS question_total,
+                       COALESCE(SUM(jackcoin_awarded), 0) AS jackcoin_total,
+                       COALESCE(SUM(CASE
+                         WHEN max_correct_count > 0
+                          AND correct_count=max_correct_count THEN 1 ELSE 0 END), 0)
+                         AS perfect_count,
+                       MIN(CASE WHEN completion_time_ms > 0
+                                THEN completion_time_ms END) AS fastest_time_ms
+                FROM quiz_submissions WHERE client_id=?
                 """,
                 (member["client_id"],),
             ).fetchone()
+            question_total = int(quiz_stats_row["question_total"] or 0)
+            correct_total = int(quiz_stats_row["correct_total"] or 0)
+            quiz_stats = {
+                "completed_count": int(quiz_stats_row["completed_count"] or 0),
+                "correct_total": correct_total,
+                "question_total": question_total,
+                "accuracy": round(correct_total * 100 / question_total)
+                if question_total
+                else 0,
+                "jackcoin_total": int(quiz_stats_row["jackcoin_total"] or 0),
+                "perfect_count": int(quiz_stats_row["perfect_count"] or 0),
+                "fastest_time_ms": quiz_stats_row["fastest_time_ms"],
+            }
             ledger = conn.execute(
                 """
                 SELECT * FROM jackcoin_ledger WHERE client_id=?
@@ -1665,6 +1722,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
             expire_vault_rewards(conn, client_id=int(member["client_id"]))
+            expire_vault_activations(conn, client_id=int(member["client_id"]))
             vault_catalog = conn.execute(
                 """
                 SELECT vcr.*,
@@ -1730,9 +1788,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 request,
                 member=member,
                 current_tab=tab,
+                current_rating_section=section,
                 balance=balance,
                 history=history,
                 rating=rating,
+                rating_leaderboard=rating_leaderboard,
+                rating_snapshot=rating_snapshot,
+                quiz_stats=quiz_stats,
                 ledger=ledger,
                 consents=consents,
                 lifetime_earned=lifetime_earned,
@@ -1744,6 +1806,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 vault_active_rewards=vault_active_rewards,
                 vault_reward_history=vault_reward_history,
                 vault_purchase_tokens=vault_purchase_tokens,
+                vault_activation_minutes=settings.vault_activation_minutes,
                 ok=ok,
                 error=error,
             ),
@@ -1826,6 +1889,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     conn,
                     reward_id=member_reward_id,
                     client_id=int(member["client_id"]),
+                    activation_minutes=settings.vault_activation_minutes,
                 )
                 title = conn.execute(
                     "SELECT title FROM vault_catalog_rewards WHERE id=?",
@@ -1848,7 +1912,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def member_vault_reward_qr(request: Request, member_reward_id: int):
         member_portal_or_404()
         member = current_member(request, required=True)
-        with connect(settings.db_path) as conn:
+        with transaction(settings.db_path) as conn:
+            expire_vault_activations(
+                conn, client_id=int(member["client_id"])
+            )
             reward = conn.execute(
                 """
                 SELECT vmr.*, vcr.title
@@ -1866,6 +1933,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=409, detail="Сначала активируйте награду"
             )
+        activation_expires_at = (
+            datetime.fromisoformat(str(reward["activation_expires_at"]))
+            if reward["activation_expires_at"]
+            else None
+        )
+        if not activation_expires_at or utc_now() >= activation_expires_at.astimezone(
+            timezone.utc
+        ):
+            raise HTTPException(status_code=410, detail="Код активации истёк")
         if reward["valid_until"] and utc_now() > datetime.fromisoformat(
             str(reward["valid_until"])
         ).astimezone(timezone.utc):
@@ -3602,6 +3678,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             params.extend((search_code, search_code))
         with transaction(settings.db_path) as conn:
             expire_vault_rewards(conn)
+            expire_vault_activations(conn)
             catalog = conn.execute(
                 """
                 SELECT vcr.*, COUNT(vmr.id) AS allocated_count,
@@ -3817,6 +3894,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "vault_reward_cancelled": "Карта отменена",
                 "vault_reward_not_started": "Срок действия карты ещё не начался",
                 "vault_reward_not_activated": "Пользователь ещё не активировал награду",
+                "vault_reward_activation_expired": "Код активации истёк — попросите пользователя активировать награду заново",
             }
             return vault_admin_redirect(
                 messages.get(str(exc), "Не удалось погасить карту"), error=True

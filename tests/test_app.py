@@ -57,7 +57,15 @@ def test_brand_theme_and_versioned_assets_are_used_everywhere(tmp_path):
             page = client.get(url)
             assert page.status_code == 200
             assert f"/static/css/theme.css?v={asset_version}" in page.text
+            assert f"/static/css/admin-smart.css?v={asset_version}" in page.text
             assert f"/static/js/app.js?v={asset_version}" in page.text
+            assert 'data-admin-menu-toggle' in page.text
+            assert 'class="admin-bottom-nav"' in page.text
+
+        dashboard = client.get("/")
+        assert "Частые действия" in dashboard.text or "Найти клиента" in dashboard.text
+        assert "Выдать награду" in dashboard.text
+        assert "Проверить квизы" in dashboard.text
 
         quiz = client.get("/quiz?campaign=default")
         assert quiz.status_code == 200

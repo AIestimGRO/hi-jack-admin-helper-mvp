@@ -45,6 +45,9 @@ class Settings:
     action_log_retention_days: int = int(os.getenv("HJC_ACTION_LOG_RETENTION_DAYS", "31"))
     member_portal_enabled: bool = _bool_env("HJC_MEMBER_PORTAL_ENABLED", False)
     member_session_days: int = int(os.getenv("HJC_MEMBER_SESSION_DAYS", "30"))
+    vault_activation_minutes: int = int(
+        os.getenv("HJC_VAULT_ACTIVATION_MINUTES", "10")
+    )
 
     def validate(self) -> None:
         if not self.admin_pin:
@@ -63,3 +66,7 @@ class Settings:
             raise RuntimeError("Quiz retention settings must be positive")
         if not 1 <= self.member_session_days <= 365:
             raise RuntimeError("HJC_MEMBER_SESSION_DAYS must be between 1 and 365")
+        if not 1 <= self.vault_activation_minutes <= 120:
+            raise RuntimeError(
+                "HJC_VAULT_ACTIVATION_MINUTES must be between 1 and 120"
+            )

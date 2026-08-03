@@ -31,6 +31,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2.5 5.2h5M9.5 12h5M9.5 15.8h3"/></svg>
       <span>Квизы</span>
     </a>
+    <a class="member-hj-nav {{ 'active' if current_tab|default('') == 'rating' else '' }}" href="/account?tab=rating" aria-label="Рейтинг и статистика">
+      <span class="member-hj-shield" aria-hidden="true"><b>HJ</b></span>
+      <span>Рейтинг</span>
+    </a>
     <a class="{{ 'active' if current_tab|default('') == 'vault' else '' }}" href="/account?tab=vault">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM6.5 4h11v3.5h-11zM9.3 12.2h5.4M12 9.5v5.4"/></svg>
       <span>Хранилище</span>

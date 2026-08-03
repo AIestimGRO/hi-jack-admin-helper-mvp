@@ -113,7 +113,11 @@ def test_referral_link_counts_unique_completions_and_issues_separate_reward(tmp_
         stats = client.get("/admin/quiz-results")
         assert "Реферальная статистика" in stats.text
         assert "owner" in stats.text
-        assert re.search(r"owner.*?<td>2</td><td>1</td>", stats.text, re.DOTALL)
+        assert re.search(
+            r"owner.*?<td[^>]*>2</td><td[^>]*>1</td>",
+            stats.text,
+            re.DOTALL,
+        )
 
 
 def test_attempt_resumes_and_configured_limit_cannot_be_bypassed(tmp_path):

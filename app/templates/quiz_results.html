@@ -22,28 +22,28 @@
 <details class="card results-filters" {% if referral_stats %}open{% endif %}>
   <summary>Реферальная статистика ({{ referral_stats|length }})</summary>
   <div class="table-wrap">
-    <table><thead><tr><th>Рефовод</th><th>Кампания</th><th>Завершили тест</th><th>Наград выдано</th><th>Последний реферал</th></tr></thead>
+    <table class="admin-card-table"><thead><tr><th>Рефовод</th><th>Кампания</th><th>Завершили тест</th><th>Наград выдано</th><th>Последний реферал</th></tr></thead>
     <tbody>{% for row in referral_stats %}<tr>
-      <td><strong>{{ row.first_name or row.nickname or ('@' ~ row.username if row.username else display_phone(row.phone_local, row.phone_raw)) }}</strong>{% if row.username %}<small>@{{ row.username }}</small>{% endif %}</td>
-      <td>{{ row.campaign_title or row.campaign_code }}</td><td>{{ row.completed_referrals }}</td><td>{{ row.rewards_issued }}</td><td>{{ display_datetime(row.last_referral_at) }}</td>
+      <td data-label="Рефовод"><strong>{{ row.first_name or row.nickname or ('@' ~ row.username if row.username else display_phone(row.phone_local, row.phone_raw)) }}</strong>{% if row.username %}<small>@{{ row.username }}</small>{% endif %}</td>
+      <td data-label="Кампания">{{ row.campaign_title or row.campaign_code }}</td><td data-label="Завершили">{{ row.completed_referrals }}</td><td data-label="Наград выдано">{{ row.rewards_issued }}</td><td data-label="Последний реферал">{{ display_datetime(row.last_referral_at) }}</td>
     </tr>{% else %}<tr><td colspan="5" class="empty">Завершённых приглашений пока нет</td></tr>{% endfor %}</tbody></table>
   </div>
 </details>
 
 <div class="card table-wrap">
-  <table class="quiz-results-table">
+  <table class="quiz-results-table admin-card-table">
     <thead><tr><th>Телефон</th><th>Username</th><th>Набрано баллов</th><th>Порог</th><th>Бонус</th><th>Дата прохождения</th><th>Наименование</th><th>Действие</th></tr></thead>
     <tbody>
     {% for row in results %}
       <tr data-row-href="/admin/quiz-results/{{ row.id }}" tabindex="0" aria-label="Открыть результат #{{ row.id }}">
-        <td>{{ display_phone(row.phone_local, row.phone_raw) }}</td>
-        <td>{% if row.username %}@{{ row.username }}{% else %}—{% endif %}</td>
-        <td><strong>{{ row.score|int }}</strong>{% if row.campaign_type == 'daily_414' %}<small>{{ row.correct_count }}/{{ row.max_correct_count }} верно · {{ ((row.completion_time_ms or 0) / 1000)|round(1) }} сек.</small>{% endif %}</td>
-        <td><span class="{{ 'status-yes' if row.passed else 'status-no' }}">{{ 'Пройден' if row.passed else 'Не пройден' }}</span></td>
-        <td>{% if row.campaign_type == 'daily_414' %}<span class="status-yes">+{{ row.jackcoin_awarded }} JC</span><small>Серия: {{ row.streak_days }} дн. · {{ 'допущен к отбору' if row.main_prize_eligible else 'вне финального отбора' }}</small>{% elif row.reward_status=='used' %}<span class="status-yes">Начислен</span><small>{{ row.reward_code }}</small>{% elif row.reward_status=='issued' %}Код выдан<small>{{ row.reward_code }}</small>{% elif row.reward_status %}<span class="status-no">{{ 'Просрочен' if row.reward_status=='expired' else 'Отменён' }}</span><small>{{ row.reward_code }}</small>{% else %}<span class="status-no">Нет</span>{% endif %}</td>
-        <td>{{ display_datetime(row.created_at) }}</td>
-        <td class="result-name">{{ row.campaign_title or row.campaign_code }}<small>версия {{ row.campaign_version }}</small></td>
-        <td><a class="result-action" href="/admin/quiz-results/{{ row.id }}">Открыть →</a></td>
+        <td data-label="Телефон">{{ display_phone(row.phone_local, row.phone_raw) }}</td>
+        <td data-label="Username">{% if row.username %}@{{ row.username }}{% else %}—{% endif %}</td>
+        <td data-label="Результат"><strong>{{ row.score|int }}</strong>{% if row.campaign_type == 'daily_414' %}<small>{{ row.correct_count }}/{{ row.max_correct_count }} верно · {{ ((row.completion_time_ms or 0) / 1000)|round(1) }} сек.</small>{% endif %}</td>
+        <td data-label="Порог"><span class="{{ 'status-yes' if row.passed else 'status-no' }}">{{ 'Пройден' if row.passed else 'Не пройден' }}</span></td>
+        <td data-label="Награда">{% if row.campaign_type == 'daily_414' %}<span class="status-yes">+{{ row.jackcoin_awarded }} JC</span><small>Серия: {{ row.streak_days }} дн. · {{ 'допущен к отбору' if row.main_prize_eligible else 'вне финального отбора' }}</small>{% elif row.reward_status=='used' %}<span class="status-yes">Начислен</span><small>{{ row.reward_code }}</small>{% elif row.reward_status=='issued' %}Код выдан<small>{{ row.reward_code }}</small>{% elif row.reward_status %}<span class="status-no">{{ 'Просрочен' if row.reward_status=='expired' else 'Отменён' }}</span><small>{{ row.reward_code }}</small>{% else %}<span class="status-no">Нет</span>{% endif %}</td>
+        <td data-label="Дата">{{ display_datetime(row.created_at) }}</td>
+        <td data-label="Квиз" class="result-name">{{ row.campaign_title or row.campaign_code }}<small>версия {{ row.campaign_version }}</small></td>
+        <td data-label="Действие"><a class="result-action" href="/admin/quiz-results/{{ row.id }}">Открыть →</a></td>
       </tr>
     {% else %}
       <tr><td colspan="8" class="empty">Результатов не найдено</td></tr>

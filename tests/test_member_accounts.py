@@ -674,7 +674,7 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         tzinfo=None
     )
     with client:
-        seed_daily_member(client, settings)
+        member_client_id = seed_daily_member(client, settings)
         with transaction(settings.db_path) as conn:
             conn.execute(
                 """
@@ -691,6 +691,39 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
                     ),
                 ),
             )
+            conn.execute(
+                """
+                INSERT INTO quiz_submissions(
+                    campaign_code, client_id, phone_raw, phone_local,
+                    answers_json, ip_hash, correct_count, max_correct_count,
+                    score, max_score, passed, jackcoin_awarded,
+                    completion_time_ms
+                ) VALUES (
+                    'next_table', ?, '', '', '{}', 'hub-test', 8, 10,
+                    8, 10, 1, 50, 42000
+                )
+                """,
+                (member_client_id,),
+            )
+            snapshot_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO club_rating_snapshots(snapshot_date, source_file)
+                    VALUES ('2026-08-03', 'mini-app.csv')
+                    """
+                ).lastrowid
+            )
+            conn.execute(
+                """
+                INSERT INTO club_rating_entries(
+                    snapshot_id, client_id, external_user_id,
+                    display_name, points, place
+                ) VALUES
+                    (?, ?, 'member-1', 'Алекс', 1250, 2),
+                    (?, NULL, 'leader-1', 'Лидер', 1500, 1)
+                """,
+                (snapshot_id, member_client_id, snapshot_id),
+            )
 
         home = client.get("/account")
         assert home.status_code == 200
@@ -699,6 +732,7 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         assert "Награды за JACKCOIN" in home.text
         assert "Все квизы" in home.text
         assert "daily@example.test" not in home.text
+        assert 'class="member-hj-nav ' in home.text
 
         quizzes = client.get("/account?tab=quizzes")
         assert quizzes.status_code == 200
@@ -706,6 +740,18 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         assert "Следующий стол JACKSIDE" in quizzes.text
         assert 'data-member-countdown="' in quizzes.text
         assert "/quiz?campaign=next_table" in quizzes.text
+
+        rating = client.get("/account?tab=rating")
+        assert rating.status_code == 200
+        assert 'data-account-tab="rating"' in rating.text
+        assert "Рейтинг и статистика" in rating.text
+        assert "80%" in rating.text
+        assert "Пройдено квизов" in rating.text
+        club_rating = client.get("/account?tab=rating&section=club")
+        assert "Hi, Jack App" in club_rating.text
+        assert "#2" in club_rating.text
+        assert "Лидер" in club_rating.text
+        assert "Это ты" in club_rating.text
 
         legacy_profile = client.get("/account?tab=personal")
         assert 'data-account-tab="profile"' in legacy_profile.text

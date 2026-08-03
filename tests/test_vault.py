@@ -18,6 +18,7 @@ from app.services.vault import (
     attach_final_table_reward,
     cancel_reward,
     create_catalog_reward,
+    expire_activations,
     expire_rewards,
     purchase_reward,
     purchase_token,
@@ -249,7 +250,7 @@ def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
             code=activated["activation_code"],
             admin_id=1,
             admin_name="Admin",
-            now=now + timedelta(hours=1),
+            now=now + timedelta(minutes=54),
         )
         assert redeemed["status"] == "redeemed"
         with pytest.raises(ValueError, match="vault_reward_redeemed"):
@@ -279,7 +280,7 @@ def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
             code=qr_reward["code"],
             admin_id=1,
             admin_name="Admin",
-            now=now + timedelta(minutes=20),
+            now=now + timedelta(minutes=19),
         )["status"] == "redeemed"
 
         expiring = purchase_reward(
@@ -295,6 +296,69 @@ def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
         assert conn.execute(
             "SELECT status FROM vault_member_rewards WHERE id=?", (expiring["id"],)
         ).fetchone()[0] == "expired"
+
+
+def test_activation_window_expires_without_consuming_reward(tmp_path) -> None:
+    db_path = tmp_path / "vault-activation-window.sqlite3"
+    init_db(db_path)
+    now = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, price=0)
+        reward = purchase_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="activation-window",
+            now=now,
+        )
+        activated = activate_reward(
+            conn,
+            reward_id=int(reward["id"]),
+            client_id=client_id,
+            activation_minutes=10,
+            now=now,
+        )
+        first_code = activated["activation_code"]
+        assert activated["activation_expires_at"] == (
+            now + timedelta(minutes=10)
+        ).isoformat(timespec="seconds")
+        assert expire_activations(
+            conn, client_id=client_id, now=now + timedelta(minutes=10)
+        ) == 1
+        reset = conn.execute(
+            "SELECT * FROM vault_member_rewards WHERE id=?", (reward["id"],)
+        ).fetchone()
+        assert reset["status"] == "active"
+        assert reset["activation_code"] is None
+        assert reset["activated_at"] is None
+        assert reset["activation_expires_at"] is None
+        with pytest.raises(ValueError, match="vault_reward_not_found"):
+            redeem_reward(
+                conn,
+                code=first_code,
+                admin_id=1,
+                admin_name="Admin",
+                now=now + timedelta(minutes=10),
+            )
+        reactivated = activate_reward(
+            conn,
+            reward_id=int(reward["id"]),
+            client_id=client_id,
+            activation_minutes=10,
+            now=now + timedelta(minutes=11),
+        )
+        assert reactivated["activation_code"]
+        assert reactivated["activation_expires_at"] == (
+            now + timedelta(minutes=21)
+        ).isoformat(timespec="seconds")
+        assert conn.execute(
+            """
+            SELECT COUNT(*) FROM vault_reward_events
+            WHERE member_reward_id=? AND action='activation_expired'
+            """,
+            (reward["id"],),
+        ).fetchone()[0] == 1
 
 
 def test_final_table_prize_is_issued_once(tmp_path) -> None:
@@ -403,6 +467,43 @@ def test_vault_tables_are_added_without_touching_existing_jackcoin(tmp_path) -> 
             "vault_reward_events",
         }.issubset(tables)
         assert jackcoin_balance(conn, client_id) == 321
+
+
+def test_activation_expiry_migration_resets_preexisting_codes_safely(tmp_path) -> None:
+    db_path = tmp_path / "vault-activation-migration.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, price=0)
+        reward = purchase_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="activation-migration",
+        )
+        activated = activate_reward(
+            conn,
+            reward_id=int(reward["id"]),
+            client_id=client_id,
+        )
+        activated_at = activated["activated_at"]
+        conn.execute(
+            "ALTER TABLE vault_member_rewards DROP COLUMN activation_expires_at"
+        )
+
+    init_db(db_path)
+    with connect(db_path) as conn:
+        migrated = conn.execute(
+            "SELECT * FROM vault_member_rewards WHERE id=?", (reward["id"],)
+        ).fetchone()
+        assert migrated["activation_code"]
+        assert migrated["activation_expires_at"] == activated_at
+        assert expire_activations(conn) == 1
+        reset = conn.execute(
+            "SELECT * FROM vault_member_rewards WHERE id=?", (reward["id"],)
+        ).fetchone()
+        assert reset["status"] == "active"
+        assert reset["activation_code"] is None
 
 
 def _csrf(response) -> str:
@@ -569,9 +670,11 @@ def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
             card = conn.execute("SELECT * FROM vault_member_rewards").fetchone()
             assert re.fullmatch(r"\d{4}", card["activation_code"])
             assert card["activated_at"]
+            assert card["activation_expires_at"]
         activated_page = client.get("/account?tab=vault")
         assert card["activation_code"] in activated_page.text
         assert card["code"] not in activated_page.text
+        assert 'data-reward-activation-countdown=' in activated_page.text
         qr = client.get(f"/account/rewards/{card['id']}/qr.png")
         assert qr.status_code == 200
         assert qr.content == b"vault-qr"

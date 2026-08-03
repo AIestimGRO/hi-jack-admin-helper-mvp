@@ -8,28 +8,55 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/responsive.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-smart.css') }}?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
-<body>
+{% set current_path = request.url.path %}
+{% set admin_section = 'home' %}
+{% if current_path.startswith('/admin/vault') %}{% set admin_section = 'vault' %}
+{% elif current_path.startswith('/admin/quiz') or current_path.startswith('/master/quiz') %}{% set admin_section = 'quiz' %}
+{% elif current_path.startswith('/clients') %}{% set admin_section = 'clients' %}
+{% elif current_path.startswith('/master') %}{% set admin_section = 'master' %}
+{% elif current_path.startswith('/logs') or current_path.startswith('/admin/rewards') %}{% set admin_section = 'logs' %}
+{% endif %}
+<body class="admin-app-body admin-section-{{ admin_section }}">
   {% if request.session.get('authenticated') %}
   <header class="topbar">
     <a class="brand" href="/"><img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt=""><span><strong>Hi, Jack!</strong><small>Club Helper</small></span></a>
-    <nav>
-      <a href="/clients">Клиенты</a>
-      <a href="/clients/import">Импорт</a>
-      <a href="/logs">Логи</a>
-      <a href="/admin/quiz-results">Квиз</a>
-      <a href="/admin/rewards">Коды</a>
-      <a href="/admin/vault">THE VAULT</a>
-      {% if admin_role == 'master_admin' %}<a class="master-link" href="/master">Мастер</a>{% endif %}
+    <nav class="admin-primary-nav" aria-label="Основные разделы">
+      <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="/clients">Клиенты</a>
+      <a class="{{ 'active' if admin_section == 'quiz' else '' }}" href="/admin/quiz-results">Квизы</a>
+      <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault">Хранилище</a>
+      {% if admin_role == 'master_admin' %}<a class="master-link {{ 'active' if admin_section == 'master' else '' }}" href="/master">Управление</a>{% endif %}
     </nav>
-    <form action="/logout" method="post">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="link-button" type="submit">Выйти</button>
-    </form>
+    <span class="admin-current-user">{{ admin_name }}</span>
+    <button class="admin-menu-toggle" type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span></span><span></span><span></span><b>Меню</b></button>
   </header>
+  <aside id="admin-menu" class="admin-menu-panel" data-admin-menu hidden>
+    <div class="admin-menu-head"><div><small>Рабочее меню</small><strong>{{ admin_name }}</strong></div><button type="button" data-admin-menu-close aria-label="Закрыть">×</button></div>
+    <nav>
+      <a class="{{ 'active' if current_path == '/' else '' }}" href="/"><span>⌂</span><div><strong>Главная</strong><small>Поиск и быстрые действия</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/clients') and not current_path.startswith('/clients/import') else '' }}" href="/clients"><span>◉</span><div><strong>Клиенты</strong><small>Поиск и преференции</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/clients/import') else '' }}" href="/clients/import"><span>⇧</span><div><strong>Импорт</strong><small>Обновить базу клуба</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/admin/quiz') else '' }}" href="/admin/quiz-results"><span>?</span><div><strong>Результаты квизов</strong><small>Ответы и статистика</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>THE VAULT</strong><small>Выдать JACK CARD</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Старые награды кампаний</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/logs') else '' }}" href="/logs"><span>≡</span><div><strong>Журнал</strong><small>История операций</small></div></a>
+      {% if admin_role == 'master_admin' %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/master') else '' }}" href="/master"><span>★</span><div><strong>Управление</strong><small>Кампании, доступы и настройки</small></div></a>{% endif %}
+    </nav>
+    <form action="/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Выйти из админки</button></form>
+  </aside>
   {% endif %}
   <main class="container">{% block content %}{% endblock %}</main>
+  {% if request.session.get('authenticated') %}
+  <nav class="admin-bottom-nav" aria-label="Быстрые разделы">
+    <a class="{{ 'active' if current_path == '/' else '' }}" href="/"><span>⌂</span><small>Главная</small></a>
+    <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="/clients"><span>◉</span><small>Клиенты</small></a>
+    <a class="{{ 'active' if admin_section == 'quiz' else '' }}" href="/admin/quiz-results"><span>?</span><small>Квизы</small></a>
+    <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault"><span>♦</span><small>Vault</small></a>
+    <button type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span>•••</span><small>Ещё</small></button>
+  </nav>
+  {% endif %}
   <script src="{{ url_for('static', path='/js/app.js') }}?v={{ asset_version }}" defer></script>
 </body>
 </html>

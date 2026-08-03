@@ -64,3 +64,29 @@ document.querySelectorAll("[data-member-countdown]").forEach((output) => {
     if (!render()) window.clearInterval(timer);
   }, 1000);
 });
+
+document.querySelectorAll("[data-reward-activation-countdown]").forEach((output) => {
+  const target = Date.parse(output.dataset.rewardActivationCountdown || "");
+  const card = output.closest("[data-reward-activation-card]");
+  if (!Number.isFinite(target) || !card) return;
+
+  const render = () => {
+    const remaining = Math.max(0, target - Date.now());
+    if (remaining <= 0) {
+      output.textContent = "Код закрывается…";
+      const rewardId = card.dataset.rewardId || "";
+      window.location.replace(`/account?tab=vault#card-${encodeURIComponent(rewardId)}`);
+      return false;
+    }
+    const totalSeconds = Math.ceil(remaining / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    output.textContent = `Код активен ${minutes}:${String(seconds).padStart(2, "0")}`;
+    return true;
+  };
+
+  if (!render()) return;
+  const timer = window.setInterval(() => {
+    if (!render()) window.clearInterval(timer);
+  }, 1000);
+});

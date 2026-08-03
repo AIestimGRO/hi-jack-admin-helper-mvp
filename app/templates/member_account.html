@@ -103,7 +103,7 @@
       {% for reward in vault_active_rewards[:2] %}
       <a class="active-card-preview category-{{ reward.category }}" href="/account?tab=vault#card-{{ reward.id }}">
         <span class="active-card-suit">{{ category_marks[reward.category] }}</span>
-        <span><strong>{{ reward.title }}</strong><small>{% if reward.activation_code %}Код {{ reward.activation_code }}{% else %}Готова к активации{% endif %}{% if reward.valid_until %} · до {{ reward.valid_until[:10] }}{% endif %}</small></span>
+        <span><strong>{{ reward.title }}</strong><small>{% if reward.activation_code %}Код активирован{% else %}Готова к активации{% endif %}{% if reward.valid_until %} · до {{ reward.valid_until[:10] }}{% endif %}</small></span>
         <span aria-hidden="true">›</span>
       </a>
       {% endfor %}
@@ -112,7 +112,7 @@
   {% endif %}
 
   <section class="home-section home-stats">
-    <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p><h2>Статистика</h2></div><a href="/account?tab=profile#activity">Подробнее</a></div>
+    <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p><h2>Статистика</h2></div><a href="/account?tab=rating">Подробнее</a></div>
     <div class="stat-chip-grid">
       <article><small>Рейтинг клуба</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'Нет данных' }}</span></article>
       <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>дней подряд</span></article>
@@ -150,6 +150,64 @@
     {% endfor %}
   </section>
 
+  {% elif current_tab == 'rating' %}
+  <header class="rating-hub-hero">
+    <div class="hj-hero-mark" aria-hidden="true"><span>HJ</span></div>
+    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Все результаты квизов и позиция в Hi, Jack App.</p></div>
+  </header>
+
+  <nav class="rating-section-tabs" aria-label="Раздел рейтинга">
+    <a class="{{ 'active' if current_rating_section == 'quiz' else '' }}" href="/account?tab=rating&amp;section=quiz">Мои квизы</a>
+    <a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">Рейтинг клуба</a>
+  </nav>
+
+  {% if current_rating_section == 'quiz' %}
+  <section class="rating-overview-card">
+    <div class="rating-overview-copy"><p class="member-eyebrow">Точность ответов</p><strong>{{ quiz_stats.accuracy }}<small>%</small></strong><span>{{ quiz_stats.correct_total }} правильных из {{ quiz_stats.question_total }}</span></div>
+    <div class="rating-progress-ring" style="--rating-progress: {{ quiz_stats.accuracy }}" aria-label="Точность {{ quiz_stats.accuracy }} процентов"><span>{{ quiz_stats.accuracy }}%</span></div>
+  </section>
+
+  <section class="quiz-stat-board">
+    <article><small>Пройдено квизов</small><strong>{{ quiz_stats.completed_count }}</strong><span>всего игр</span></article>
+    <article><small>Идеальных игр</small><strong>{{ quiz_stats.perfect_count }}</strong><span>без ошибок</span></article>
+    <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>лучшее: {{ streak.best_streak if streak else 0 }}</span></article>
+    <article><small>Заработано в квизах</small><strong>{{ quiz_stats.jackcoin_total }}</strong><span>JACKCOIN</span></article>
+  </section>
+
+  <section class="rating-history-section">
+    <div class="app-section-head"><div><p class="member-eyebrow">Последние игры</p><h2>Результаты</h2></div><span>{{ history|length }}</span></div>
+    <div class="quiz-performance-list">
+      {% for item in history[:12] %}
+      {% set performance = ((item.correct_count * 100 / item.max_correct_count)|round|int) if item.max_correct_count else 0 %}
+      <article>
+        <div class="quiz-performance-main"><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}{% if item.completion_time_ms %} · {{ (item.completion_time_ms / 1000)|round(1) }} сек.{% endif %}</small></div>
+        <div class="quiz-performance-score"><strong>{{ item.correct_count }}/{{ item.max_correct_count }}</strong><span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int }} балл.{% endif %}</span></div>
+        <div class="quiz-performance-bar"><i style="width: {{ performance }}%"></i></div>
+      </article>
+      {% else %}
+      <div class="member-card smart-empty"><span>HJ</span><div><h3>Статистика появится после первой игры</h3><p>Открой активный квиз и сделай первый результат.</p></div></div>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <section class="club-rating-summary">
+    <div><p class="member-eyebrow">Hi, Jack App</p><h2>{% if rating_snapshot %}Рейтинг на {{ rating_snapshot.snapshot_date[8:10] }}.{{ rating_snapshot.snapshot_date[5:7] }}.{{ rating_snapshot.snapshot_date[:4] }}{% else %}Рейтинг ещё не загружен{% endif %}</h2><span>{{ 'Последнее обновление рейтинга клуба' if rating_snapshot else 'После следующей синхронизации здесь появятся места игроков' }}</span></div>
+    <article class="my-club-rank"><small>Твоё место</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'Нет данных в текущем рейтинге' }}</span></article>
+  </section>
+
+  <section class="club-leaderboard">
+    {% for row in rating_leaderboard %}
+    <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium' if row.place and row.place <= 3 else '' }}">
+      <span class="leaderboard-place">{{ row.place or loop.index }}</span>
+      <span class="leaderboard-player"><strong>{{ row.display_name }}</strong>{% if row.client_id == member.client_id %}<small>Это ты</small>{% endif %}</span>
+      <strong class="leaderboard-points">{{ row.points }} <small>очков</small></strong>
+    </article>
+    {% else %}
+    <div class="member-card smart-empty"><span>★</span><div><h3>Рейтинг клуба готовится</h3><p>Он появится после импорта свежего снимка из Hi, Jack App.</p></div></div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
   {% elif current_tab == 'vault' %}
   <header class="app-page-heading vault-page-heading">
     <div><p class="member-eyebrow">THE VAULT</p><h1>Хранилище</h1><p class="member-muted">Твои JACKCOIN превращаются в клубные награды.</p></div>
@@ -161,7 +219,7 @@
     <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>{{ vault_active_rewards|length }}</span></div>
     <div class="vault-active-grid">
       {% for reward in vault_active_rewards %}
-      <article id="card-{{ reward.id }}" class="member-card jack-card category-{{ reward.category }} {{ 'activated' if reward.activated_at else 'awaiting-activation' }}">
+      <article id="card-{{ reward.id }}" class="member-card jack-card category-{{ reward.category }} {{ 'activated' if reward.activated_at else 'awaiting-activation' }}"{% if reward.activation_expires_at %} data-reward-activation-card data-reward-id="{{ reward.id }}"{% endif %}>
         <div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'THE VAULT' }}</small></div>
         <div class="jack-card-main">
           <div>
@@ -169,6 +227,7 @@
             <h3>{{ reward.title }}</h3>
             {% if reward.activated_at and reward.activation_code %}
             <strong class="reward-activation-code" aria-label="Код активации {{ reward.activation_code }}">{{ reward.activation_code }}</strong>
+            <span class="reward-activation-timer" data-reward-activation-countdown="{{ reward.activation_expires_at }}" aria-live="polite">Код активен {{ vault_activation_minutes }}:00</span>
             {% else %}
             <form action="/account/rewards/{{ reward.id }}/activate" method="post">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -180,7 +239,7 @@
           <img src="/account/rewards/{{ reward.id }}/qr.png" alt="QR-код активированной награды" loading="lazy">
           {% endif %}
         </div>
-        <p>{% if reward.activated_at %}{{ reward.redeem_instructions or 'Покажите администратору QR-код или четыре цифры.' }}{% else %}Активируйте награду при администраторе. После этого появятся QR и короткий код.{% endif %}</p>
+        <p>{% if reward.activated_at %}{{ reward.redeem_instructions or 'Покажите администратору QR-код или четыре цифры.' }} Код автоматически закроется, если награду не погасить.{% else %}Активируйте награду при администраторе. После этого на {{ vault_activation_minutes }} мин. появятся QR и короткий код.{% endif %}</p>
         <small>{% if reward.valid_until %}Действует до {{ reward.valid_until[:16]|replace('T', ' ') }}{% else %}Без срока{% endif %}</small>
       </article>
       {% endfor %}
