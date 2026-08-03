@@ -28,6 +28,7 @@ def ensure_final_table(
     campaign_version: int,
     starts_at: datetime,
     questions: list[dict[str, Any]],
+    prize_catalog_reward_id: int | None = None,
 ) -> sqlite3.Row:
     row = conn.execute(
         """
@@ -47,6 +48,7 @@ def ensure_final_table(
                 """
                 UPDATE daily_414_final_tables
                 SET starts_at=?, questions_snapshot_json=?, status=?,
+                    prize_catalog_reward_id=COALESCE(prize_catalog_reward_id, ?),
                     updated_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
@@ -54,6 +56,7 @@ def ensure_final_table(
                     _timestamp(starts_at),
                     snapshot,
                     "waiting" if has_questions else "unavailable",
+                    prize_catalog_reward_id,
                     row["id"],
                 ),
             )
@@ -68,14 +71,15 @@ def ensure_final_table(
             """
             INSERT INTO daily_414_final_tables(
                 campaign_code, campaign_version, starts_at,
-                questions_snapshot_json, status
-            ) VALUES (?, ?, ?, ?, ?)
+                questions_snapshot_json, prize_catalog_reward_id, status
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 campaign_code,
                 campaign_version,
                 _timestamp(starts_at),
                 payload,
+                prize_catalog_reward_id,
                 waiting_status,
             ),
         )

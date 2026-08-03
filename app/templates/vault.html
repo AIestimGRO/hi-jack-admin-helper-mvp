@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}THE VAULT — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">THE VAULT · Хранилище</p><h1>Награды и JACK CARDS</h1></div>
+</div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% for item in final_prize_errors %}
+<div class="alert error vault-prize-error">
+  <div><strong>Главный приз не выдан: {{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.reward_title or 'Награда недоступна' }} · {{ item.first_name or item.nickname or ('@' ~ item.username if item.username else 'клиент #' ~ item.client_id) }}</small></div>
+  {% if admin_role == 'master_admin' %}<form action="/api/vault/final-tables/{{ item.id }}/retry-prize" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Повторить выдачу</button></form>{% endif %}
+</div>
+{% endfor %}
+
+<section class="card vault-redeem-card">
+  <div><p class="eyebrow">Выдача в клубе</p><h2>Погасить цифровую карту</h2><p class="muted">Сканирование QR только подставляет код. Награда списывается после подтверждения администратором.</p></div>
+  <form action="/api/vault/redeem" method="post" onsubmit="return confirm('Погасить эту карту? Повторное использование будет невозможно.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="code" value="{{ filters.code }}" maxlength="20" autocomplete="off" placeholder="JC-XXXX-XXXX" required autofocus>
+    <button class="primary" type="submit">Погасить карту</button>
+  </form>
+</section>
+
+{% if admin_role == 'master_admin' %}
+<details class="card vault-create-card">
+  <summary>+ Добавить награду в каталог</summary>
+  <form action="/api/vault/catalog/create" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Системный код<input name="code" maxlength="50" pattern="[a-z0-9][a-z0-9_-]{2,49}" placeholder="free_entry" required></label>
+    <label>Название<input name="title" maxlength="100" placeholder="FREE ENTRY" required></label>
+    <label>Категория<select name="category"><option value="club">Клубная награда</option><option value="drink">Напиток / бар</option><option value="entry">Вход / участие</option><option value="card">JACK CARD</option><option value="profile">Профиль</option><option value="protection">Защита серии</option></select></label>
+    <label>Стоимость, JC<input name="price_jc" type="number" min="0" max="1000000" value="100" required></label>
+    <label>Срок после получения, дней <small>0 = без срока</small><input name="validity_days" type="number" min="0" max="3650" value="30" required></label>
+    <label>Общий тираж <small>Пусто = без лимита</small><input name="inventory_total" type="number" min="0" max="1000000"></label>
+    <label>Порядок<input name="position" type="number" min="0" max="9999" value="100" required></label>
+    <label class="wide">Описание<textarea name="description" maxlength="1000" rows="3" placeholder="Что получает участник"></textarea></label>
+    <label class="wide">Инструкция для клуба<textarea name="redeem_instructions" maxlength="1000" rows="3" placeholder="Покажите карту администратору перед началом турнира"></textarea></label>
+    <button class="primary" type="submit">Опубликовать награду</button>
+  </form>
+</details>
+{% endif %}
+
+<div class="section-head"><h2>Каталог</h2><span class="muted">{{ catalog|length }} позиций</span></div>
+<div class="vault-admin-catalog">
+{% for reward in catalog %}
+  <article class="card vault-admin-item {{ '' if reward.is_active else 'inactive' }}">
+    <div class="master-item-head">
+      <div><h3>{{ reward.title }}</h3><code>{{ reward.code }}</code></div>
+      <span class="type-pill">{{ reward.price_jc }} JC</span>
+    </div>
+    <p class="muted">Выдано: {{ reward.allocated_count }}{% if reward.inventory_total is not none %} из {{ reward.inventory_total }}{% else %} · без лимита{% endif %} · активно {{ reward.active_count or 0 }} · сыграно {{ reward.redeemed_count or 0 }}</p>
+    <p>{{ reward.description or 'Описание не добавлено.' }}</p>
+    {% if admin_role == 'master_admin' %}
+    <details>
+      <summary>Настройки награды</summary>
+      <form class="vault-edit-form" action="/api/vault/catalog/{{ reward.id }}/update" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Название<input name="title" maxlength="100" value="{{ reward.title }}" required></label>
+        <label>Категория<select name="category"><option value="club" {% if reward.category=='club' %}selected{% endif %}>Клубная</option><option value="drink" {% if reward.category=='drink' %}selected{% endif %}>Напиток</option><option value="entry" {% if reward.category=='entry' %}selected{% endif %}>Вход</option><option value="card" {% if reward.category=='card' %}selected{% endif %}>JACK CARD</option><option value="profile" {% if reward.category=='profile' %}selected{% endif %}>Профиль</option><option value="protection" {% if reward.category=='protection' %}selected{% endif %}>Защита серии</option></select></label>
+        <label>Стоимость, JC<input name="price_jc" type="number" min="0" max="1000000" value="{{ reward.price_jc }}" required></label>
+        <label>Срок, дней<input name="validity_days" type="number" min="0" max="3650" value="{{ reward.validity_days }}" required></label>
+        <label>Общий тираж<input name="inventory_total" type="number" min="0" max="1000000" value="{{ reward.inventory_total if reward.inventory_total is not none else '' }}"></label>
+        <label>Порядок<input name="position" type="number" min="0" max="9999" value="{{ reward.position }}" required></label>
+        <label class="wide">Описание<textarea name="description" maxlength="1000" rows="3">{{ reward.description }}</textarea></label>
+        <label class="wide">Инструкция<textarea name="redeem_instructions" maxlength="1000" rows="3">{{ reward.redeem_instructions }}</textarea></label>
+        <label class="check-label"><input name="is_active" type="checkbox" value="true" {% if reward.is_active %}checked{% endif %}> Показывать в каталоге</label>
+        <button class="button" type="submit">Сохранить</button>
+      </form>
+    </details>
+    {% endif %}
+  </article>
+{% else %}
+  <div class="card empty">Каталог пока пуст. Добавьте первую награду.</div>
+{% endfor %}
+</div>
+
+<div class="section-head"><h2>Выданные карты</h2></div>
+<form class="card filters vault-filters" method="get">
+  <input name="code" value="{{ filters.code }}" placeholder="Поиск по коду">
+  <select name="status"><option value="">Все статусы</option><option value="active" {% if filters.status=='active' %}selected{% endif %}>Активна</option><option value="redeemed" {% if filters.status=='redeemed' %}selected{% endif %}>Сыграна</option><option value="expired" {% if filters.status=='expired' %}selected{% endif %}>Истекла</option><option value="cancelled" {% if filters.status=='cancelled' %}selected{% endif %}>Отменена</option></select>
+  <button class="button" type="submit">Найти</button>
+</form>
+
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Карта</th><th>Клиент</th><th>Награда</th><th>Источник</th><th>Статус</th><th>Срок</th><th></th></tr></thead>
+    <tbody>
+    {% for reward in rewards %}
+      <tr>
+        <td><strong class="reward-code-cell">{{ reward.code }}</strong><small>{{ reward.created_at }}</small></td>
+        <td><a href="/clients/{{ reward.client_id }}">{{ reward.first_name or reward.nickname or ('@' ~ reward.username if reward.username else 'Клиент #' ~ reward.client_id) }}</a><small>{{ display_phone(reward.phone_local, reward.phone_raw) }}</small></td>
+        <td>{{ reward.title }}<small>{% if reward.price_paid_jc %}{{ reward.price_paid_jc }} JC{% else %}Без списания JC{% endif %}</small></td>
+        <td>{{ {'purchase':'Покупка','final_prize':'Главный приз','admin':'Администратор'}[reward.source_type] }}</td>
+        <td><span class="vault-status {{ reward.status }}">{{ {'active':'Активна','redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span></td>
+        <td>{{ reward.valid_until or 'Без срока' }}</td>
+        <td>{% if reward.status=='active' and admin_role=='master_admin' %}<form action="/api/vault/rewards/{{ reward.id }}/cancel" method="post" onsubmit="return confirm('Отменить карту? Если она куплена, JACKCOIN вернутся клиенту.');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Отменить</button></form>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="empty">Карты не найдены</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<details class="card vault-events">
+  <summary>Журнал THE VAULT</summary>
+  <div class="table-wrap"><table><thead><tr><th>Время</th><th>Код</th><th>Действие</th><th>Администратор</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.code }}</td><td>{{ event.action }}</td><td>{{ event.admin_name }}</td></tr>{% else %}<tr><td colspan="4" class="empty">Событий пока нет</td></tr>{% endfor %}</tbody></table></div>
+</details>
+{% endblock %}

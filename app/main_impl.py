@@ -103,6 +103,17 @@ from app.services.member_accounts import (
 from app.services.quiz_retention import cleanup_quiz_data
 from app.services.quiz_rewards import issue_referral_reward, issue_reward, redeem_reward, render_campaign_text
 from app.services.telegram_oidc import authorization_url, exchange_telegram_code, new_pkce
+from app.services.vault import (
+    attach_final_table_reward,
+    cancel_reward as cancel_vault_reward,
+    create_catalog_reward,
+    expire_rewards as expire_vault_rewards,
+    purchase_reward as purchase_vault_reward,
+    purchase_token as vault_purchase_token,
+    redeem_reward as redeem_vault_reward,
+    update_catalog_reward,
+    valid_purchase_token,
+)
 
 
 BUILT_IN_CAMPAIGN_CODES = frozenset(code for code, _title in QUIZ_CAMPAIGNS)
@@ -1540,6 +1551,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return RedirectResponse("/account/consents", status_code=303)
         if tab not in {"personal", "stats", "rewards"}:
             tab = "personal"
+        vault_catalog = []
+        vault_active_rewards = []
+        vault_reward_history = []
         with connect(settings.db_path) as conn:
             balance = jackcoin_balance(conn, int(member["client_id"]))
             history = conn.execute(
@@ -1577,6 +1591,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (member["id"],),
             ).fetchall()
+            if tab == "rewards":
+                expire_vault_rewards(conn, client_id=int(member["client_id"]))
+                vault_catalog = conn.execute(
+                    """
+                    SELECT vcr.*,
+                           COUNT(vmr.id) AS allocated_count
+                    FROM vault_catalog_rewards vcr
+                    LEFT JOIN vault_member_rewards vmr
+                      ON vmr.catalog_reward_id=vcr.id
+                     AND vmr.status<>'cancelled'
+                    WHERE vcr.is_active=1
+                    GROUP BY vcr.id
+                    ORDER BY vcr.position, vcr.id
+                    """
+                ).fetchall()
+                member_rewards = conn.execute(
+                    """
+                    SELECT vmr.*, vcr.title, vcr.description, vcr.category,
+                           vcr.redeem_instructions
+                    FROM vault_member_rewards vmr
+                    JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
+                    WHERE vmr.client_id=?
+                    ORDER BY CASE vmr.status WHEN 'active' THEN 0 ELSE 1 END,
+                             vmr.created_at DESC, vmr.id DESC
+                    """,
+                    (member["client_id"],),
+                ).fetchall()
+                vault_active_rewards = [
+                    reward for reward in member_rewards if reward["status"] == "active"
+                ]
+                vault_reward_history = [
+                    reward for reward in member_rewards if reward["status"] != "active"
+                ]
+        vault_purchase_tokens = {
+            int(reward["id"]): vault_purchase_token(
+                settings.secret_key,
+                account_id=int(member["id"]),
+                catalog_reward_id=int(reward["id"]),
+                price_jc=int(reward["price_jc"]),
+            )
+            for reward in vault_catalog
+        }
         return templates.TemplateResponse(
             request,
             "member_account.html",
@@ -1589,9 +1645,109 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 rating=rating,
                 ledger=ledger,
                 consents=consents,
+                vault_catalog=vault_catalog,
+                vault_active_rewards=vault_active_rewards,
+                vault_reward_history=vault_reward_history,
+                vault_purchase_tokens=vault_purchase_tokens,
                 ok=ok,
                 error=error,
             ),
+        )
+
+    def vault_member_redirect(message: str, *, error: bool = False) -> RedirectResponse:
+        parameter = "error" if error else "ok"
+        return RedirectResponse(
+            f"/account?{urlencode({'tab': 'rewards', parameter: message})}",
+            status_code=303,
+        )
+
+    @app.post("/account/rewards/{catalog_reward_id:int}/purchase")
+    async def member_purchase_vault_reward(
+        request: Request,
+        catalog_reward_id: int,
+        purchase_id: str = Form(...),
+        expected_price_jc: int = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        check_csrf(request, csrf_token)
+        if missing_member_documents(int(member["id"])):
+            return member_redirect(
+                "/account/consents",
+                "Сначала примите актуальные условия программы",
+                error=True,
+            )
+        if not valid_purchase_token(
+            settings.secret_key,
+            purchase_id,
+            account_id=int(member["id"]),
+            catalog_reward_id=catalog_reward_id,
+            price_jc=expected_price_jc,
+        ):
+            raise HTTPException(status_code=403, detail="invalid_purchase_token")
+        try:
+            with transaction(settings.db_path) as conn:
+                reward = purchase_vault_reward(
+                    conn,
+                    client_id=int(member["client_id"]),
+                    catalog_reward_id=catalog_reward_id,
+                    purchase_id=purchase_id,
+                    expected_price_jc=expected_price_jc,
+                )
+                title = conn.execute(
+                    "SELECT title FROM vault_catalog_rewards WHERE id=?",
+                    (catalog_reward_id,),
+                ).fetchone()[0]
+        except ValueError as exc:
+            messages = {
+                "catalog_reward_not_found": "Награда не найдена",
+                "catalog_reward_inactive": "Эта награда сейчас недоступна",
+                "catalog_reward_sold_out": "Тираж этой награды закончился",
+                "catalog_reward_price_changed": "Стоимость награды изменилась. Обновите страницу перед обменом",
+                "insufficient_jackcoin": "Недостаточно JACKCOIN для обмена",
+                "invalid_purchase_token": "Заявка на обмен устарела. Обновите страницу",
+            }
+            return vault_member_redirect(
+                messages.get(str(exc), "Не удалось получить награду"), error=True
+            )
+        return vault_member_redirect(
+            f"Карта «{title}» добавлена в активные награды. Код: {reward['code']}"
+        )
+
+    @app.get("/account/rewards/{member_reward_id:int}/qr.png")
+    async def member_vault_reward_qr(request: Request, member_reward_id: int):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        with connect(settings.db_path) as conn:
+            reward = conn.execute(
+                """
+                SELECT vmr.*, vcr.title
+                FROM vault_member_rewards vmr
+                JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
+                WHERE vmr.id=? AND vmr.client_id=?
+                """,
+                (member_reward_id, member["client_id"]),
+            ).fetchone()
+        if not reward:
+            raise HTTPException(status_code=404, detail="Награда не найдена")
+        if reward["status"] != "active":
+            raise HTTPException(status_code=410, detail="Карта уже не активна")
+        if reward["valid_until"] and utc_now() > datetime.fromisoformat(
+            str(reward["valid_until"])
+        ).astimezone(timezone.utc):
+            raise HTTPException(status_code=410, detail="Срок карты истёк")
+        redeem_url = (
+            f"{settings.public_base_url.rstrip('/')}/admin/vault?"
+            f"{urlencode({'code': reward['code']})}"
+        )
+        image = qrcode.make(redeem_url)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return Response(
+            buffer.getvalue(),
+            media_type="image/png",
+            headers={"Cache-Control": "private, no-store"},
         )
 
     @app.get("/account/telegram", response_class=HTMLResponse)
@@ -2730,6 +2886,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 and table["status"] in {"waiting", "unavailable"}
                 and bool(final_questions)
                 and str(table["questions_snapshot_json"] or "").strip() in {"", "[]"}
+            ) or (
+                table is not None
+                and table["status"] == "completed"
+                and table["winner_submission_id"]
+                and not table["winner_reward_id"]
+                and table["prize_catalog_reward_id"]
+                and not table["winner_reward_error"]
             )
             if mutate:
                 with transaction(settings.db_path) as conn:
@@ -2739,6 +2902,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         campaign_version=campaign_version,
                         starts_at=final_start,
                         questions=final_questions,
+                        prize_catalog_reward_id=campaign_row[
+                            "final_prize_catalog_reward_id"
+                        ],
                     )
                     if final_table_needs_reconcile(
                         table, now=now, schedule_starts_at=final_start
@@ -2749,6 +2915,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             now=now,
                             schedule_starts_at=final_start,
                         )
+                    if table["status"] == "completed" and table["winner_submission_id"]:
+                        attach_final_table_reward(
+                            conn, final_table_id=int(table["id"]), now=now
+                        )
+                        table = conn.execute(
+                            "SELECT * FROM daily_414_final_tables WHERE id=?",
+                            (table["id"],),
+                        ).fetchone()
             elif table is None:
                 raise HTTPException(
                     status_code=409, detail="Финальный стол ещё не сформирован"
@@ -2865,12 +3039,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ).fetchone()[0]
                 )
                 if finalist["status"] == "winner":
+                    winner_reward = None
+                    if table["winner_reward_id"]:
+                        winner_reward = conn.execute(
+                            """
+                            SELECT vmr.code, vcr.title
+                            FROM vault_member_rewards vmr
+                            JOIN vault_catalog_rewards vcr
+                              ON vcr.id=vmr.catalog_reward_id
+                            WHERE vmr.id=?
+                            """,
+                            (table["winner_reward_id"],),
+                        ).fetchone()
                     return {
                         **base,
                         "state": "winner",
                         "seed": int(finalist["seed"]),
                         "active_count": 1,
-                        "message": "Вы победили за финальным столом!",
+                        "reward_code": winner_reward["code"] if winner_reward else None,
+                        "reward_title": winner_reward["title"] if winner_reward else None,
+                        "message": (
+                            f"Вы победили! Карта «{winner_reward['title']}» уже в THE VAULT."
+                            if winner_reward
+                            else "Вы победили за финальным столом!"
+                        ),
                     }
                 if finalist["status"] == "eliminated":
                     return {
@@ -3238,6 +3430,349 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def rewards_redirect(message: str, *, error: bool = False) -> RedirectResponse:
         return RedirectResponse(f"/admin/rewards?{'error' if error else 'ok'}={quote(message)}", status_code=303)
 
+    def vault_admin_redirect(message: str, *, error: bool = False) -> RedirectResponse:
+        parameter = "error" if error else "ok"
+        return RedirectResponse(
+            f"/admin/vault?{urlencode({parameter: message})}", status_code=303
+        )
+
+    def vault_inventory_value(value: str) -> int | None:
+        clean = str(value or "").strip()
+        if not clean:
+            return None
+        try:
+            return int(clean)
+        except ValueError as exc:
+            raise ValueError("invalid_inventory") from exc
+
+    @app.get("/admin/vault", response_class=HTMLResponse)
+    async def vault_admin_page(
+        request: Request,
+        status: str = "",
+        code: str = "",
+        ok: str = "",
+        error: str = "",
+    ):
+        require_auth(request)
+        clauses = ["1=1"]
+        params: list[Any] = []
+        if status in {"active", "redeemed", "expired", "cancelled"}:
+            clauses.append("vmr.status=?")
+            params.append(status)
+        if code.strip():
+            clauses.append("vmr.code LIKE ?")
+            params.append(f"%{code.strip().upper()}%")
+        with transaction(settings.db_path) as conn:
+            expire_vault_rewards(conn)
+            catalog = conn.execute(
+                """
+                SELECT vcr.*, COUNT(vmr.id) AS allocated_count,
+                       SUM(CASE WHEN vmr.status='active' THEN 1 ELSE 0 END) AS active_count,
+                       SUM(CASE WHEN vmr.status='redeemed' THEN 1 ELSE 0 END) AS redeemed_count
+                FROM vault_catalog_rewards vcr
+                LEFT JOIN vault_member_rewards vmr
+                  ON vmr.catalog_reward_id=vcr.id
+                 AND vmr.status<>'cancelled'
+                GROUP BY vcr.id
+                ORDER BY vcr.position, vcr.id
+                """
+            ).fetchall()
+            rewards = conn.execute(
+                f"""
+                SELECT vmr.*, vcr.title, vcr.category,
+                       c.first_name, c.nickname, c.username,
+                       c.phone_local, c.phone_raw
+                FROM vault_member_rewards vmr
+                JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
+                JOIN clients c ON c.id=vmr.client_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY vmr.id DESC LIMIT 500
+                """,
+                params,
+            ).fetchall()
+            events = conn.execute(
+                "SELECT * FROM vault_reward_events ORDER BY id DESC LIMIT 150"
+            ).fetchall()
+            final_prize_errors = conn.execute(
+                """
+                SELECT dft.id, dft.campaign_code, dft.campaign_version,
+                       dft.winner_reward_error, qc.title AS campaign_title,
+                       vcr.title AS reward_title, qs.client_id,
+                       c.first_name, c.nickname, c.username
+                FROM daily_414_final_tables dft
+                JOIN quiz_campaigns qc ON qc.code=dft.campaign_code
+                LEFT JOIN vault_catalog_rewards vcr
+                  ON vcr.id=dft.prize_catalog_reward_id
+                LEFT JOIN quiz_submissions qs ON qs.id=dft.winner_submission_id
+                LEFT JOIN clients c ON c.id=qs.client_id
+                WHERE dft.winner_reward_error IS NOT NULL
+                  AND dft.winner_reward_id IS NULL
+                ORDER BY dft.id DESC
+                """
+            ).fetchall()
+        return templates.TemplateResponse(
+            request,
+            "vault.html",
+            context(
+                request,
+                catalog=catalog,
+                rewards=rewards,
+                events=events,
+                final_prize_errors=final_prize_errors,
+                filters={"status": status, "code": code},
+                ok=ok,
+                error=error,
+            ),
+        )
+
+    @app.post("/api/vault/catalog/create")
+    async def vault_catalog_create(
+        request: Request,
+        code: str = Form(...),
+        title: str = Form(...),
+        description: str = Form(""),
+        category: str = Form("club"),
+        price_jc: int = Form(...),
+        validity_days: int = Form(30),
+        inventory_total: str = Form(""),
+        redeem_instructions: str = Form(""),
+        position: int = Form(100),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                reward = create_catalog_reward(
+                    conn,
+                    code=code,
+                    title=title,
+                    description=description,
+                    category=category,
+                    price_jc=price_jc,
+                    validity_days=validity_days,
+                    inventory_total=vault_inventory_value(inventory_total),
+                    redeem_instructions=redeem_instructions,
+                    position=position,
+                    admin_id=int(request.session["admin_id"]),
+                )
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="create",
+                    entity_type="vault_catalog_reward",
+                    entity_id=int(reward["id"]),
+                    details={
+                        "code": reward["code"],
+                        "price_jc": reward["price_jc"],
+                        "inventory_total": reward["inventory_total"],
+                    },
+                )
+        except ValueError as exc:
+            messages = {
+                "invalid_catalog_code": "Код должен содержать 3–50 строчных латинских символов, цифр, _ или -",
+                "catalog_code_exists": "Награда с таким кодом уже существует",
+                "invalid_title": "Проверьте название награды",
+                "invalid_category": "Проверьте категорию",
+                "invalid_price": "Стоимость JACKCOIN указана неверно",
+                "invalid_validity": "Срок действия указан неверно",
+                "invalid_inventory": "Тираж должен быть целым неотрицательным числом или пустым",
+                "invalid_position": "Порядок указан неверно",
+            }
+            return vault_admin_redirect(
+                messages.get(str(exc), "Не удалось создать награду"), error=True
+            )
+        return vault_admin_redirect(f"Награда «{reward['title']}» добавлена в каталог")
+
+    @app.post("/api/vault/catalog/{reward_id:int}/update")
+    async def vault_catalog_update(
+        request: Request,
+        reward_id: int,
+        title: str = Form(...),
+        description: str = Form(""),
+        category: str = Form("club"),
+        price_jc: int = Form(...),
+        validity_days: int = Form(30),
+        inventory_total: str = Form(""),
+        redeem_instructions: str = Form(""),
+        position: int = Form(100),
+        is_active: bool = Form(False),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                reward = update_catalog_reward(
+                    conn,
+                    reward_id=reward_id,
+                    title=title,
+                    description=description,
+                    category=category,
+                    price_jc=price_jc,
+                    validity_days=validity_days,
+                    inventory_total=vault_inventory_value(inventory_total),
+                    redeem_instructions=redeem_instructions,
+                    position=position,
+                    is_active=is_active,
+                )
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="update",
+                    entity_type="vault_catalog_reward",
+                    entity_id=reward_id,
+                    details={
+                        "price_jc": reward["price_jc"],
+                        "inventory_total": reward["inventory_total"],
+                        "is_active": bool(reward["is_active"]),
+                    },
+                )
+        except ValueError as exc:
+            messages = {
+                "catalog_reward_not_found": "Награда не найдена",
+                "inventory_below_allocated": "Тираж нельзя сделать меньше количества уже выданных карт",
+                "invalid_title": "Проверьте название награды",
+                "invalid_category": "Проверьте категорию",
+                "invalid_price": "Стоимость JACKCOIN указана неверно",
+                "invalid_validity": "Срок действия указан неверно",
+                "invalid_inventory": "Тираж должен быть целым неотрицательным числом или пустым",
+                "invalid_position": "Порядок указан неверно",
+            }
+            return vault_admin_redirect(
+                messages.get(str(exc), "Не удалось сохранить награду"), error=True
+            )
+        return vault_admin_redirect(f"Награда «{reward['title']}» обновлена")
+
+    @app.post("/api/vault/redeem")
+    async def vault_redeem(
+        request: Request, code: str = Form(...), csrf_token: str = Form(...)
+    ):
+        require_auth(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            expire_vault_rewards(conn)
+        try:
+            with transaction(settings.db_path) as conn:
+                reward = redeem_vault_reward(
+                    conn,
+                    code=code,
+                    admin_id=int(request.session["admin_id"]),
+                    admin_name=request.session["admin_name"],
+                )
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="redeem",
+                    entity_type="vault_member_reward",
+                    entity_id=int(reward["id"]),
+                    details={"code": reward["code"], "client_id": reward["client_id"]},
+                )
+        except ValueError as exc:
+            messages = {
+                "vault_reward_not_found": "Карта не найдена",
+                "vault_reward_redeemed": "Эта карта уже сыграна",
+                "vault_reward_expired": "Срок действия карты истёк",
+                "vault_reward_cancelled": "Карта отменена",
+                "vault_reward_not_started": "Срок действия карты ещё не начался",
+            }
+            return vault_admin_redirect(
+                messages.get(str(exc), "Не удалось погасить карту"), error=True
+            )
+        return vault_admin_redirect(f"Карта {reward['code']} погашена")
+
+    @app.post("/api/vault/final-tables/{final_table_id:int}/retry-prize")
+    async def vault_retry_final_prize(
+        request: Request, final_table_id: int, csrf_token: str = Form(...)
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            table = conn.execute(
+                "SELECT * FROM daily_414_final_tables WHERE id=?",
+                (final_table_id,),
+            ).fetchone()
+            if not table:
+                return vault_admin_redirect("Финальный стол не найден", error=True)
+            if table["winner_reward_id"]:
+                return vault_admin_redirect("Главный приз уже выдан")
+            conn.execute(
+                "UPDATE daily_414_final_tables SET winner_reward_error=NULL WHERE id=?",
+                (final_table_id,),
+            )
+            reward = attach_final_table_reward(
+                conn, final_table_id=final_table_id, now=utc_now()
+            )
+            refreshed = conn.execute(
+                "SELECT winner_reward_error FROM daily_414_final_tables WHERE id=?",
+                (final_table_id,),
+            ).fetchone()
+            if not reward:
+                message = {
+                    "catalog_reward_not_found": "Награда удалена из каталога",
+                    "catalog_reward_sold_out": "Тираж награды закончился",
+                }.get(
+                    str(refreshed["winner_reward_error"] or ""),
+                    "Не удалось выдать главный приз",
+                )
+                return vault_admin_redirect(message, error=True)
+            audit(
+                conn,
+                admin_id=request.session["admin_id"],
+                admin_name=request.session["admin_name"],
+                action="retry_final_prize",
+                entity_type="daily_414_final_table",
+                entity_id=final_table_id,
+                details={"reward_id": reward["id"], "code": reward["code"]},
+            )
+        return vault_admin_redirect(f"Главный приз выдан: {reward['code']}")
+
+    @app.post("/api/vault/rewards/{reward_id:int}/cancel")
+    async def vault_cancel(
+        request: Request, reward_id: int, csrf_token: str = Form(...)
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                reward = cancel_vault_reward(
+                    conn,
+                    reward_id=reward_id,
+                    admin_id=int(request.session["admin_id"]),
+                    admin_name=request.session["admin_name"],
+                )
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="cancel",
+                    entity_type="vault_member_reward",
+                    entity_id=reward_id,
+                    details={
+                        "code": reward["code"],
+                        "jackcoin_refunded": reward["price_paid_jc"],
+                    },
+                )
+        except ValueError as exc:
+            messages = {
+                "vault_reward_not_found": "Карта не найдена",
+                "vault_reward_redeemed": "Сыгранную карту отменить нельзя",
+                "vault_reward_expired": "Истёкшую карту отменить нельзя",
+                "vault_reward_cancelled": "Карта уже отменена",
+            }
+            return vault_admin_redirect(
+                messages.get(str(exc), "Не удалось отменить карту"), error=True
+            )
+        suffix = (
+            f"; клиенту возвращено {reward['price_paid_jc']} JC"
+            if reward["price_paid_jc"]
+            else ""
+        )
+        return vault_admin_redirect(f"Карта {reward['code']} отменена{suffix}")
+
     @app.get("/admin/rewards", response_class=HTMLResponse)
     async def rewards_page(request: Request, status: str = "", code: str = "", ok: str = "", error: str = ""):
         require_auth(request)
@@ -3413,6 +3948,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             counter_preferences = conn.execute(
                 "SELECT code, title FROM preference_types WHERE kind='counter' ORDER BY position, id"
             ).fetchall()
+            vault_catalog_rewards = conn.execute(
+                """
+                SELECT id, code, title, price_jc, is_active
+                FROM vault_catalog_rewards
+                ORDER BY is_active DESC, position, id
+                """
+            ).fetchall()
             admin_audit = conn.execute(
                 "SELECT * FROM admin_audit_log ORDER BY id DESC LIMIT 100"
             ).fetchall()
@@ -3427,6 +3969,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 quiz_campaigns_daily_414=quiz_campaigns_daily_414,
                 quiz_campaigns_archived=quiz_campaigns_archived,
                 counter_preferences=counter_preferences,
+                vault_catalog_rewards=vault_catalog_rewards,
                 admin_audit=admin_audit,
                 current_tab=tab,
                 quiz_public_base_url=settings.quiz_public_base_url.rstrip("/"),
@@ -3657,6 +4200,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             start, end = None, None
         return mode, max(0, value), start, end
 
+    def validate_final_prize(
+        conn: sqlite3.Connection,
+        *,
+        campaign_type: str,
+        catalog_reward_id: int,
+    ) -> int | None:
+        reward_id = max(0, int(catalog_reward_id or 0))
+        if campaign_type != "daily_414" or reward_id == 0:
+            return None
+        reward = conn.execute(
+            "SELECT id, is_active FROM vault_catalog_rewards WHERE id=?",
+            (reward_id,),
+        ).fetchone()
+        if not reward:
+            raise ValueError("Главный приз не найден в THE VAULT")
+        if not reward["is_active"]:
+            raise ValueError("Сначала включите выбранный главный приз в THE VAULT")
+        return int(reward["id"])
+
     @app.post("/api/master/quiz-campaigns/create")
     async def create_quiz_campaign(
         request: Request,
@@ -3673,6 +4235,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jackcoin_per_correct: int = Form(5),
         jackcoin_completion_bonus: int = Form(10),
         jackcoin_perfect_bonus: int = Form(20),
+        final_prize_catalog_reward_id: int = Form(0),
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
@@ -3747,6 +4310,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise ValueError("Количество приглашённых должно быть от 1 до 1000")
                 if referral_max_rewards < 0 or referral_max_rewards > 1000:
                     raise ValueError("Лимит реферальных наград должен быть от 0 до 1000")
+                final_prize_id = validate_final_prize(
+                    conn,
+                    campaign_type=campaign_type,
+                    catalog_reward_id=final_prize_catalog_reward_id,
+                )
                 cursor = conn.execute(
                     """
                     INSERT INTO quiz_campaigns(
@@ -3755,13 +4323,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         max_attempts, verification_required, reward_validity_mode, reward_validity_value,
                         reward_valid_from, reward_valid_until, referral_enabled, referral_preference_code,
                         referral_amount, referral_delivery_mode, referral_threshold, referral_repeatable, referral_max_rewards,
-                        active_from, active_until
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        final_prize_catalog_reward_id, active_from, active_until
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (code, title, campaign_type, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
                      int(verification_required), reward_mode, reward_value, reward_from, reward_until,
                      int(referral_enabled), referral_code, referral_amount, referral_delivery_mode, referral_threshold,
-                     int(referral_repeatable), referral_max_rewards,
+                     int(referral_repeatable), referral_max_rewards, final_prize_id,
                      active_from_value, active_until_value),
                 )
                 if campaign_type == "daily_414":
@@ -3810,6 +4378,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jackcoin_per_correct: int = Form(5),
         jackcoin_completion_bonus: int = Form(10),
         jackcoin_perfect_bonus: int = Form(20),
+        final_prize_catalog_reward_id: int = Form(0),
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
@@ -3914,6 +4483,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise ValueError("Количество приглашённых должно быть от 1 до 1000")
                 if referral_max_rewards < 0 or referral_max_rewards > 1000:
                     raise ValueError("Лимит реферальных наград должен быть от 0 до 1000")
+                final_prize_id = validate_final_prize(
+                    conn,
+                    campaign_type=str(row["campaign_type"]),
+                    catalog_reward_id=final_prize_catalog_reward_id,
+                )
                 conn.execute(
                     """
                     UPDATE quiz_campaigns SET title=?, bonus_preference_code=?, bonus_amount=?, reward_delivery_mode=?, pass_score=?,
@@ -3924,7 +4498,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         completion_title=?, completion_text=?, referral_enabled=?, referral_preference_code=?,
                         referral_amount=?, referral_delivery_mode=?, referral_threshold=?, referral_repeatable=?, referral_max_rewards=?,
                         jackcoin_per_correct=?, jackcoin_completion_bonus=?, jackcoin_perfect_bonus=?,
-                        active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
+                        final_prize_catalog_reward_id=?, active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (title, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
@@ -3935,7 +4509,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                      content_values["completion_text"], int(referral_enabled), referral_code, referral_amount, referral_delivery_mode,
                      referral_threshold, int(referral_repeatable), referral_max_rewards,
                      jackcoin_per_correct, jackcoin_completion_bonus, jackcoin_perfect_bonus,
-                     active_from_value, active_until_value, campaign_id),
+                     final_prize_id, active_from_value, active_until_value, campaign_id),
                 )
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
@@ -4181,8 +4755,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as conn:
             campaign = conn.execute(
                 """
-                SELECT qc.*, pt.title AS bonus_title FROM quiz_campaigns qc
-                LEFT JOIN preference_types pt ON pt.code=qc.bonus_preference_code WHERE qc.id=?
+                SELECT qc.*, pt.title AS bonus_title,
+                       vcr.title AS final_prize_title
+                FROM quiz_campaigns qc
+                LEFT JOIN preference_types pt ON pt.code=qc.bonus_preference_code
+                LEFT JOIN vault_catalog_rewards vcr
+                  ON vcr.id=qc.final_prize_catalog_reward_id
+                WHERE qc.id=?
                 """,
                 (campaign_id,),
             ).fetchone()

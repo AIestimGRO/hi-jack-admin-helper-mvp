@@ -91,12 +91,71 @@
 </section>
 {% endif %}
 {% else %}
-<section class="member-card account-panel reward-placeholder">
-  <div class="reward-placeholder-icon">♠</div>
-  <p class="member-eyebrow">Каталог наград</p>
+<section class="member-card account-panel vault-intro">
+  <p class="member-eyebrow">THE VAULT · Хранилище</p>
   <h2>Награды за JACKCOIN</h2>
-  <p class="member-muted">Здесь появятся карточки наград, доступных для обмена, и ваши активные купоны. Механика безопасного QR-погашения подключается отдельным следующим этапом.</p>
-  <div class="reward-tabs-preview"><span class="active">Каталог</span><span>Активные награды</span></div>
+  <p class="member-muted">JACKCOIN нельзя купить или обменять на деньги. Выберите награду — цифровая карта сразу появится ниже.</p>
 </section>
+
+<section class="vault-section">
+  <div class="vault-section-head"><div><p class="member-eyebrow">Каталог наград</p><h2>Доступные награды</h2></div><span>{{ balance }} JC</span></div>
+  <div class="vault-catalog-grid">
+    {% for reward in vault_catalog %}
+      {% set sold_out = reward.inventory_total is not none and reward.allocated_count >= reward.inventory_total %}
+      <article class="member-card vault-catalog-card category-{{ reward.category }} {{ 'sold-out' if sold_out else '' }}">
+        <div class="vault-card-mark">{{ {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'}[reward.category] }}</div>
+        <div class="vault-card-copy">
+          <p class="member-eyebrow">{{ {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'}[reward.category] }}</p>
+          <h3>{{ reward.title }}</h3>
+          <p>{{ reward.description or 'Клубная награда Hi, Jack Club.' }}</p>
+          <small>{% if reward.validity_days %}Действует {{ reward.validity_days }} дн. после получения{% else %}Без срока{% endif %}{% if reward.inventory_total is not none %} · осталось {{ [reward.inventory_total - reward.allocated_count, 0]|max }}{% endif %}</small>
+        </div>
+        <form action="/account/rewards/{{ reward.id }}/purchase" method="post" onsubmit="return confirm('Обменять {{ reward.price_jc }} JC на «{{ reward.title|e }}»?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="purchase_id" value="{{ vault_purchase_tokens[reward.id] }}">
+          <input type="hidden" name="expected_price_jc" value="{{ reward.price_jc }}">
+          <button class="vault-buy-button" type="submit" {% if sold_out or balance < reward.price_jc %}disabled{% endif %}>
+            {% if sold_out %}Тираж закончился{% elif balance < reward.price_jc %}Нужно {{ reward.price_jc }} JC{% else %}Получить за {{ reward.price_jc }} JC{% endif %}
+          </button>
+        </form>
+      </article>
+    {% else %}
+      <div class="member-card vault-empty"><div class="reward-placeholder-icon">♠</div><h3>Хранилище готовится</h3><p class="member-muted">Мастер-администратор ещё не опубликовал награды.</p></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="vault-section">
+  <div class="vault-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>{{ vault_active_rewards|length }}</span></div>
+  <div class="vault-active-grid">
+    {% for reward in vault_active_rewards %}
+    <article class="member-card jack-card category-{{ reward.category }}">
+      <div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'THE VAULT' }}</small></div>
+      <div class="jack-card-main">
+        <div><p class="member-eyebrow">Цифровая карта</p><h3>{{ reward.title }}</h3><strong>{{ reward.code }}</strong></div>
+        <img src="/account/rewards/{{ reward.id }}/qr.png" alt="QR-код карты {{ reward.code }}" loading="lazy">
+      </div>
+      <p>{{ reward.redeem_instructions or 'Покажите QR-код администратору клуба.' }}</p>
+      <small>{% if reward.valid_until %}Действует до {{ reward.valid_until[:16]|replace('T', ' ') }}{% else %}Без срока{% endif %}</small>
+    </article>
+    {% else %}
+    <div class="member-card vault-empty"><h3>Активных карт пока нет</h3><p class="member-muted">Полученные награды появятся здесь вместе с QR-кодом.</p></div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if vault_reward_history %}
+<section class="member-card account-panel">
+  <h2>Сыгранные и завершённые карты</h2>
+  <div class="member-history">
+    {% for reward in vault_reward_history %}
+    <article>
+      <div><strong>{{ reward.title }}</strong><small>{{ reward.code }} · {{ reward.created_at[:16]|replace('T', ' ') }}</small></div>
+      <span>{{ {'redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endif %}
 {% endblock %}

@@ -1,0 +1,513 @@
+import re
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.config import Settings
+from app.db import connect, init_db, transaction
+from app.main import create_app
+from app.services.member_accounts import (
+    MEMBER_COOKIE_NAME,
+    hash_password,
+    issue_session,
+    jackcoin_balance,
+)
+from app.services.vault import (
+    attach_final_table_reward,
+    cancel_reward,
+    create_catalog_reward,
+    expire_rewards,
+    purchase_reward,
+    purchase_token,
+    redeem_reward,
+    valid_purchase_token,
+)
+
+
+def _client(conn, number: int) -> int:
+    return int(
+        conn.execute(
+            "INSERT INTO clients(first_name, source) VALUES (?, 'test')",
+            (f"Игрок {number}",),
+        ).lastrowid
+    )
+
+
+def _catalog(
+    conn,
+    *,
+    code: str = "free_entry",
+    price: int = 1_000,
+    inventory: int | None = None,
+    validity_days: int = 30,
+):
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO admins(
+            id, username, display_name, pin_hash, role
+        ) VALUES (1, 'vault-test', 'Vault Test', 'test', 'master_admin')
+        """
+    )
+    return create_catalog_reward(
+        conn,
+        code=code,
+        title="FREE ENTRY",
+        description="Вход на один турнир клуба",
+        category="entry",
+        price_jc=price,
+        validity_days=validity_days,
+        inventory_total=inventory,
+        redeem_instructions="Покажите карту администратору",
+        position=10,
+        admin_id=1,
+    )
+
+
+def _award_jackcoin(conn, client_id: int, amount: int) -> None:
+    conn.execute(
+        """
+        INSERT INTO jackcoin_ledger(
+            client_id, amount, operation_type, source_type,
+            idempotency_key, comment
+        ) VALUES (?, ?, 'test_award', 'test', ?, 'Тестовое начисление')
+        """,
+        (client_id, amount, f"test-award:{client_id}:{amount}"),
+    )
+
+
+def test_purchase_is_atomic_and_idempotent(tmp_path) -> None:
+    db_path = tmp_path / "vault-purchase.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, price=1_000, inventory=3)
+        _award_jackcoin(conn, client_id, 1_200)
+        first = purchase_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="signed-request-1",
+        )
+        repeated = purchase_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="signed-request-1",
+        )
+
+        assert first["id"] == repeated["id"]
+        assert first["status"] == "active"
+        assert jackcoin_balance(conn, client_id) == 200
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vault_member_rewards"
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jackcoin_ledger WHERE operation_type='vault_purchase'"
+        ).fetchone()[0] == 1
+
+
+def test_purchase_rejects_insufficient_balance_without_partial_card(tmp_path) -> None:
+    db_path = tmp_path / "vault-insufficient.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, price=1_000)
+        _award_jackcoin(conn, client_id, 999)
+        with pytest.raises(ValueError, match="insufficient_jackcoin"):
+            purchase_reward(
+                conn,
+                client_id=client_id,
+                catalog_reward_id=int(catalog["id"]),
+                purchase_id="signed-request-2",
+            )
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vault_member_rewards"
+        ).fetchone()[0] == 0
+        assert jackcoin_balance(conn, client_id) == 999
+
+
+def test_purchase_rejects_price_changed_after_catalog_was_opened(tmp_path) -> None:
+    db_path = tmp_path / "vault-price-change.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, price=350)
+        _award_jackcoin(conn, client_id, 500)
+        conn.execute(
+            "UPDATE vault_catalog_rewards SET price_jc=400 WHERE id=?",
+            (catalog["id"],),
+        )
+        with pytest.raises(ValueError, match="catalog_reward_price_changed"):
+            purchase_reward(
+                conn,
+                client_id=client_id,
+                catalog_reward_id=int(catalog["id"]),
+                purchase_id="old-price-token",
+                expected_price_jc=350,
+            )
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vault_member_rewards"
+        ).fetchone()[0] == 0
+        assert jackcoin_balance(conn, client_id) == 500
+
+
+def test_inventory_and_cancellation_refund_are_transactional(tmp_path) -> None:
+    db_path = tmp_path / "vault-inventory.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        first_client = _client(conn, 1)
+        second_client = _client(conn, 2)
+        catalog = _catalog(conn, price=500, inventory=1)
+        _award_jackcoin(conn, first_client, 500)
+        _award_jackcoin(conn, second_client, 500)
+        first = purchase_reward(
+            conn,
+            client_id=first_client,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="inventory-1",
+        )
+        with pytest.raises(ValueError, match="catalog_reward_sold_out"):
+            purchase_reward(
+                conn,
+                client_id=second_client,
+                catalog_reward_id=int(catalog["id"]),
+                purchase_id="inventory-2",
+            )
+        cancelled = cancel_reward(
+            conn,
+            reward_id=int(first["id"]),
+            admin_id=1,
+            admin_name="Master",
+        )
+        second = purchase_reward(
+            conn,
+            client_id=second_client,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="inventory-2",
+        )
+
+        assert cancelled["status"] == "cancelled"
+        assert jackcoin_balance(conn, first_client) == 500
+        assert second["status"] == "active"
+        assert jackcoin_balance(conn, second_client) == 0
+
+
+def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
+    db_path = tmp_path / "vault-redeem.sqlite3"
+    init_db(db_path)
+    now = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, price=0, validity_days=1)
+        active = purchase_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="redeem-1",
+            now=now,
+        )
+        redeemed = redeem_reward(
+            conn,
+            code=active["code"],
+            admin_id=1,
+            admin_name="Admin",
+            now=now + timedelta(hours=1),
+        )
+        assert redeemed["status"] == "redeemed"
+        with pytest.raises(ValueError, match="vault_reward_redeemed"):
+            redeem_reward(
+                conn,
+                code=active["code"],
+                admin_id=1,
+                admin_name="Admin",
+                now=now + timedelta(hours=2),
+            )
+
+        expiring = purchase_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="expire-1",
+            now=now,
+        )
+        assert expire_rewards(
+            conn, now=now + timedelta(days=2), client_id=client_id
+        ) == 1
+        assert conn.execute(
+            "SELECT status FROM vault_member_rewards WHERE id=?", (expiring["id"],)
+        ).fetchone()[0] == "expired"
+
+
+def test_final_table_prize_is_issued_once(tmp_path) -> None:
+    db_path = tmp_path / "vault-final-prize.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, code="final_prize", price=1_200, inventory=1)
+        conn.execute(
+            """
+            INSERT INTO quiz_campaigns(
+                code, title, campaign_type, final_prize_catalog_reward_id
+            ) VALUES ('daily_final_prize', '4:14 финал', 'daily_414', ?)
+            """,
+            (catalog["id"],),
+        )
+        submission_id = int(
+            conn.execute(
+                """
+                INSERT INTO quiz_submissions(
+                    campaign_code, client_id, phone_raw, phone_local,
+                    answers_json, ip_hash
+                ) VALUES ('daily_final_prize', ?, '', '', '{}', 'test')
+                """,
+                (client_id,),
+            ).lastrowid
+        )
+        table_id = int(
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_tables(
+                    campaign_code, campaign_version, starts_at,
+                    questions_snapshot_json, prize_catalog_reward_id,
+                    status, winner_submission_id,
+                    completed_at
+                ) VALUES (
+                    'daily_final_prize', 1, '2026-08-03T18:23:14+00:00',
+                    '[]', ?, 'completed', ?, CURRENT_TIMESTAMP
+                )
+                """,
+                (catalog["id"], submission_id),
+            ).lastrowid
+        )
+        replacement = _catalog(
+            conn, code="replacement_prize", price=600, inventory=1
+        )
+        conn.execute(
+            """
+            UPDATE quiz_campaigns SET final_prize_catalog_reward_id=?
+            WHERE code='daily_final_prize'
+            """,
+            (replacement["id"],),
+        )
+        first = attach_final_table_reward(conn, final_table_id=table_id)
+        repeated = attach_final_table_reward(conn, final_table_id=table_id)
+
+        assert first is not None
+        assert first["id"] == repeated["id"]
+        assert first["source_type"] == "final_prize"
+        assert first["catalog_reward_id"] == catalog["id"]
+        assert first["price_paid_jc"] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vault_member_rewards"
+        ).fetchone()[0] == 1
+
+
+def test_purchase_token_is_bound_to_account_and_reward() -> None:
+    token = purchase_token(
+        "s" * 32,
+        account_id=7,
+        catalog_reward_id=11,
+        price_jc=350,
+        nonce="fixed",
+    )
+    assert valid_purchase_token(
+        "s" * 32, token, account_id=7, catalog_reward_id=11, price_jc=350
+    )
+    assert not valid_purchase_token(
+        "s" * 32, token, account_id=8, catalog_reward_id=11, price_jc=350
+    )
+    assert not valid_purchase_token(
+        "s" * 32, token, account_id=7, catalog_reward_id=12, price_jc=350
+    )
+    assert not valid_purchase_token(
+        "s" * 32, token, account_id=7, catalog_reward_id=11, price_jc=400
+    )
+
+
+def test_vault_tables_are_added_without_touching_existing_jackcoin(tmp_path) -> None:
+    db_path = tmp_path / "vault-migration.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        _award_jackcoin(conn, client_id, 321)
+    init_db(db_path)
+    with connect(db_path) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert {
+            "vault_catalog_rewards",
+            "vault_member_rewards",
+            "vault_reward_events",
+        }.issubset(tables)
+        assert jackcoin_balance(conn, client_id) == 321
+
+
+def _csrf(response) -> str:
+    match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
+    assert match
+    return match.group(1)
+
+
+def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
+    settings = Settings(
+        admin_pin="2468",
+        admin_name="Vault Master",
+        secret_key="vault-route-secret-key-that-is-longer-than-32-characters",
+        db_path=tmp_path / "vault-routes.sqlite3",
+        secure_cookie=False,
+        member_portal_enabled=True,
+        public_base_url="https://club.example.test",
+        quiz_public_base_url="https://quiz.example.test",
+    )
+    client = TestClient(create_app(settings), base_url=settings.public_base_url)
+    captured: dict[str, str] = {}
+
+    class FakeQr:
+        def save(self, output, format):
+            output.write(b"vault-qr")
+
+    def fake_qr(value, **kwargs):
+        captured["value"] = value
+        return FakeQr()
+
+    monkeypatch.setattr("app.main_impl.qrcode.make", fake_qr)
+    with client:
+        with transaction(settings.db_path) as conn:
+            member_client_id = _client(conn, 1)
+            account_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO member_accounts(
+                        client_id, email, email_normalized, password_hash,
+                        email_verified_at
+                    ) VALUES (?, 'vault@example.test', 'vault@example.test', ?,
+                              CURRENT_TIMESTAMP)
+                    """,
+                    (member_client_id, hash_password("abcdef")),
+                ).lastrowid
+            )
+            for document in conn.execute(
+                "SELECT * FROM legal_documents WHERE is_active=1"
+            ).fetchall():
+                conn.execute(
+                    """
+                    INSERT INTO member_consents(
+                        account_id, document_id, document_code,
+                        document_version, ip_hash, user_agent
+                    ) VALUES (?, ?, ?, ?, 'test', 'pytest')
+                    """,
+                    (
+                        account_id,
+                        document["id"],
+                        document["code"],
+                        document["version"],
+                    ),
+                )
+            _award_jackcoin(conn, member_client_id, 500)
+            member_token = issue_session(
+                conn,
+                secret_key=settings.secret_key,
+                account_id=account_id,
+                session_version=1,
+                days=30,
+                ip_hash="test",
+                user_agent="pytest",
+            )
+        client.cookies.set(MEMBER_COOKIE_NAME, member_token)
+
+        login_page = client.get("/login")
+        login = client.post(
+            "/login",
+            data={
+                "username": "master",
+                "pin": "2468",
+                "csrf_token": _csrf(login_page),
+            },
+            follow_redirects=False,
+        )
+        assert login.status_code == 303
+        vault_page = client.get("/admin/vault")
+        assert vault_page.status_code == 200
+        assert "THE VAULT" in vault_page.text
+        created = client.post(
+            "/api/vault/catalog/create",
+            data={
+                "code": "coffee",
+                "title": "Капучино",
+                "category": "drink",
+                "price_jc": "350",
+                "validity_days": "7",
+                "inventory_total": "2",
+                "position": "10",
+                "csrf_token": _csrf(vault_page),
+            },
+            follow_redirects=False,
+        )
+        assert created.status_code == 303
+
+        campaigns_page = client.get("/master?tab=campaigns")
+        campaign_created = client.post(
+            "/api/master/quiz-campaigns/create",
+            data={
+                "code": "vault_daily",
+                "title": "4:14 с главным призом",
+                "campaign_type": "daily_414",
+                "final_prize_catalog_reward_id": "1",
+                "csrf_token": _csrf(campaigns_page),
+            },
+            follow_redirects=False,
+        )
+        assert campaign_created.status_code == 303
+        with connect(settings.db_path) as conn:
+            assert conn.execute(
+                """
+                SELECT final_prize_catalog_reward_id
+                FROM quiz_campaigns WHERE code='vault_daily'
+                """
+            ).fetchone()[0] == 1
+
+        member_page = client.get("/account?tab=rewards")
+        assert member_page.status_code == 200
+        assert "Капучино" in member_page.text
+        purchase_match = re.search(
+            r'name="purchase_id" value="([^"]+)"', member_page.text
+        )
+        assert purchase_match
+        purchase = client.post(
+            "/account/rewards/1/purchase",
+            data={
+                "purchase_id": purchase_match.group(1),
+                "expected_price_jc": "350",
+                "csrf_token": _csrf(member_page),
+            },
+            follow_redirects=False,
+        )
+        assert purchase.status_code == 303
+        assert "tab=rewards" in purchase.headers["location"]
+
+        active_page = client.get("/account?tab=rewards")
+        assert "JC-" in active_page.text
+        with connect(settings.db_path) as conn:
+            card = conn.execute("SELECT * FROM vault_member_rewards").fetchone()
+            assert jackcoin_balance(conn, member_client_id) == 150
+        qr = client.get(f"/account/rewards/{card['id']}/qr.png")
+        assert qr.status_code == 200
+        assert qr.content == b"vault-qr"
+        assert captured["value"].endswith(f"/admin/vault?code={card['code']}")
+
+        redeem_page = client.get(f"/admin/vault?code={card['code']}")
+        redeemed = client.post(
+            "/api/vault/redeem",
+            data={"code": card["code"], "csrf_token": _csrf(redeem_page)},
+            follow_redirects=False,
+        )
+        assert redeemed.status_code == 303
+        with connect(settings.db_path) as conn:
+            assert conn.execute(
+                "SELECT status FROM vault_member_rewards WHERE id=?", (card["id"],)
+            ).fetchone()[0] == "redeemed"

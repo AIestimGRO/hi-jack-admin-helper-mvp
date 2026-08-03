@@ -22,6 +22,7 @@
         <span>Бонус <strong>{{ campaign.bonus_title or 'не назначен' }}</strong></span>
         {% if campaign.campaign_type == 'daily_414' %}
         <span>JACKCOIN <strong>{{ campaign.jackcoin_per_correct }} за ответ · {{ campaign.jackcoin_completion_bonus }} за финиш · {{ campaign.jackcoin_perfect_bonus }} за 10/10</strong></span>
+        <span>Главный приз <strong>{{ campaign.final_prize_title or 'не назначен' }}</strong></span>
         {% endif %}
       </div>
       <div class="hj-hero-actions">

@@ -88,6 +88,7 @@
       <label>За каждый правильный ответ<input name="jackcoin_per_correct" type="number" min="0" max="10000" value="5"></label>
       <label>За завершение игры<input name="jackcoin_completion_bonus" type="number" min="0" max="10000" value="10"></label>
       <label>Дополнительно за 10/10<input name="jackcoin_perfect_bonus" type="number" min="0" max="10000" value="20"></label>
+      <label>Главный приз финального стола<select name="final_prize_catalog_reward_id"><option value="0">Не назначен</option>{% for reward in vault_catalog_rewards %}<option value="{{ reward.id }}">{{ reward.title }} · {{ reward.price_jc }} JC{{ ' · отключена' if not reward.is_active else '' }}</option>{% endfor %}</select></label>
       <p class="muted">Итого при 10/10 с этими настройками: 80 JC без учёта бонуса за серию дней.</p>
     </fieldset>
     <fieldset class="campaign-referral-fields">
@@ -146,6 +147,7 @@
           <label>За каждый правильный ответ<input name="jackcoin_per_correct" type="number" min="0" max="10000" value="{{ campaign.jackcoin_per_correct }}"></label>
           <label>За завершение игры<input name="jackcoin_completion_bonus" type="number" min="0" max="10000" value="{{ campaign.jackcoin_completion_bonus }}"></label>
           <label>Дополнительно за 10/10<input name="jackcoin_perfect_bonus" type="number" min="0" max="10000" value="{{ campaign.jackcoin_perfect_bonus }}"></label>
+          <label>Главный приз финального стола<select name="final_prize_catalog_reward_id"><option value="0">Не назначен</option>{% for reward in vault_catalog_rewards %}<option value="{{ reward.id }}" {% if campaign.final_prize_catalog_reward_id==reward.id %}selected{% endif %}>{{ reward.title }} · {{ reward.price_jc }} JC{{ ' · отключена' if not reward.is_active else '' }}</option>{% endfor %}</select></label>
           <p class="muted">Настройка относится только к этому выпуску. Бонус за серию дней начисляется отдельно.</p>
         </fieldset>
         {% endif %}

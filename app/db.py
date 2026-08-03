@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     jackcoin_per_correct INTEGER NOT NULL DEFAULT 5 CHECK(jackcoin_per_correct >= 0),
     jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10 CHECK(jackcoin_completion_bonus >= 0),
     jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20 CHECK(jackcoin_perfect_bonus >= 0),
+    final_prize_catalog_reward_id INTEGER,
     welcome_kicker TEXT NOT NULL DEFAULT 'Короткий опрос клуба',
     welcome_text TEXT NOT NULL DEFAULT 'Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.',
     start_button_text TEXT NOT NULL DEFAULT 'Начать',
@@ -486,6 +487,68 @@ CREATE TABLE IF NOT EXISTS jackcoin_ledger (
 );
 CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_client ON jackcoin_ledger(client_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS vault_catalog_rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'club'
+        CHECK(category IN ('club', 'drink', 'entry', 'card', 'profile', 'protection')),
+    price_jc INTEGER NOT NULL CHECK(price_jc >= 0),
+    validity_days INTEGER NOT NULL DEFAULT 30 CHECK(validity_days >= 0),
+    inventory_total INTEGER CHECK(inventory_total IS NULL OR inventory_total >= 0),
+    redeem_instructions TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    position INTEGER NOT NULL DEFAULT 100,
+    created_by_admin_id INTEGER REFERENCES admins(id),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_vault_catalog_active
+    ON vault_catalog_rewards(is_active, position, id);
+
+CREATE TABLE IF NOT EXISTS vault_member_rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    catalog_reward_id INTEGER NOT NULL REFERENCES vault_catalog_rewards(id),
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL
+        CHECK(source_type IN ('purchase', 'final_prize', 'admin')),
+    source_id TEXT,
+    price_paid_jc INTEGER NOT NULL DEFAULT 0 CHECK(price_paid_jc >= 0),
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'redeemed', 'expired', 'cancelled')),
+    valid_from TEXT NOT NULL,
+    valid_until TEXT,
+    redeemed_at TEXT,
+    redeemed_by_admin_id INTEGER REFERENCES admins(id),
+    cancelled_at TEXT,
+    cancelled_by_admin_id INTEGER REFERENCES admins(id),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_vault_member_client
+    ON vault_member_rewards(client_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_vault_member_catalog
+    ON vault_member_rewards(catalog_reward_id, status);
+CREATE INDEX IF NOT EXISTS ix_vault_member_status
+    ON vault_member_rewards(status, valid_until);
+
+CREATE TABLE IF NOT EXISTS vault_reward_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_reward_id INTEGER REFERENCES vault_member_rewards(id) ON DELETE SET NULL,
+    catalog_reward_id INTEGER REFERENCES vault_catalog_rewards(id) ON DELETE SET NULL,
+    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+    code TEXT NOT NULL,
+    action TEXT NOT NULL,
+    admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+    admin_name TEXT NOT NULL DEFAULT 'system',
+    details TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_vault_reward_events_created
+    ON vault_reward_events(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS daily_414_progress (
     client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
     current_streak INTEGER NOT NULL DEFAULT 0,
@@ -500,10 +563,13 @@ CREATE TABLE IF NOT EXISTS daily_414_final_tables (
     campaign_version INTEGER NOT NULL,
     starts_at TEXT NOT NULL,
     questions_snapshot_json TEXT NOT NULL,
+    prize_catalog_reward_id INTEGER REFERENCES vault_catalog_rewards(id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'waiting'
         CHECK(status IN ('waiting', 'live', 'completed', 'unavailable')),
     current_question_index INTEGER NOT NULL DEFAULT 0,
     winner_submission_id INTEGER REFERENCES quiz_submissions(id) ON DELETE SET NULL,
+    winner_reward_id INTEGER REFERENCES vault_member_rewards(id) ON DELETE SET NULL,
+    winner_reward_error TEXT,
     completed_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -661,6 +727,7 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_campaigns", "jackcoin_per_correct INTEGER NOT NULL DEFAULT 5")
         _ensure_column(conn, "quiz_campaigns", "jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10")
         _ensure_column(conn, "quiz_campaigns", "jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20")
+        _ensure_column(conn, "quiz_campaigns", "final_prize_catalog_reward_id INTEGER")
         _ensure_column(conn, "quiz_campaigns", "welcome_kicker TEXT NOT NULL DEFAULT 'Короткий опрос клуба'")
         _ensure_column(conn, "quiz_campaigns", "welcome_text TEXT NOT NULL DEFAULT 'Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.'")
         _ensure_column(conn, "quiz_campaigns", "start_button_text TEXT NOT NULL DEFAULT 'Начать'")
@@ -698,6 +765,9 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_reward_codes", "campaign_version INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "quiz_reward_codes", "reward_kind TEXT NOT NULL DEFAULT 'quiz'")
         _ensure_column(conn, "quiz_reward_codes", "referral_milestone INTEGER")
+        _ensure_column(conn, "daily_414_final_tables", "winner_reward_id INTEGER")
+        _ensure_column(conn, "daily_414_final_tables", "winner_reward_error TEXT")
+        _ensure_column(conn, "daily_414_final_tables", "prize_catalog_reward_id INTEGER")
         _ensure_column(conn, "quiz_questions", "time_limit_seconds INTEGER")
         _ensure_column(conn, "quiz_submissions", "attempt_id INTEGER")
         _ensure_column(conn, "quiz_attempts", "attempt_deadline_at TEXT")
