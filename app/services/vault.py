@@ -14,6 +14,7 @@ from app.services.member_accounts import jackcoin_balance
 
 CATALOG_CODE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,49}$")
 CARD_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+ACTIVATION_CODE_LENGTH = 4
 CATALOG_CATEGORIES = frozenset(
     {"club", "drink", "entry", "card", "profile", "protection"}
 )
@@ -213,6 +214,20 @@ def _new_card_code(conn: sqlite3.Connection) -> str:
         ).fetchone():
             return code
     raise RuntimeError("vault_code_generation_failed")
+
+
+def _new_activation_code(conn: sqlite3.Connection) -> str:
+    for _ in range(100):
+        code = f"{secrets.randbelow(10 ** ACTIVATION_CODE_LENGTH):0{ACTIVATION_CODE_LENGTH}d}"
+        if not conn.execute(
+            """
+            SELECT 1 FROM vault_member_rewards
+            WHERE activation_code=? AND status='active'
+            """,
+            (code,),
+        ).fetchone():
+            return code
+    raise RuntimeError("vault_activation_code_generation_failed")
 
 
 def purchase_token(
@@ -416,6 +431,56 @@ def purchase_reward(
     return reward
 
 
+def activate_reward(
+    conn: sqlite3.Connection,
+    *,
+    reward_id: int,
+    client_id: int,
+    now: datetime | None = None,
+) -> sqlite3.Row:
+    reward = conn.execute(
+        """
+        SELECT * FROM vault_member_rewards
+        WHERE id=? AND client_id=?
+        """,
+        (reward_id, client_id),
+    ).fetchone()
+    if not reward:
+        raise ValueError("vault_reward_not_found")
+    if reward["status"] != "active":
+        raise ValueError(f"vault_reward_{reward['status']}")
+    current = _utc_now(now)
+    valid_from = datetime.fromisoformat(str(reward["valid_from"]))
+    valid_until = (
+        datetime.fromisoformat(str(reward["valid_until"]))
+        if reward["valid_until"]
+        else None
+    )
+    if current < _utc_now(valid_from):
+        raise ValueError("vault_reward_not_started")
+    if valid_until and current > _utc_now(valid_until):
+        raise ValueError("vault_reward_expired")
+    if reward["activated_at"] and reward["activation_code"]:
+        return reward
+    activation_code = _new_activation_code(conn)
+    conn.execute(
+        """
+        UPDATE vault_member_rewards
+        SET activation_code=?, activated_at=?
+        WHERE id=? AND client_id=? AND status='active'
+          AND activated_at IS NULL
+        """,
+        (activation_code, _timestamp(current), reward_id, client_id),
+    )
+    updated = conn.execute(
+        "SELECT * FROM vault_member_rewards WHERE id=?", (reward_id,)
+    ).fetchone()
+    if not updated or not updated["activated_at"] or not updated["activation_code"]:
+        raise RuntimeError("vault_reward_activation_failed")
+    _insert_event(conn, reward=updated, action="activated")
+    return updated
+
+
 def expire_rewards(
     conn: sqlite3.Connection,
     *,
@@ -451,12 +516,20 @@ def redeem_reward(
 ) -> sqlite3.Row:
     normalized = str(code or "").strip().upper()
     reward = conn.execute(
-        "SELECT * FROM vault_member_rewards WHERE code=?", (normalized,)
+        """
+        SELECT * FROM vault_member_rewards
+        WHERE code=? OR activation_code=?
+        ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END, id DESC
+        LIMIT 1
+        """,
+        (normalized, normalized),
     ).fetchone()
     if not reward:
         raise ValueError("vault_reward_not_found")
     if reward["status"] != "active":
         raise ValueError(f"vault_reward_{reward['status']}")
+    if not reward["activated_at"] or not reward["activation_code"]:
+        raise ValueError("vault_reward_not_activated")
     current = _utc_now(now)
     valid_from = datetime.fromisoformat(str(reward["valid_from"]))
     valid_until = (

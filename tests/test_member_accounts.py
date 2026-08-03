@@ -715,6 +715,13 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         legacy_vault = client.get("/account?tab=rewards")
         assert 'data-account-tab="vault"' in legacy_vault.text
 
+        with transaction(settings.db_path) as conn:
+            conn.execute("UPDATE quiz_campaigns SET is_active=0")
+        empty_quizzes = client.get("/account?tab=quizzes")
+        assert "Активных квизов пока нет" in empty_quizzes.text
+        assert "Играй, поднимайся в рейтинге" not in empty_quizzes.text
+        assert "<h1>Квизы</h1>" not in empty_quizzes.text
+
 
 def seed_daily_campaign(settings: Settings) -> None:
     local_now = datetime.now(ZoneInfo(settings.timezone_name)).replace(

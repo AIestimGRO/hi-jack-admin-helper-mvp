@@ -8,6 +8,11 @@
   --app-accent: #31dbc5;
   --app-accent-strong: #19bea9;
   --app-accent-dark: #0e6f65;
+  --app-ocean: #08779b;
+  --app-ocean-dark: #023b4d;
+  --app-copper: #b6530c;
+  --app-gold: #a98619;
+  --app-graphite: #3a3c3b;
   --app-black: #07100f;
 }
 
@@ -84,6 +89,36 @@
 .member-app-page .member-eyebrow {
   color: var(--app-accent);
   letter-spacing: 1.8px;
+}
+
+.member-app-page .category-drink {
+  --reward-accent: var(--app-copper);
+  --reward-soft: rgba(182, 83, 12, .15);
+}
+
+.member-app-page .category-entry {
+  --reward-accent: var(--app-ocean);
+  --reward-soft: rgba(8, 119, 155, .17);
+}
+
+.member-app-page .category-card {
+  --reward-accent: var(--app-gold);
+  --reward-soft: rgba(169, 134, 25, .16);
+}
+
+.member-app-page .category-profile {
+  --reward-accent: #aeb3b1;
+  --reward-soft: rgba(174, 179, 177, .12);
+}
+
+.member-app-page .category-protection {
+  --reward-accent: #b86b3f;
+  --reward-soft: rgba(184, 107, 63, .14);
+}
+
+.member-app-page .category-club {
+  --reward-accent: var(--app-accent);
+  --reward-soft: rgba(49, 219, 197, .12);
 }
 
 .app-page-heading {
@@ -240,6 +275,11 @@
   background: rgba(49, 219, 197, .12);
   color: var(--app-accent);
   font-size: 19px;
+}
+
+.active-card-preview .active-card-suit {
+  background: var(--reward-soft, rgba(49, 219, 197, .12));
+  color: var(--reward-accent, var(--app-accent));
 }
 
 .account-nudge span:nth-child(2),
@@ -404,8 +444,8 @@
 }
 
 .live-status.upcoming {
-  background: rgba(255, 255, 255, .07);
-  color: #c7d1cf;
+  background: rgba(8, 119, 155, .16);
+  color: #74d2ee;
 }
 
 .quiz-feature-copy h3 {
@@ -479,6 +519,19 @@
   min-width: 320px;
 }
 
+.quiz-empty {
+  justify-content: center;
+  min-height: 92px;
+  border-color: rgba(8, 119, 155, .2);
+  background: linear-gradient(135deg, rgba(8, 119, 155, .1), rgba(255, 255, 255, .025));
+  text-align: center;
+}
+
+.quiz-empty h3 {
+  color: #dce9e7;
+  font-size: 16px;
+}
+
 .home-reward-rail {
   display: grid;
   grid-auto-columns: minmax(190px, 1fr);
@@ -516,8 +569,14 @@
     linear-gradient(145deg, #18312e, #0e1d1b);
 }
 
+.reward-visual[class*="category-"] {
+  background:
+    radial-gradient(circle at 70% 20%, rgba(255, 255, 255, .13), transparent 30%),
+    linear-gradient(145deg, var(--reward-soft), #0e1716);
+}
+
 .reward-visual span {
-  color: var(--app-accent);
+  color: var(--reward-accent, var(--app-accent));
   font-size: 44px;
   font-weight: 950;
 }
@@ -640,6 +699,19 @@
     var(--app-surface);
 }
 
+.campaign-card.upcoming {
+  border-color: rgba(8, 119, 155, .24);
+  background:
+    radial-gradient(circle at 95% 0, rgba(8, 119, 155, .18), transparent 38%),
+    var(--app-surface);
+}
+
+.campaign-card.upcoming .campaign-card-symbol {
+  border-color: rgba(8, 119, 155, .3);
+  background: rgba(8, 119, 155, .13);
+  color: #74d2ee;
+}
+
 .campaign-card-symbol {
   display: grid;
   place-items: center;
@@ -740,9 +812,9 @@
 }
 
 .member-app-page .vault-card-mark {
-  border-color: rgba(49, 219, 197, .2);
-  background: rgba(49, 219, 197, .08);
-  color: var(--app-accent);
+  border-color: var(--reward-soft, rgba(49, 219, 197, .2));
+  background: var(--reward-soft, rgba(49, 219, 197, .08));
+  color: var(--reward-accent, var(--app-accent));
 }
 
 .member-app-page .vault-buy-button {
@@ -760,12 +832,47 @@
 .member-app-page .jack-card {
   scroll-margin-top: 90px;
   background:
-    radial-gradient(circle at 95% 5%, rgba(49, 219, 197, .28), transparent 38%),
+    radial-gradient(circle at 95% 5%, var(--reward-soft, rgba(49, 219, 197, .28)), transparent 38%),
     linear-gradient(135deg, #17211f, #0b100f 68%);
 }
 
 .member-app-page .jack-card-top small {
-  color: var(--app-accent);
+  color: var(--reward-accent, var(--app-accent));
+}
+
+.reward-activate-button {
+  min-width: 150px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid var(--reward-accent, var(--app-accent));
+  border-radius: 14px;
+  background: var(--reward-accent, var(--app-accent));
+  color: #07100f;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.reward-activation-code {
+  display: inline-block;
+  padding: 9px 13px 9px 19px;
+  border: 1px solid var(--reward-soft, rgba(49, 219, 197, .2));
+  border-radius: 13px;
+  background: var(--reward-soft, rgba(49, 219, 197, .1));
+  color: var(--reward-accent, var(--app-accent));
+  font-size: 31px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 7px;
+  line-height: 1;
+}
+
+.jack-card.awaiting-activation .jack-card-main {
+  align-items: flex-end;
+}
+
+.jack-card.awaiting-activation > p {
+  max-width: 100%;
 }
 
 .profile-heading {

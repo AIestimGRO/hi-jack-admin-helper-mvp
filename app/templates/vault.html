@@ -17,7 +17,7 @@
   <div><p class="eyebrow">Выдача в клубе</p><h2>Погасить цифровую карту</h2><p class="muted">Сканирование QR только подставляет код. Награда списывается после подтверждения администратором.</p></div>
   <form action="/api/vault/redeem" method="post" onsubmit="return confirm('Погасить эту карту? Повторное использование будет невозможно.');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input name="code" value="{{ filters.code }}" maxlength="20" autocomplete="off" placeholder="JC-XXXX-XXXX" required autofocus>
+    <input name="code" value="{{ filters.code }}" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="4 цифры или QR" required autofocus>
     <button class="primary" type="submit">Погасить карту</button>
   </form>
 </section>
@@ -77,7 +77,7 @@
 
 <div class="section-head"><h2>Выданные карты</h2></div>
 <form class="card filters vault-filters" method="get">
-  <input name="code" value="{{ filters.code }}" placeholder="Поиск по коду">
+  <input name="code" value="{{ filters.code }}" placeholder="4-значный код или QR">
   <select name="status"><option value="">Все статусы</option><option value="active" {% if filters.status=='active' %}selected{% endif %}>Активна</option><option value="redeemed" {% if filters.status=='redeemed' %}selected{% endif %}>Сыграна</option><option value="expired" {% if filters.status=='expired' %}selected{% endif %}>Истекла</option><option value="cancelled" {% if filters.status=='cancelled' %}selected{% endif %}>Отменена</option></select>
   <button class="button" type="submit">Найти</button>
 </form>
@@ -88,7 +88,7 @@
     <tbody>
     {% for reward in rewards %}
       <tr>
-        <td><strong class="reward-code-cell">{{ reward.code }}</strong><small>{{ reward.created_at }}</small></td>
+        <td><strong class="reward-code-cell">{{ reward.activation_code or 'Не активирована' }}</strong><small>{{ reward.created_at }}</small></td>
         <td><a href="/clients/{{ reward.client_id }}">{{ reward.first_name or reward.nickname or ('@' ~ reward.username if reward.username else 'Клиент #' ~ reward.client_id) }}</a><small>{{ display_phone(reward.phone_local, reward.phone_raw) }}</small></td>
         <td>{{ reward.title }}<small>{% if reward.price_paid_jc %}{{ reward.price_paid_jc }} JC{% else %}Без списания JC{% endif %}</small></td>
         <td>{{ {'purchase':'Покупка','final_prize':'Главный приз','admin':'Администратор'}[reward.source_type] }}</td>

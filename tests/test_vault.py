@@ -14,6 +14,7 @@ from app.services.member_accounts import (
     jackcoin_balance,
 )
 from app.services.vault import (
+    activate_reward,
     attach_final_table_reward,
     cancel_reward,
     create_catalog_reward,
@@ -199,6 +200,7 @@ def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
     now = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
     with transaction(db_path) as conn:
         client_id = _client(conn, 1)
+        other_client_id = _client(conn, 2)
         catalog = _catalog(conn, price=0, validity_days=1)
         active = purchase_reward(
             conn,
@@ -207,9 +209,44 @@ def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
             purchase_id="redeem-1",
             now=now,
         )
+        with pytest.raises(ValueError, match="vault_reward_not_activated"):
+            redeem_reward(
+                conn,
+                code=active["code"],
+                admin_id=1,
+                admin_name="Admin",
+                now=now + timedelta(minutes=30),
+            )
+        with pytest.raises(ValueError, match="vault_reward_not_found"):
+            activate_reward(
+                conn,
+                reward_id=int(active["id"]),
+                client_id=other_client_id,
+                now=now + timedelta(minutes=40),
+            )
+        activated = activate_reward(
+            conn,
+            reward_id=int(active["id"]),
+            client_id=client_id,
+            now=now + timedelta(minutes=45),
+        )
+        assert re.fullmatch(r"\d{4}", activated["activation_code"])
+        assert activate_reward(
+            conn,
+            reward_id=int(active["id"]),
+            client_id=client_id,
+            now=now + timedelta(minutes=50),
+        )["activation_code"] == activated["activation_code"]
+        assert conn.execute(
+            """
+            SELECT COUNT(*) FROM vault_reward_events
+            WHERE member_reward_id=? AND action='activated'
+            """,
+            (active["id"],),
+        ).fetchone()[0] == 1
         redeemed = redeem_reward(
             conn,
-            code=active["code"],
+            code=activated["activation_code"],
             admin_id=1,
             admin_name="Admin",
             now=now + timedelta(hours=1),
@@ -223,6 +260,27 @@ def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
                 admin_name="Admin",
                 now=now + timedelta(hours=2),
             )
+
+        qr_reward = purchase_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            purchase_id="redeem-by-qr",
+            now=now,
+        )
+        activate_reward(
+            conn,
+            reward_id=int(qr_reward["id"]),
+            client_id=client_id,
+            now=now + timedelta(minutes=10),
+        )
+        assert redeem_reward(
+            conn,
+            code=qr_reward["code"],
+            admin_id=1,
+            admin_name="Admin",
+            now=now + timedelta(minutes=20),
+        )["status"] == "redeemed"
 
         expiring = purchase_reward(
             conn,
@@ -488,22 +546,45 @@ def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
             follow_redirects=False,
         )
         assert purchase.status_code == 303
-        assert "tab=rewards" in purchase.headers["location"]
+        assert "tab=vault" in purchase.headers["location"]
 
         active_page = client.get("/account?tab=rewards")
-        assert "JC-" in active_page.text
+        assert "Активировать" in active_page.text
         with connect(settings.db_path) as conn:
             card = conn.execute("SELECT * FROM vault_member_rewards").fetchone()
             assert jackcoin_balance(conn, member_client_id) == 150
+            assert card["activation_code"] is None
+        assert card["code"] not in active_page.text
+        blocked_qr = client.get(f"/account/rewards/{card['id']}/qr.png")
+        assert blocked_qr.status_code == 409
+
+        activated = client.post(
+            f"/account/rewards/{card['id']}/activate",
+            data={"csrf_token": _csrf(active_page)},
+            follow_redirects=False,
+        )
+        assert activated.status_code == 303
+        assert "tab=vault" in activated.headers["location"]
+        with connect(settings.db_path) as conn:
+            card = conn.execute("SELECT * FROM vault_member_rewards").fetchone()
+            assert re.fullmatch(r"\d{4}", card["activation_code"])
+            assert card["activated_at"]
+        activated_page = client.get("/account?tab=vault")
+        assert card["activation_code"] in activated_page.text
+        assert card["code"] not in activated_page.text
         qr = client.get(f"/account/rewards/{card['id']}/qr.png")
         assert qr.status_code == 200
         assert qr.content == b"vault-qr"
         assert captured["value"].endswith(f"/admin/vault?code={card['code']}")
 
-        redeem_page = client.get(f"/admin/vault?code={card['code']}")
+        redeem_page = client.get(f"/admin/vault?code={card['activation_code']}")
+        assert card["activation_code"] in redeem_page.text
         redeemed = client.post(
             "/api/vault/redeem",
-            data={"code": card["code"], "csrf_token": _csrf(redeem_page)},
+            data={
+                "code": card["activation_code"],
+                "csrf_token": _csrf(redeem_page),
+            },
             follow_redirects=False,
         )
         assert redeemed.status_code == 303

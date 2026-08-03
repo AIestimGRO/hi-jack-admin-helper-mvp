@@ -104,6 +104,7 @@ from app.services.quiz_retention import cleanup_quiz_data
 from app.services.quiz_rewards import issue_referral_reward, issue_reward, redeem_reward, render_campaign_text
 from app.services.telegram_oidc import authorization_url, exchange_telegram_code, new_pkce
 from app.services.vault import (
+    activate_reward as activate_vault_reward,
     attach_final_table_reward,
     cancel_reward as cancel_vault_reward,
     create_catalog_reward,
@@ -1751,7 +1752,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def vault_member_redirect(message: str, *, error: bool = False) -> RedirectResponse:
         parameter = "error" if error else "ok"
         return RedirectResponse(
-            f"/account?{urlencode({'tab': 'rewards', parameter: message})}",
+            f"/account?{urlencode({'tab': 'vault', parameter: message})}",
             status_code=303,
         )
 
@@ -1806,8 +1807,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 messages.get(str(exc), "Не удалось получить награду"), error=True
             )
         return vault_member_redirect(
-            f"Карта «{title}» добавлена в активные награды. Код: {reward['code']}"
+            f"Карта «{title}» добавлена в активные награды"
         )
+
+    @app.post("/account/rewards/{member_reward_id:int}/activate")
+    async def member_activate_vault_reward(
+        request: Request,
+        member_reward_id: int,
+        csrf_token: str = Form(...),
+    ):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                expire_vault_rewards(conn, client_id=int(member["client_id"]))
+                reward = activate_vault_reward(
+                    conn,
+                    reward_id=member_reward_id,
+                    client_id=int(member["client_id"]),
+                )
+                title = conn.execute(
+                    "SELECT title FROM vault_catalog_rewards WHERE id=?",
+                    (reward["catalog_reward_id"],),
+                ).fetchone()[0]
+        except ValueError as exc:
+            messages = {
+                "vault_reward_not_found": "Награда не найдена",
+                "vault_reward_redeemed": "Эта награда уже выдана",
+                "vault_reward_expired": "Срок действия награды истёк",
+                "vault_reward_cancelled": "Награда отменена",
+                "vault_reward_not_started": "Срок действия награды ещё не начался",
+            }
+            return vault_member_redirect(
+                messages.get(str(exc), "Не удалось активировать награду"), error=True
+            )
+        return vault_member_redirect(f"Награда «{title}» активирована")
 
     @app.get("/account/rewards/{member_reward_id:int}/qr.png")
     async def member_vault_reward_qr(request: Request, member_reward_id: int):
@@ -1827,6 +1862,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Награда не найдена")
         if reward["status"] != "active":
             raise HTTPException(status_code=410, detail="Карта уже не активна")
+        if not reward["activated_at"] or not reward["activation_code"]:
+            raise HTTPException(
+                status_code=409, detail="Сначала активируйте награду"
+            )
         if reward["valid_until"] and utc_now() > datetime.fromisoformat(
             str(reward["valid_until"])
         ).astimezone(timezone.utc):
@@ -3137,7 +3176,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if table["winner_reward_id"]:
                         winner_reward = conn.execute(
                             """
-                            SELECT vmr.code, vcr.title
+                            SELECT vmr.activation_code, vcr.title
                             FROM vault_member_rewards vmr
                             JOIN vault_catalog_rewards vcr
                               ON vcr.id=vmr.catalog_reward_id
@@ -3150,7 +3189,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "state": "winner",
                         "seed": int(finalist["seed"]),
                         "active_count": 1,
-                        "reward_code": winner_reward["code"] if winner_reward else None,
+                        "reward_code": (
+                            winner_reward["activation_code"]
+                            if winner_reward
+                            else None
+                        ),
                         "reward_title": winner_reward["title"] if winner_reward else None,
                         "message": (
                             f"Вы победили! Карта «{winner_reward['title']}» уже в THE VAULT."
@@ -3554,8 +3597,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             clauses.append("vmr.status=?")
             params.append(status)
         if code.strip():
-            clauses.append("vmr.code LIKE ?")
-            params.append(f"%{code.strip().upper()}%")
+            clauses.append("(vmr.code LIKE ? OR vmr.activation_code LIKE ?)")
+            search_code = f"%{code.strip().upper()}%"
+            params.extend((search_code, search_code))
         with transaction(settings.db_path) as conn:
             expire_vault_rewards(conn)
             catalog = conn.execute(
@@ -3772,11 +3816,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "vault_reward_expired": "Срок действия карты истёк",
                 "vault_reward_cancelled": "Карта отменена",
                 "vault_reward_not_started": "Срок действия карты ещё не начался",
+                "vault_reward_not_activated": "Пользователь ещё не активировал награду",
             }
             return vault_admin_redirect(
                 messages.get(str(exc), "Не удалось погасить карту"), error=True
             )
-        return vault_admin_redirect(f"Карта {reward['code']} погашена")
+        display_code = reward["activation_code"] or reward["code"]
+        return vault_admin_redirect(f"Карта {display_code} погашена")
 
     @app.post("/api/vault/final-tables/{final_table_id:int}/retry-prize")
     async def vault_retry_final_prize(

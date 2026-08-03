@@ -510,6 +510,8 @@ CREATE INDEX IF NOT EXISTS ix_vault_catalog_active
 CREATE TABLE IF NOT EXISTS vault_member_rewards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
+    activation_code TEXT,
+    activated_at TEXT,
     catalog_reward_id INTEGER NOT NULL REFERENCES vault_catalog_rewards(id),
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     source_type TEXT NOT NULL
@@ -768,6 +770,15 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "daily_414_final_tables", "winner_reward_id INTEGER")
         _ensure_column(conn, "daily_414_final_tables", "winner_reward_error TEXT")
         _ensure_column(conn, "daily_414_final_tables", "prize_catalog_reward_id INTEGER")
+        _ensure_column(conn, "vault_member_rewards", "activation_code TEXT")
+        _ensure_column(conn, "vault_member_rewards", "activated_at TEXT")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_vault_active_activation_code
+            ON vault_member_rewards(activation_code)
+            WHERE status='active' AND activation_code IS NOT NULL
+            """
+        )
         _ensure_column(conn, "quiz_questions", "time_limit_seconds INTEGER")
         _ensure_column(conn, "quiz_submissions", "attempt_id INTEGER")
         _ensure_column(conn, "quiz_attempts", "attempt_deadline_at TEXT")
