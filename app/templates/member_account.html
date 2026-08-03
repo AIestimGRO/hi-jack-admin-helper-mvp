@@ -114,7 +114,7 @@
   <section class="home-section home-stats">
     <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p><h2>Статистика</h2></div><a href="/account?tab=rating">Подробнее</a></div>
     <div class="stat-chip-grid">
-      <article><small>Рейтинг JACKSIDE</small><strong>{{ '#' ~ jackside_rating.place if jackside_rating else '—' }}</strong><span>{{ jackside_rating.accuracy ~ '% точности' if jackside_rating else 'Сыграй первый квиз' }}</span></article>
+      <article><small>Рейтинг JACKSIDE</small>{% if jackside_rating and jackside_rating.place %}<strong>#{{ jackside_rating.place }}</strong><span>Балл {{ jackside_rating.rating_score }} · {{ jackside_rating.accuracy }}% точности</span>{% elif jackside_rating %}<strong>•••</strong><span>Калибровка: {{ jackside_rating.completed_count }}/3 игр · {{ jackside_rating.question_total }}/30 ответов</span>{% else %}<strong>—</strong><span>Сыграй первый квиз</span>{% endif %}</article>
       <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>дней подряд</span></article>
       <article><small>Сыграно квизов</small><strong>{{ history|length }}</strong><span>завершено</span></article>
     </div>
@@ -179,13 +179,13 @@
       <div><p class="member-eyebrow">Все игроки клуба</p><h2>Рейтинг JACKSIDE</h2></div>
       <span>{{ jackside_leaderboard|length }}</span>
     </div>
-    <p class="jackside-rating-note">Главный показатель — точность ответов. При равенстве выше находится игрок с большим числом правильных ответов, затем с большим числом завершённых игр и более свежим результатом.</p>
+    <p class="jackside-rating-note">Рейтинг учитывает последние 30 дней: 85% балла даёт подтверждённая точность, 15% — регулярность до 8 игр. Место присваивается после 3 игр и 30 оценённых ответов. До этого участник проходит калибровку.</p>
     <div class="club-leaderboard jackside-leaderboard">
       {% for row in jackside_leaderboard %}
-      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium' if row.place <= 3 else '' }}">
-        <span class="leaderboard-place">{{ row.place }}</span>
-        <span class="leaderboard-player"><strong>{{ row.display_name }}</strong>{% if row.client_id == member.client_id %}<small>Это ты</small>{% else %}<small>{{ row.completed_count }} игр · {{ row.correct_total }}/{{ row.question_total }} верно</small>{% endif %}</span>
-        <strong class="leaderboard-points">{{ row.accuracy }}<small>%</small></strong>
+      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium podium-' ~ row.place if row.place and row.place <= 3 else '' }} {{ 'is-calibrating' if not row.place else '' }}">
+        <span class="leaderboard-place">{{ row.place if row.place else '•••' }}</span>
+        <span class="leaderboard-player"><strong>{{ row.display_name }}</strong><small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% точности · {{ row.completed_count }} игр · {{ row.active_days }} активн. дн.</small></span>
+        {% if row.place %}<strong class="leaderboard-points">{{ row.rating_score }}<small>балл</small></strong>{% else %}<strong class="leaderboard-calibration">Калибровка<small>{{ row.completed_count }}/3 игр · {{ row.question_total }}/30 ответов</small></strong>{% endif %}
       </article>
       {% else %}
       <div class="member-card smart-empty"><span>HJ</span><div><h3>Рейтинг начнётся с первой игры</h3><p>Пока ни один участник не завершил квиз с оцениваемыми ответами.</p></div></div>

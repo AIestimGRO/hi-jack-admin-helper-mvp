@@ -705,6 +705,21 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
                 """,
                 (member_client_id,),
             )
+            for suffix in (2, 3):
+                conn.execute(
+                    """
+                    INSERT INTO quiz_submissions(
+                        campaign_code, client_id, phone_raw, phone_local,
+                        answers_json, ip_hash, correct_count, max_correct_count,
+                        score, max_score, passed, jackcoin_awarded,
+                        completion_time_ms
+                    ) VALUES (
+                        'next_table', ?, '', '', '{}', ?, 8, 10,
+                        8, 10, 1, 50, 42000
+                    )
+                    """,
+                    (member_client_id, f"hub-test-{suffix}"),
+                )
             accurate_client_id = int(
                 conn.execute(
                     """
@@ -726,6 +741,20 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
                 """,
                 (accurate_client_id,),
             )
+            for suffix in (2, 3):
+                conn.execute(
+                    """
+                    INSERT INTO quiz_submissions(
+                        campaign_code, client_id, phone_raw, phone_local,
+                        answers_json, ip_hash, correct_count, max_correct_count,
+                        score, max_score, passed, completion_time_ms
+                    ) VALUES (
+                        'next_table', ?, '', '', '{}', ?, 9, 10,
+                        9, 10, 1, 47000
+                    )
+                    """,
+                    (accurate_client_id, f"rating-rival-{suffix}"),
+                )
             snapshot_id = int(
                 conn.execute(
                     """
@@ -771,6 +800,10 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         assert "Рейтинг JACKSIDE" in rating.text
         assert "Точный игрок" in rating.text
         assert rating.text.index("Точный игрок") < rating.text.index("Это ты")
+        assert "последние 30 дней" in rating.text
+        assert "podium podium-1" in rating.text
+        assert "podium podium-2" in rating.text
+        assert "балл" in rating.text
         assert "Последние игры" not in rating.text
         club_rating = client.get("/account?tab=rating&section=club")
         assert "Hi, Jack App" in club_rating.text
