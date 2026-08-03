@@ -1272,9 +1272,26 @@
   font-size: 30px;
 }
 
-.rating-history-section {
+.rating-history-section,
+.jackside-rating-section {
   display: grid;
   gap: 13px;
+}
+
+.jackside-rating-note {
+  margin: -3px 0 2px;
+  padding: 13px 15px;
+  border: 1px solid rgba(83, 167, 221, .16);
+  border-radius: 15px;
+  background: rgba(26, 71, 94, .12);
+  color: var(--app-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.jackside-leaderboard .leaderboard-points {
+  color: #64d9d0;
+  font-size: 22px;
 }
 
 .quiz-performance-list,

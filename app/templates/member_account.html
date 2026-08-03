@@ -114,7 +114,7 @@
   <section class="home-section home-stats">
     <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p><h2>Статистика</h2></div><a href="/account?tab=rating">Подробнее</a></div>
     <div class="stat-chip-grid">
-      <article><small>Рейтинг клуба</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'Нет данных' }}</span></article>
+      <article><small>Рейтинг JACKSIDE</small><strong>{{ '#' ~ jackside_rating.place if jackside_rating else '—' }}</strong><span>{{ jackside_rating.accuracy ~ '% точности' if jackside_rating else 'Сыграй первый квиз' }}</span></article>
       <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>дней подряд</span></article>
       <article><small>Сыграно квизов</small><strong>{{ history|length }}</strong><span>завершено</span></article>
     </div>
@@ -153,12 +153,12 @@
   {% elif current_tab == 'rating' %}
   <header class="rating-hub-hero">
     <div class="hj-hero-mark" aria-hidden="true"><span>HJ</span></div>
-    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Все результаты квизов и позиция в Hi, Jack App.</p></div>
+    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Личные показатели, рейтинг JACKSIDE и позиция в Hi, Jack App.</p></div>
   </header>
 
   <nav class="rating-section-tabs" aria-label="Раздел рейтинга">
-    <a class="{{ 'active' if current_rating_section == 'quiz' else '' }}" href="/account?tab=rating&amp;section=quiz">Мои квизы</a>
-    <a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">Рейтинг клуба</a>
+    <a class="{{ 'active' if current_rating_section == 'quiz' else '' }}" href="/account?tab=rating&amp;section=quiz">JACKSIDE</a>
+    <a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">Hi, Jack App</a>
   </nav>
 
   {% if current_rating_section == 'quiz' %}
@@ -174,18 +174,21 @@
     <article><small>Заработано в квизах</small><strong>{{ quiz_stats.jackcoin_total }}</strong><span>JACKCOIN</span></article>
   </section>
 
-  <section class="rating-history-section">
-    <div class="app-section-head"><div><p class="member-eyebrow">Последние игры</p><h2>Результаты</h2></div><span>{{ history|length }}</span></div>
-    <div class="quiz-performance-list">
-      {% for item in history[:12] %}
-      {% set performance = ((item.correct_count * 100 / item.max_correct_count)|round|int) if item.max_correct_count else 0 %}
-      <article>
-        <div class="quiz-performance-main"><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}{% if item.completion_time_ms %} · {{ (item.completion_time_ms / 1000)|round(1) }} сек.{% endif %}</small></div>
-        <div class="quiz-performance-score"><strong>{{ item.correct_count }}/{{ item.max_correct_count }}</strong><span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int }} балл.{% endif %}</span></div>
-        <div class="quiz-performance-bar"><i style="width: {{ performance }}%"></i></div>
+  <section class="jackside-rating-section">
+    <div class="app-section-head">
+      <div><p class="member-eyebrow">Все игроки клуба</p><h2>Рейтинг JACKSIDE</h2></div>
+      <span>{{ jackside_leaderboard|length }}</span>
+    </div>
+    <p class="jackside-rating-note">Главный показатель — точность ответов. При равенстве выше находится игрок с большим числом правильных ответов, затем с большим числом завершённых игр и более свежим результатом.</p>
+    <div class="club-leaderboard jackside-leaderboard">
+      {% for row in jackside_leaderboard %}
+      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium' if row.place <= 3 else '' }}">
+        <span class="leaderboard-place">{{ row.place }}</span>
+        <span class="leaderboard-player"><strong>{{ row.display_name }}</strong>{% if row.client_id == member.client_id %}<small>Это ты</small>{% else %}<small>{{ row.completed_count }} игр · {{ row.correct_total }}/{{ row.question_total }} верно</small>{% endif %}</span>
+        <strong class="leaderboard-points">{{ row.accuracy }}<small>%</small></strong>
       </article>
       {% else %}
-      <div class="member-card smart-empty"><span>HJ</span><div><h3>Статистика появится после первой игры</h3><p>Открой активный квиз и сделай первый результат.</p></div></div>
+      <div class="member-card smart-empty"><span>HJ</span><div><h3>Рейтинг начнётся с первой игры</h3><p>Пока ни один участник не завершил квиз с оцениваемыми ответами.</p></div></div>
       {% endfor %}
     </div>
   </section>

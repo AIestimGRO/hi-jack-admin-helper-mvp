@@ -425,6 +425,54 @@ def test_final_table_prize_is_issued_once(tmp_path) -> None:
         ).fetchone()[0] == 1
 
 
+def test_final_table_can_award_jackcoin_once(tmp_path) -> None:
+    db_path = tmp_path / "vault-final-jackcoin.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        submission_id = int(
+            conn.execute(
+                """
+                INSERT INTO quiz_submissions(
+                    campaign_code, client_id, phone_raw, phone_local,
+                    answers_json, ip_hash
+                ) VALUES ('daily_final_jc', ?, '', '', '{}', 'test')
+                """,
+                (client_id,),
+            ).lastrowid
+        )
+        table_id = int(
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_tables(
+                    campaign_code, campaign_version, starts_at,
+                    questions_snapshot_json, prize_type,
+                    prize_jackcoin_amount, status, winner_submission_id,
+                    completed_at
+                ) VALUES (
+                    'daily_final_jc', 1, '2026-08-03T18:23:14+00:00',
+                    '[]', 'jackcoin', 750, 'completed', ?, CURRENT_TIMESTAMP
+                )
+                """,
+                (submission_id,),
+            ).lastrowid
+        )
+
+        first = attach_final_table_reward(conn, final_table_id=table_id)
+        repeated = attach_final_table_reward(conn, final_table_id=table_id)
+
+        assert first == {"kind": "jackcoin", "amount": 750}
+        assert repeated == first
+        assert jackcoin_balance(conn, client_id) == 750
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jackcoin_ledger WHERE source_type='final_prize'"
+        ).fetchone()[0] == 1
+        table = conn.execute(
+            "SELECT * FROM daily_414_final_tables WHERE id=?", (table_id,)
+        ).fetchone()
+        assert table["winner_jackcoin_awarded"] == 750
+
+
 def test_purchase_token_is_bound_to_account_and_reward() -> None:
     token = purchase_token(
         "s" * 32,
@@ -616,6 +664,8 @@ def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
                 "code": "vault_daily",
                 "title": "4:14 с главным призом",
                 "campaign_type": "daily_414",
+                "final_question_time_seconds": "45",
+                "final_prize_type": "reward_card",
                 "final_prize_catalog_reward_id": "1",
                 "csrf_token": _csrf(campaigns_page),
             },
@@ -623,12 +673,17 @@ def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
         )
         assert campaign_created.status_code == 303
         with connect(settings.db_path) as conn:
-            assert conn.execute(
+            campaign = conn.execute(
                 """
-                SELECT final_prize_catalog_reward_id
+                SELECT final_question_time_seconds, final_prize_type,
+                       final_prize_catalog_reward_id
                 FROM quiz_campaigns WHERE code='vault_daily'
                 """
-            ).fetchone()[0] == 1
+            ).fetchone()
+            assert campaign
+            assert campaign["final_question_time_seconds"] == 45
+            assert campaign["final_prize_type"] == "reward_card"
+            assert campaign["final_prize_catalog_reward_id"] == 1
 
         member_page = client.get("/account?tab=rewards")
         assert member_page.status_code == 200

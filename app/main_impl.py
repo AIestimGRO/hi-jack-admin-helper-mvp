@@ -67,7 +67,6 @@ from app.services.quiz_device import (
 )
 from app.services.daily_414 import (
     DAILY_414_ENTRY_WINDOW_SECONDS,
-    DAILY_414_FINAL_QUESTION_SECONDS,
     DAILY_414_FINAL_TABLE_SIZE,
     DAILY_414_QUESTION_COUNT,
     DAILY_414_TIME_LIMIT_SECONDS,
@@ -87,6 +86,7 @@ from app.services.daily_414_final import (
     reconcile_final_table,
 )
 from app.services.quiz_mail import send_member_email_code, send_quiz_email_code
+from app.services.jackside_rating import jackside_leaderboard
 from app.services.member_accounts import (
     MEMBER_COOKIE_NAME,
     active_legal_documents,
@@ -415,9 +415,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as conn:
             row = conn.execute(
                 """
-                SELECT qc.*, pt.title AS bonus_title
+                SELECT qc.*, pt.title AS bonus_title,
+                       vcr.title AS final_prize_card_title
                 FROM quiz_campaigns qc
                 LEFT JOIN preference_types pt ON pt.code = qc.bonus_preference_code
+                LEFT JOIN vault_catalog_rewards vcr
+                  ON vcr.id=qc.final_prize_catalog_reward_id
                 WHERE qc.code = ?
                 """,
                 (code,),
@@ -428,6 +431,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not settings.member_portal_enabled:
                 raise HTTPException(status_code=404, detail="Режим 4:14 пока отключён")
         return row
+
+    def final_prize_display(campaign_row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        prize_type = str(campaign_row["final_prize_type"] or "none")
+        if prize_type == "jackcoin" and int(
+            campaign_row["final_prize_jackcoin_amount"] or 0
+        ) > 0:
+            amount = int(campaign_row["final_prize_jackcoin_amount"])
+            return {
+                "type": "jackcoin",
+                "title": f"{amount} JACKCOIN",
+                "note": "Начисление на баланс победителя сразу после финала",
+            }
+        if prize_type == "reward_card" and campaign_row["final_prize_card_title"]:
+            return {
+                "type": "reward_card",
+                "title": str(campaign_row["final_prize_card_title"]),
+                "note": "JACK CARD появится у победителя в THE VAULT",
+            }
+        return {
+            "type": "none",
+            "title": "Главный приз пока не назначен",
+            "note": "Мастер-администратор ещё настраивает этот выпуск",
+        }
 
     def quiz_campaign_or_404(code: str):
         row = quiz_campaign_row(code)
@@ -1571,6 +1597,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         streak = None
         lifetime_earned = 0
         quiz_stats: dict[str, Any] = {}
+        jackside_rating = None
+        jackside_leaderboard_rows = []
         rating_leaderboard = []
         rating_snapshot = None
         with connect(settings.db_path) as conn:
@@ -1613,6 +1641,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     """,
                     (rating_snapshot["id"],),
                 ).fetchall()
+            jackside_leaderboard_rows = jackside_leaderboard(conn)
+            jackside_rating = next(
+                (
+                    row
+                    for row in jackside_leaderboard_rows
+                    if row["client_id"] == int(member["client_id"])
+                ),
+                None,
+            )
             quiz_stats_row = conn.execute(
                 """
                 SELECT COUNT(*) AS completed_count,
@@ -1631,13 +1668,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
             question_total = int(quiz_stats_row["question_total"] or 0)
             correct_total = int(quiz_stats_row["correct_total"] or 0)
+            accuracy_value = (
+                round(correct_total * 100 / question_total, 1)
+                if question_total
+                else 0
+            )
             quiz_stats = {
                 "completed_count": int(quiz_stats_row["completed_count"] or 0),
                 "correct_total": correct_total,
                 "question_total": question_total,
-                "accuracy": round(correct_total * 100 / question_total)
-                if question_total
-                else 0,
+                "accuracy": (
+                    int(accuracy_value)
+                    if float(accuracy_value).is_integer()
+                    else accuracy_value
+                ),
                 "jackcoin_total": int(quiz_stats_row["jackcoin_total"] or 0),
                 "perfect_count": int(quiz_stats_row["perfect_count"] or 0),
                 "fastest_time_ms": quiz_stats_row["fastest_time_ms"],
@@ -1794,6 +1838,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 rating=rating,
                 rating_leaderboard=rating_leaderboard,
                 rating_snapshot=rating_snapshot,
+                jackside_rating=jackside_rating,
+                jackside_leaderboard=jackside_leaderboard_rows,
                 quiz_stats=quiz_stats,
                 ledger=ledger,
                 consents=consents,
@@ -2015,6 +2061,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 remember_member_next(request, current_path)
                 return RedirectResponse("/account/consents", status_code=303)
         schedule_state = campaign_schedule_state(campaign_row)
+        daily_prize = final_prize_display(campaign_row)
         return templates.TemplateResponse(
             request,
             "quiz.html",
@@ -2034,8 +2081,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "active_until_iso": campaign_datetime_iso(campaign_row["active_until"]),
                 "server_now_iso": datetime.now(campaign_timezone).isoformat(),
                 "campaign_background": campaign_background(campaign),
-                "daily_prize_title": campaign_row["bonus_title"] or "Главный приз дня",
-                "daily_prize_amount": int(campaign_row["bonus_amount"] or 0),
+                "daily_prize_title": daily_prize["title"],
+                "daily_prize_note": daily_prize["note"],
             },
         )
 
@@ -2095,7 +2142,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "question_count": DAILY_414_QUESTION_COUNT,
                     "time_limit_seconds": DAILY_414_TIME_LIMIT_SECONDS,
                     "entry_window_seconds": DAILY_414_ENTRY_WINDOW_SECONDS,
-                    "final_question_seconds": DAILY_414_FINAL_QUESTION_SECONDS,
+                    "final_question_seconds": int(
+                        campaign_row["final_question_time_seconds"]
+                    ),
                     "final_table_size": DAILY_414_FINAL_TABLE_SIZE,
                     "one_attempt": True,
                     "jackcoin_per_correct": int(
@@ -2107,9 +2156,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "perfect_jackcoin": int(
                         campaign_row["jackcoin_perfect_bonus"]
                     ),
-                    "prize_title": campaign_row["bonus_title"]
-                    or "Главный приз дня",
-                    "prize_amount": int(campaign_row["bonus_amount"] or 0),
+                    "prize_type": final_prize_display(campaign_row)["type"],
+                    "prize_title": final_prize_display(campaign_row)["title"],
+                    "prize_note": final_prize_display(campaign_row)["note"],
                 }
                 if campaign_row["campaign_type"] == "daily_414"
                 else None
@@ -3052,7 +3101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "server_now": now.isoformat(timespec="milliseconds"),
             "starts_at": final_start.isoformat(timespec="milliseconds"),
             "entry_window_seconds": DAILY_414_ENTRY_WINDOW_SECONDS,
-            "question_seconds": DAILY_414_FINAL_QUESTION_SECONDS,
+            "question_seconds": int(campaign_row["final_question_time_seconds"]),
             "table_size": DAILY_414_FINAL_TABLE_SIZE,
         }
 
@@ -3100,7 +3149,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 and table["status"] == "completed"
                 and table["winner_submission_id"]
                 and not table["winner_reward_id"]
-                and table["prize_catalog_reward_id"]
+                and not table["winner_jackcoin_awarded"]
+                and (
+                    table["prize_catalog_reward_id"]
+                    or (
+                        table["prize_type"] == "jackcoin"
+                        and int(table["prize_jackcoin_amount"] or 0) > 0
+                    )
+                )
                 and not table["winner_reward_error"]
             )
             if mutate:
@@ -3111,9 +3167,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         campaign_version=campaign_version,
                         starts_at=final_start,
                         questions=final_questions,
+                        question_time_seconds=int(
+                            campaign_row["final_question_time_seconds"]
+                        ),
+                        prize_type=str(campaign_row["final_prize_type"]),
                         prize_catalog_reward_id=campaign_row[
                             "final_prize_catalog_reward_id"
                         ],
+                        prize_jackcoin_amount=int(
+                            campaign_row["final_prize_jackcoin_amount"] or 0
+                        ),
                     )
                     if final_table_needs_reconcile(
                         table, now=now, schedule_starts_at=final_start
@@ -3141,6 +3204,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(
                     status_code=500, detail="Не удалось создать финальный стол"
                 )
+            base["question_seconds"] = int(
+                table["question_time_seconds"]
+                or campaign_row["final_question_time_seconds"]
+            )
 
             if table["status"] == "unavailable":
                 return {
@@ -3260,6 +3327,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             """,
                             (table["winner_reward_id"],),
                         ).fetchone()
+                    winner_jackcoin = int(table["winner_jackcoin_awarded"] or 0)
                     return {
                         **base,
                         "state": "winner",
@@ -3271,9 +3339,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             else None
                         ),
                         "reward_title": winner_reward["title"] if winner_reward else None,
+                        "reward_jackcoin": winner_jackcoin,
                         "message": (
                             f"Вы победили! Карта «{winner_reward['title']}» уже в THE VAULT."
                             if winner_reward
+                            else f"Вы победили! {winner_jackcoin} JACKCOIN уже начислены на баланс."
+                            if winner_jackcoin
                             else "Вы победили за финальным столом!"
                         ),
                     }
@@ -3711,7 +3782,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             final_prize_errors = conn.execute(
                 """
                 SELECT dft.id, dft.campaign_code, dft.campaign_version,
-                       dft.winner_reward_error, qc.title AS campaign_title,
+                       dft.winner_reward_error, dft.prize_type,
+                       dft.prize_jackcoin_amount, qc.title AS campaign_title,
                        vcr.title AS reward_title, qs.client_id,
                        c.first_name, c.nickname, c.username
                 FROM daily_414_final_tables dft
@@ -3722,6 +3794,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 LEFT JOIN clients c ON c.id=qs.client_id
                 WHERE dft.winner_reward_error IS NOT NULL
                   AND dft.winner_reward_id IS NULL
+                  AND dft.winner_jackcoin_awarded=0
                 ORDER BY dft.id DESC
                 """
             ).fetchall()
@@ -3915,20 +3988,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
             if not table:
                 return vault_admin_redirect("Финальный стол не найден", error=True)
-            if table["winner_reward_id"]:
+            if table["winner_reward_id"] or table["winner_jackcoin_awarded"]:
                 return vault_admin_redirect("Главный приз уже выдан")
             conn.execute(
                 "UPDATE daily_414_final_tables SET winner_reward_error=NULL WHERE id=?",
                 (final_table_id,),
             )
-            reward = attach_final_table_reward(
+            prize = attach_final_table_reward(
                 conn, final_table_id=final_table_id, now=utc_now()
             )
             refreshed = conn.execute(
                 "SELECT winner_reward_error FROM daily_414_final_tables WHERE id=?",
                 (final_table_id,),
             ).fetchone()
-            if not reward:
+            if not prize:
                 message = {
                     "catalog_reward_not_found": "Награда удалена из каталога",
                     "catalog_reward_sold_out": "Тираж награды закончился",
@@ -3937,6 +4010,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "Не удалось выдать главный приз",
                 )
                 return vault_admin_redirect(message, error=True)
+            if isinstance(prize, dict) and prize.get("kind") == "jackcoin":
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="retry_final_prize",
+                    entity_type="daily_414_final_table",
+                    entity_id=final_table_id,
+                    details={"jackcoin": int(prize["amount"])},
+                )
+                return vault_admin_redirect(
+                    f"Главный приз выдан: {int(prize['amount'])} JACKCOIN"
+                )
             audit(
                 conn,
                 admin_id=request.session["admin_id"],
@@ -3944,9 +4030,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 action="retry_final_prize",
                 entity_type="daily_414_final_table",
                 entity_id=final_table_id,
-                details={"reward_id": reward["id"], "code": reward["code"]},
+                details={"reward_id": prize["id"], "code": prize["code"]},
             )
-        return vault_admin_redirect(f"Главный приз выдан: {reward['code']}")
+        return vault_admin_redirect(f"Главный приз выдан: {prize['code']}")
 
     @app.post("/api/vault/rewards/{reward_id:int}/cancel")
     async def vault_cancel(
@@ -4422,11 +4508,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         conn: sqlite3.Connection,
         *,
         campaign_type: str,
+        prize_type: str,
         catalog_reward_id: int,
-    ) -> int | None:
+        jackcoin_amount: int,
+    ) -> tuple[str, int | None, int]:
         reward_id = max(0, int(catalog_reward_id or 0))
-        if campaign_type != "daily_414" or reward_id == 0:
-            return None
+        amount = max(0, int(jackcoin_amount or 0))
+        if campaign_type != "daily_414":
+            return "none", None, 0
+        if prize_type not in {"none", "reward_card", "jackcoin"}:
+            raise ValueError("Проверьте тип главного приза")
+        if prize_type == "none" or (prize_type == "reward_card" and reward_id == 0):
+            return "none", None, 0
+        if prize_type == "jackcoin":
+            if not 1 <= amount <= 1_000_000:
+                raise ValueError("Главный приз должен быть от 1 до 1 000 000 JACKCOIN")
+            return "jackcoin", None, amount
         reward = conn.execute(
             "SELECT id, is_active FROM vault_catalog_rewards WHERE id=?",
             (reward_id,),
@@ -4435,7 +4532,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ValueError("Главный приз не найден в THE VAULT")
         if not reward["is_active"]:
             raise ValueError("Сначала включите выбранный главный приз в THE VAULT")
-        return int(reward["id"])
+        return "reward_card", int(reward["id"]), 0
 
     @app.post("/api/master/quiz-campaigns/create")
     async def create_quiz_campaign(
@@ -4453,7 +4550,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jackcoin_per_correct: int = Form(5),
         jackcoin_completion_bonus: int = Form(10),
         jackcoin_perfect_bonus: int = Form(20),
+        final_question_time_seconds: int = Form(30),
+        final_prize_type: str = Form("reward_card"),
         final_prize_catalog_reward_id: int = Form(0),
+        final_prize_jackcoin_amount: int = Form(0),
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
@@ -4502,6 +4602,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 error=True,
                 tab="campaigns",
             )
+        if not 5 <= final_question_time_seconds <= 300:
+            return master_redirect(
+                "Время ответа в финале должно быть от 5 до 300 секунд",
+                error=True,
+                tab="campaigns",
+            )
         if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
             return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
         if campaign_type == "classic" and verification_required and not (
@@ -4528,10 +4634,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise ValueError("Количество приглашённых должно быть от 1 до 1000")
                 if referral_max_rewards < 0 or referral_max_rewards > 1000:
                     raise ValueError("Лимит реферальных наград должен быть от 0 до 1000")
-                final_prize_id = validate_final_prize(
+                final_prize_kind, final_prize_id, final_prize_jc = validate_final_prize(
                     conn,
                     campaign_type=campaign_type,
+                    prize_type=final_prize_type,
                     catalog_reward_id=final_prize_catalog_reward_id,
+                    jackcoin_amount=final_prize_jackcoin_amount,
                 )
                 cursor = conn.execute(
                     """
@@ -4541,13 +4649,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         max_attempts, verification_required, reward_validity_mode, reward_validity_value,
                         reward_valid_from, reward_valid_until, referral_enabled, referral_preference_code,
                         referral_amount, referral_delivery_mode, referral_threshold, referral_repeatable, referral_max_rewards,
-                        final_prize_catalog_reward_id, active_from, active_until
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        final_question_time_seconds, final_prize_type,
+                        final_prize_catalog_reward_id, final_prize_jackcoin_amount,
+                        active_from, active_until
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (code, title, campaign_type, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
                      int(verification_required), reward_mode, reward_value, reward_from, reward_until,
                      int(referral_enabled), referral_code, referral_amount, referral_delivery_mode, referral_threshold,
-                     int(referral_repeatable), referral_max_rewards, final_prize_id,
+                     int(referral_repeatable), referral_max_rewards,
+                     final_question_time_seconds, final_prize_kind,
+                     final_prize_id, final_prize_jc,
                      active_from_value, active_until_value),
                 )
                 if campaign_type == "daily_414":
@@ -4596,7 +4708,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jackcoin_per_correct: int = Form(5),
         jackcoin_completion_bonus: int = Form(10),
         jackcoin_perfect_bonus: int = Form(20),
+        final_question_time_seconds: int = Form(30),
+        final_prize_type: str = Form("reward_card"),
         final_prize_catalog_reward_id: int = Form(0),
+        final_prize_jackcoin_amount: int = Form(0),
         referral_enabled: bool = Form(False),
         referral_preference_code: str = Form(""),
         referral_amount: int = Form(0),
@@ -4662,6 +4777,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 error=True,
                 tab="campaigns",
             )
+        if not 5 <= final_question_time_seconds <= 300:
+            return master_redirect(
+                "Время ответа в финале должно быть от 5 до 300 секунд",
+                error=True,
+                tab="campaigns",
+            )
         if reward_delivery_mode not in {"automatic", "code"} or referral_delivery_mode not in {"automatic", "code"}:
             return master_redirect("Проверьте способ выдачи награды", error=True, tab="campaigns")
         if (
@@ -4701,10 +4822,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise ValueError("Количество приглашённых должно быть от 1 до 1000")
                 if referral_max_rewards < 0 or referral_max_rewards > 1000:
                     raise ValueError("Лимит реферальных наград должен быть от 0 до 1000")
-                final_prize_id = validate_final_prize(
+                final_prize_kind, final_prize_id, final_prize_jc = validate_final_prize(
                     conn,
                     campaign_type=str(row["campaign_type"]),
+                    prize_type=final_prize_type,
                     catalog_reward_id=final_prize_catalog_reward_id,
+                    jackcoin_amount=final_prize_jackcoin_amount,
                 )
                 conn.execute(
                     """
@@ -4716,7 +4839,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         completion_title=?, completion_text=?, referral_enabled=?, referral_preference_code=?,
                         referral_amount=?, referral_delivery_mode=?, referral_threshold=?, referral_repeatable=?, referral_max_rewards=?,
                         jackcoin_per_correct=?, jackcoin_completion_bonus=?, jackcoin_perfect_bonus=?,
-                        final_prize_catalog_reward_id=?, active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
+                        final_question_time_seconds=?, final_prize_type=?,
+                        final_prize_catalog_reward_id=?, final_prize_jackcoin_amount=?,
+                        active_from=?, active_until=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (title, bonus_code, bonus_amount, reward_delivery_mode, pass_score, quiz_time_limit_seconds, max_attempts,
@@ -4727,7 +4852,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                      content_values["completion_text"], int(referral_enabled), referral_code, referral_amount, referral_delivery_mode,
                      referral_threshold, int(referral_repeatable), referral_max_rewards,
                      jackcoin_per_correct, jackcoin_completion_bonus, jackcoin_perfect_bonus,
-                     final_prize_id, active_from_value, active_until_value, campaign_id),
+                     final_question_time_seconds, final_prize_kind,
+                     final_prize_id, final_prize_jc,
+                     active_from_value, active_until_value, campaign_id),
                 )
                 audit(
                     conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],

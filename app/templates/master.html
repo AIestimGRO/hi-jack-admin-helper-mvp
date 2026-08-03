@@ -88,7 +88,12 @@
       <label>За каждый правильный ответ<input name="jackcoin_per_correct" type="number" min="0" max="10000" value="5"></label>
       <label>За завершение игры<input name="jackcoin_completion_bonus" type="number" min="0" max="10000" value="10"></label>
       <label>Дополнительно за 10/10<input name="jackcoin_perfect_bonus" type="number" min="0" max="10000" value="20"></label>
-      <label>Главный приз финального стола<select name="final_prize_catalog_reward_id"><option value="0">Не назначен</option>{% for reward in vault_catalog_rewards %}<option value="{{ reward.id }}">{{ reward.title }} · {{ reward.price_jc }} JC{{ ' · отключена' if not reward.is_active else '' }}</option>{% endfor %}</select></label>
+      <label>Время на ответ в финальном столе<input name="final_question_time_seconds" type="number" min="5" max="300" value="30"><small>От 5 до 300 секунд на каждый вопрос</small></label>
+      <div class="final-prize-settings" data-final-prize-settings>
+        <label>Тип главного приза<select name="final_prize_type"><option value="none">Не назначен</option><option value="reward_card">Карточка-награда</option><option value="jackcoin">Начисление JACKCOIN</option></select></label>
+        <label data-final-prize-card hidden>Карточка-награда<select name="final_prize_catalog_reward_id"><option value="0">Выберите карточку</option>{% for reward in vault_catalog_rewards %}<option value="{{ reward.id }}">{{ reward.title }} · {{ reward.price_jc }} JC{{ ' · отключена' if not reward.is_active else '' }}</option>{% endfor %}</select></label>
+        <label data-final-prize-jackcoin hidden>Сколько начислить победителю<input name="final_prize_jackcoin_amount" type="number" min="1" max="1000000" value="500"><small>JACKCOIN поступят на баланс сразу после победы</small></label>
+      </div>
       <p class="muted">Итого при 10/10 с этими настройками: 80 JC без учёта бонуса за серию дней.</p>
     </fieldset>
     <fieldset class="campaign-referral-fields">
@@ -147,7 +152,12 @@
           <label>За каждый правильный ответ<input name="jackcoin_per_correct" type="number" min="0" max="10000" value="{{ campaign.jackcoin_per_correct }}"></label>
           <label>За завершение игры<input name="jackcoin_completion_bonus" type="number" min="0" max="10000" value="{{ campaign.jackcoin_completion_bonus }}"></label>
           <label>Дополнительно за 10/10<input name="jackcoin_perfect_bonus" type="number" min="0" max="10000" value="{{ campaign.jackcoin_perfect_bonus }}"></label>
-          <label>Главный приз финального стола<select name="final_prize_catalog_reward_id"><option value="0">Не назначен</option>{% for reward in vault_catalog_rewards %}<option value="{{ reward.id }}" {% if campaign.final_prize_catalog_reward_id==reward.id %}selected{% endif %}>{{ reward.title }} · {{ reward.price_jc }} JC{{ ' · отключена' if not reward.is_active else '' }}</option>{% endfor %}</select></label>
+          <label>Время на ответ в финальном столе<input name="final_question_time_seconds" type="number" min="5" max="300" value="{{ campaign.final_question_time_seconds }}"><small>От 5 до 300 секунд на каждый вопрос</small></label>
+          <div class="final-prize-settings" data-final-prize-settings>
+            <label>Тип главного приза<select name="final_prize_type"><option value="none" {% if campaign.final_prize_type=='none' %}selected{% endif %}>Не назначен</option><option value="reward_card" {% if campaign.final_prize_type=='reward_card' %}selected{% endif %}>Карточка-награда</option><option value="jackcoin" {% if campaign.final_prize_type=='jackcoin' %}selected{% endif %}>Начисление JACKCOIN</option></select></label>
+            <label data-final-prize-card {% if campaign.final_prize_type!='reward_card' %}hidden{% endif %}>Карточка-награда<select name="final_prize_catalog_reward_id"><option value="0">Выберите карточку</option>{% for reward in vault_catalog_rewards %}<option value="{{ reward.id }}" {% if campaign.final_prize_catalog_reward_id==reward.id %}selected{% endif %}>{{ reward.title }} · {{ reward.price_jc }} JC{{ ' · отключена' if not reward.is_active else '' }}</option>{% endfor %}</select></label>
+            <label data-final-prize-jackcoin {% if campaign.final_prize_type!='jackcoin' %}hidden{% endif %}>Сколько начислить победителю<input name="final_prize_jackcoin_amount" type="number" min="1" max="1000000" value="{{ campaign.final_prize_jackcoin_amount or 500 }}"><small>JACKCOIN поступят на баланс сразу после победы</small></label>
+          </div>
           <p class="muted">Настройка относится только к этому выпуску. Бонус за серию дней начисляется отдельно.</p>
         </fieldset>
         {% endif %}

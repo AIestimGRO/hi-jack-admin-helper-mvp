@@ -49,7 +49,7 @@
       <div class="daily-prize-card">
         <span>♠</span>
         <strong>{{ daily_prize_title }}</strong>
-        {% if daily_prize_amount %}<small>Количество: {{ daily_prize_amount }}</small>{% endif %}
+        <small>{{ daily_prize_note }}</small>
       </div>
       <p class="quiz-lead small">За финальный стол попадут до 10 участников: сначала по числу правильных ответов, затем по скорости. Начать отбор нужно в первые 5 минут. Опоздавшие всё равно проходят квиз, получают награду и JACKCOIN.</p>
       <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
@@ -92,7 +92,7 @@
         <p class="quiz-section-label">ФИНАЛЬНЫЙ СТОЛ</p>
         <span class="final-active-count"></span>
       </div>
-      <div class="final-question-timer"><strong>0:30</strong><div><span></span></div></div>
+      <div class="final-question-timer"><strong>0:--</strong><div><span></span></div></div>
       <p class="quiz-step final-question-number"></p>
       <figure class="quiz-question-media final-question-media" hidden>
         <img class="quiz-question-image final-question-image" alt="">

@@ -705,6 +705,27 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
                 """,
                 (member_client_id,),
             )
+            accurate_client_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(first_name, source)
+                    VALUES ('Точный игрок', 'test')
+                    """
+                ).lastrowid
+            )
+            conn.execute(
+                """
+                INSERT INTO quiz_submissions(
+                    campaign_code, client_id, phone_raw, phone_local,
+                    answers_json, ip_hash, correct_count, max_correct_count,
+                    score, max_score, passed, completion_time_ms
+                ) VALUES (
+                    'next_table', ?, '', '', '{}', 'rating-rival', 9, 10,
+                    9, 10, 1, 47000
+                )
+                """,
+                (accurate_client_id,),
+            )
             snapshot_id = int(
                 conn.execute(
                     """
@@ -747,6 +768,10 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         assert "Рейтинг и статистика" in rating.text
         assert "80%" in rating.text
         assert "Пройдено квизов" in rating.text
+        assert "Рейтинг JACKSIDE" in rating.text
+        assert "Точный игрок" in rating.text
+        assert rating.text.index("Точный игрок") < rating.text.index("Это ты")
+        assert "Последние игры" not in rating.text
         club_rating = client.get("/account?tab=rating&section=club")
         assert "Hi, Jack App" in club_rating.text
         assert "#2" in club_rating.text
@@ -756,6 +781,8 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         legacy_profile = client.get("/account?tab=personal")
         assert 'data-account-tab="profile"' in legacy_profile.text
         assert "daily@example.test" in legacy_profile.text
+        assert "История участия в квизах" in legacy_profile.text
+        assert "Следующий стол JACKSIDE" in legacy_profile.text
         legacy_stats = client.get("/account?tab=stats")
         assert 'data-account-tab="profile"' in legacy_stats.text
         legacy_vault = client.get("/account?tab=rewards")

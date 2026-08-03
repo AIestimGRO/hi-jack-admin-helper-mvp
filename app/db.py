@@ -135,7 +135,13 @@ CREATE TABLE IF NOT EXISTS quiz_campaigns (
     jackcoin_per_correct INTEGER NOT NULL DEFAULT 5 CHECK(jackcoin_per_correct >= 0),
     jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10 CHECK(jackcoin_completion_bonus >= 0),
     jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20 CHECK(jackcoin_perfect_bonus >= 0),
+    final_question_time_seconds INTEGER NOT NULL DEFAULT 30
+        CHECK(final_question_time_seconds BETWEEN 5 AND 300),
+    final_prize_type TEXT NOT NULL DEFAULT 'none'
+        CHECK(final_prize_type IN ('none', 'reward_card', 'jackcoin')),
     final_prize_catalog_reward_id INTEGER,
+    final_prize_jackcoin_amount INTEGER NOT NULL DEFAULT 0
+        CHECK(final_prize_jackcoin_amount >= 0),
     welcome_kicker TEXT NOT NULL DEFAULT 'Короткий опрос клуба',
     welcome_text TEXT NOT NULL DEFAULT 'Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.',
     start_button_text TEXT NOT NULL DEFAULT 'Начать',
@@ -566,12 +572,19 @@ CREATE TABLE IF NOT EXISTS daily_414_final_tables (
     campaign_version INTEGER NOT NULL,
     starts_at TEXT NOT NULL,
     questions_snapshot_json TEXT NOT NULL,
+    question_time_seconds INTEGER NOT NULL DEFAULT 30
+        CHECK(question_time_seconds BETWEEN 5 AND 300),
+    prize_type TEXT NOT NULL DEFAULT 'none'
+        CHECK(prize_type IN ('none', 'reward_card', 'jackcoin')),
     prize_catalog_reward_id INTEGER REFERENCES vault_catalog_rewards(id) ON DELETE SET NULL,
+    prize_jackcoin_amount INTEGER NOT NULL DEFAULT 0
+        CHECK(prize_jackcoin_amount >= 0),
     status TEXT NOT NULL DEFAULT 'waiting'
         CHECK(status IN ('waiting', 'live', 'completed', 'unavailable')),
     current_question_index INTEGER NOT NULL DEFAULT 0,
     winner_submission_id INTEGER REFERENCES quiz_submissions(id) ON DELETE SET NULL,
     winner_reward_id INTEGER REFERENCES vault_member_rewards(id) ON DELETE SET NULL,
+    winner_jackcoin_awarded INTEGER NOT NULL DEFAULT 0,
     winner_reward_error TEXT,
     completed_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -730,7 +743,20 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_campaigns", "jackcoin_per_correct INTEGER NOT NULL DEFAULT 5")
         _ensure_column(conn, "quiz_campaigns", "jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10")
         _ensure_column(conn, "quiz_campaigns", "jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20")
+        _ensure_column(conn, "quiz_campaigns", "final_question_time_seconds INTEGER NOT NULL DEFAULT 30")
+        prize_type_added = _ensure_column(
+            conn, "quiz_campaigns", "final_prize_type TEXT NOT NULL DEFAULT 'none'"
+        )
         _ensure_column(conn, "quiz_campaigns", "final_prize_catalog_reward_id INTEGER")
+        _ensure_column(conn, "quiz_campaigns", "final_prize_jackcoin_amount INTEGER NOT NULL DEFAULT 0")
+        if prize_type_added:
+            conn.execute(
+                """
+                UPDATE quiz_campaigns
+                SET final_prize_type='reward_card'
+                WHERE final_prize_catalog_reward_id IS NOT NULL
+                """
+            )
         _ensure_column(conn, "quiz_campaigns", "welcome_kicker TEXT NOT NULL DEFAULT 'Короткий опрос клуба'")
         _ensure_column(conn, "quiz_campaigns", "welcome_text TEXT NOT NULL DEFAULT 'Ответь на несколько вопросов — это займёт пару минут и поможет нам делать события интереснее.'")
         _ensure_column(conn, "quiz_campaigns", "start_button_text TEXT NOT NULL DEFAULT 'Начать'")
@@ -769,8 +795,22 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(conn, "quiz_reward_codes", "reward_kind TEXT NOT NULL DEFAULT 'quiz'")
         _ensure_column(conn, "quiz_reward_codes", "referral_milestone INTEGER")
         _ensure_column(conn, "daily_414_final_tables", "winner_reward_id INTEGER")
+        _ensure_column(conn, "daily_414_final_tables", "winner_jackcoin_awarded INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "daily_414_final_tables", "winner_reward_error TEXT")
+        _ensure_column(conn, "daily_414_final_tables", "question_time_seconds INTEGER NOT NULL DEFAULT 30")
+        table_prize_type_added = _ensure_column(
+            conn, "daily_414_final_tables", "prize_type TEXT NOT NULL DEFAULT 'none'"
+        )
         _ensure_column(conn, "daily_414_final_tables", "prize_catalog_reward_id INTEGER")
+        _ensure_column(conn, "daily_414_final_tables", "prize_jackcoin_amount INTEGER NOT NULL DEFAULT 0")
+        if table_prize_type_added:
+            conn.execute(
+                """
+                UPDATE daily_414_final_tables
+                SET prize_type='reward_card'
+                WHERE prize_catalog_reward_id IS NOT NULL
+                """
+            )
         _ensure_column(conn, "vault_member_rewards", "activation_code TEXT")
         _ensure_column(conn, "vault_member_rewards", "activated_at TEXT")
         activation_expiry_added = _ensure_column(

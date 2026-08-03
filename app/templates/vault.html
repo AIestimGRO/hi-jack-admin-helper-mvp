@@ -8,7 +8,7 @@
 {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 {% for item in final_prize_errors %}
 <div class="alert error vault-prize-error">
-  <div><strong>Главный приз не выдан: {{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.reward_title or 'Награда недоступна' }} · {{ item.first_name or item.nickname or ('@' ~ item.username if item.username else 'клиент #' ~ item.client_id) }}</small></div>
+  <div><strong>Главный приз не выдан: {{ item.campaign_title or item.campaign_code }}</strong><small>{% if item.prize_type=='jackcoin' %}{{ item.prize_jackcoin_amount }} JACKCOIN{% else %}{{ item.reward_title or 'Награда недоступна' }}{% endif %} · {{ item.first_name or item.nickname or ('@' ~ item.username if item.username else 'клиент #' ~ item.client_id) }}</small></div>
   {% if admin_role == 'master_admin' %}<form action="/api/vault/final-tables/{{ item.id }}/retry-prize" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Повторить выдачу</button></form>{% endif %}
 </div>
 {% endfor %}

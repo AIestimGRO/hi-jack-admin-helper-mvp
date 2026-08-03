@@ -410,3 +410,45 @@ def test_daily_414_final_round_keeps_table_when_nobody_is_correct(
     assert after_missed_question["status"] == "live"
     assert after_missed_question["current_question_index"] == 1
     assert active_count == 2
+
+
+def test_daily_414_final_question_time_is_snapshotted(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-custom-time.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 8, 3, 18, 23, 14)
+    with transaction(db_path) as conn:
+        for index in range(1, 3):
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=10,
+                completion_time_ms=10_000 + index,
+            )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}, {"id": "f2"}],
+            question_time_seconds=45,
+        )
+        live = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start,
+        )
+        still_first = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=44),
+        )
+        second = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=45),
+        )
+
+    assert live["question_time_seconds"] == 45
+    assert still_first["current_question_index"] == 0
+    assert second["current_question_index"] == 1

@@ -21,6 +21,14 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _question_seconds(final_table: sqlite3.Row | dict[str, Any]) -> int:
+    try:
+        value = int(final_table["question_time_seconds"] or 0)
+    except (KeyError, TypeError, ValueError, IndexError):
+        value = DAILY_414_FINAL_QUESTION_SECONDS
+    return min(300, max(5, value or DAILY_414_FINAL_QUESTION_SECONDS))
+
+
 def ensure_final_table(
     conn: sqlite3.Connection,
     *,
@@ -28,8 +36,13 @@ def ensure_final_table(
     campaign_version: int,
     starts_at: datetime,
     questions: list[dict[str, Any]],
+    question_time_seconds: int = DAILY_414_FINAL_QUESTION_SECONDS,
+    prize_type: str = "none",
     prize_catalog_reward_id: int | None = None,
+    prize_jackcoin_amount: int = 0,
 ) -> sqlite3.Row:
+    if prize_type == "none" and prize_catalog_reward_id:
+        prize_type = "reward_card"
     row = conn.execute(
         """
         SELECT * FROM daily_414_final_tables
@@ -48,7 +61,8 @@ def ensure_final_table(
                 """
                 UPDATE daily_414_final_tables
                 SET starts_at=?, questions_snapshot_json=?, status=?,
-                    prize_catalog_reward_id=COALESCE(prize_catalog_reward_id, ?),
+                    question_time_seconds=?, prize_type=?,
+                    prize_catalog_reward_id=?, prize_jackcoin_amount=?,
                     updated_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
@@ -56,7 +70,10 @@ def ensure_final_table(
                     _timestamp(starts_at),
                     snapshot,
                     "waiting" if has_questions else "unavailable",
+                    min(300, max(5, int(question_time_seconds))),
+                    prize_type,
                     prize_catalog_reward_id,
+                    max(0, int(prize_jackcoin_amount)),
                     row["id"],
                 ),
             )
@@ -71,15 +88,19 @@ def ensure_final_table(
             """
             INSERT INTO daily_414_final_tables(
                 campaign_code, campaign_version, starts_at,
-                questions_snapshot_json, prize_catalog_reward_id, status
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                questions_snapshot_json, question_time_seconds, prize_type,
+                prize_catalog_reward_id, prize_jackcoin_amount, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 campaign_code,
                 campaign_version,
                 _timestamp(starts_at),
                 payload,
+                min(300, max(5, int(question_time_seconds))),
+                prize_type,
                 prize_catalog_reward_id,
+                max(0, int(prize_jackcoin_amount)),
                 waiting_status,
             ),
         )
@@ -123,7 +144,7 @@ def final_table_needs_reconcile(
     elapsed = max(0.0, (now_utc - starts_at).total_seconds())
     completed_count = min(
         len(questions),
-        int(elapsed // DAILY_414_FINAL_QUESTION_SECONDS),
+        int(elapsed // _question_seconds(table)),
     )
     return completed_count > int(table["current_question_index"] or 0)
 
@@ -250,7 +271,7 @@ def reconcile_final_table(
     elapsed = max(0.0, (now_utc - starts_at).total_seconds())
     completed_count = min(
         len(questions),
-        int(elapsed // DAILY_414_FINAL_QUESTION_SECONDS),
+        int(elapsed // _question_seconds(table)),
     )
     current_index = int(table["current_question_index"] or 0)
     for question_index in range(current_index, completed_count):
@@ -365,11 +386,12 @@ def question_window(
     final_table: sqlite3.Row,
 ) -> tuple[int, datetime, datetime]:
     question_index = int(final_table["current_question_index"] or 0)
+    question_seconds = _question_seconds(final_table)
     starts_at = _as_utc(datetime.fromisoformat(str(final_table["starts_at"]))) + timedelta(
-        seconds=question_index * DAILY_414_FINAL_QUESTION_SECONDS
+        seconds=question_index * question_seconds
     )
     return (
         question_index,
         starts_at,
-        starts_at + timedelta(seconds=DAILY_414_FINAL_QUESTION_SECONDS),
+        starts_at + timedelta(seconds=question_seconds),
     )

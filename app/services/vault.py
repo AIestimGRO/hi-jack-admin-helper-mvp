@@ -723,7 +723,7 @@ def cancel_reward(
 
 def attach_final_table_reward(
     conn: sqlite3.Connection, *, final_table_id: int, now: datetime | None = None
-) -> sqlite3.Row | None:
+) -> sqlite3.Row | dict[str, int | str] | None:
     table = conn.execute(
         """
         SELECT dft.*, qs.client_id AS winner_client_id
@@ -734,6 +734,65 @@ def attach_final_table_reward(
         (final_table_id,),
     ).fetchone()
     if not table or table["status"] != "completed" or not table["winner_client_id"]:
+        return None
+    prize_type = str(table["prize_type"] or "none")
+    if prize_type == "none" and table["prize_catalog_reward_id"]:
+        prize_type = "reward_card"
+    if prize_type == "jackcoin":
+        amount = max(0, int(table["prize_jackcoin_amount"] or 0))
+        if table["winner_jackcoin_awarded"]:
+            return {
+                "kind": "jackcoin",
+                "amount": int(table["winner_jackcoin_awarded"]),
+            }
+        if amount <= 0:
+            return None
+        try:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO jackcoin_ledger(
+                    client_id, amount, operation_type, source_type, source_id,
+                    idempotency_key, comment
+                ) VALUES (?, ?, 'earn', 'final_prize', ?, ?, ?)
+                """,
+                (
+                    int(table["winner_client_id"]),
+                    amount,
+                    str(final_table_id),
+                    f"jackcoin:final-table:{final_table_id}",
+                    f"Главный приз финального стола: {amount} JACKCOIN",
+                ),
+            )
+            awarded = conn.execute(
+                """
+                SELECT amount FROM jackcoin_ledger
+                WHERE idempotency_key=?
+                """,
+                (f"jackcoin:final-table:{final_table_id}",),
+            ).fetchone()
+            if not awarded:
+                raise ValueError("final_prize_jackcoin_not_recorded")
+        except (sqlite3.Error, ValueError) as exc:
+            conn.execute(
+                """
+                UPDATE daily_414_final_tables
+                SET winner_reward_error=?, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (str(exc), final_table_id),
+            )
+            return None
+        conn.execute(
+            """
+            UPDATE daily_414_final_tables
+            SET winner_jackcoin_awarded=?, winner_reward_error=NULL,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (int(awarded["amount"]), final_table_id),
+        )
+        return {"kind": "jackcoin", "amount": int(awarded["amount"])}
+    if prize_type != "reward_card":
         return None
     if table["winner_reward_id"]:
         return conn.execute(

@@ -73,6 +73,19 @@ document.querySelectorAll('.campaign-create').forEach((form) => {
   syncCampaignType();
 });
 
+document.querySelectorAll('[data-final-prize-settings]').forEach((settings) => {
+  const typeSelect = settings.querySelector('[name="final_prize_type"]');
+  const cardField = settings.querySelector('[data-final-prize-card]');
+  const jackcoinField = settings.querySelector('[data-final-prize-jackcoin]');
+  if (!typeSelect || !cardField || !jackcoinField) return;
+  const syncFinalPrize = () => {
+    cardField.hidden = typeSelect.value !== 'reward_card';
+    jackcoinField.hidden = typeSelect.value !== 'jackcoin';
+  };
+  typeSelect.addEventListener('change', syncFinalPrize);
+  syncFinalPrize();
+});
+
 document.querySelectorAll('[data-row-href]').forEach((row) => {
   const openRow = () => window.location.assign(row.dataset.rowHref);
   row.addEventListener('click', (event) => {

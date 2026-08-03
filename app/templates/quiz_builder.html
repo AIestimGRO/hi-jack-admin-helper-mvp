@@ -22,7 +22,8 @@
         <span>Бонус <strong>{{ campaign.bonus_title or 'не назначен' }}</strong></span>
         {% if campaign.campaign_type == 'daily_414' %}
         <span>JACKCOIN <strong>{{ campaign.jackcoin_per_correct }} за ответ · {{ campaign.jackcoin_completion_bonus }} за финиш · {{ campaign.jackcoin_perfect_bonus }} за 10/10</strong></span>
-        <span>Главный приз <strong>{{ campaign.final_prize_title or 'не назначен' }}</strong></span>
+        <span>Финальный вопрос <strong>{{ campaign.final_question_time_seconds }} сек.</strong></span>
+        <span>Главный приз <strong>{% if campaign.final_prize_type=='jackcoin' %}{{ campaign.final_prize_jackcoin_amount }} JACKCOIN{% elif campaign.final_prize_type=='reward_card' %}{{ campaign.final_prize_title or 'карточка не выбрана' }}{% else %}не назначен{% endif %}</strong></span>
         {% endif %}
       </div>
       <div class="hj-hero-actions">
@@ -47,7 +48,7 @@
   <div class="alert daily-order-note">
     Основной раунд содержит ровно 10 вопросов:
     <strong>1–2 Префлоп · 3–5 Флоп · 6–8 Тёрн · 9–10 Ривер</strong>.
-    Вопросы финального стола идут отдельным списком и открываются синхронно на 30 секунд.
+    Вопросы финального стола идут отдельным списком и открываются синхронно на {{ campaign.final_question_time_seconds }} сек.
   </div>
   {% endif %}
 
