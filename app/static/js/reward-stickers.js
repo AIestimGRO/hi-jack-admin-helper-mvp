@@ -60,7 +60,9 @@
 
   function fixAccuracyHeading() {
     const heading = document.querySelector(".rating-overview-copy .member-eyebrow");
-    if (heading) heading.textContent = "Точность ответов";
+    if (!heading) return;
+    heading.textContent = "Точность ответов";
+    heading.style.whiteSpace = "nowrap";
   }
 
   function initRewardStickers() {
