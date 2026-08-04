@@ -15,6 +15,7 @@ from app.services.member_accounts import (
     jackcoin_balance,
 )
 from app.services.reward_animations import (
+    MAX_PNG_BYTES,
     REWARD_ANIMATION_BY_KEY,
     validate_animation_upload,
 )
@@ -824,6 +825,19 @@ def test_reward_animation_library_and_upload_validation() -> None:
         ".gif",
         "image/gif",
     )
+    assert validate_animation_upload(
+        "sticker.png",
+        b"\x89PNG\r\n\x1a\n" + b"0" * 32,
+    ) == (".png", "image/png")
+    assert validate_animation_upload(
+        "photo.png",
+        b"\xff\xd8\xff" + b"0" * 32,
+    ) == (".jpg", "image/jpeg")
+    with pytest.raises(ValueError, match="animation_file_too_large"):
+        validate_animation_upload(
+            "huge.png",
+            b"\x89PNG\r\n\x1a\n" + b"0" * (MAX_PNG_BYTES + 1),
+        )
     with pytest.raises(ValueError, match="invalid_animation_file"):
         validate_animation_upload(
             "remote.json",

@@ -3899,10 +3899,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "invalid_validity": "Срок действия указан неверно",
                 "invalid_inventory": "Тираж должен быть целым неотрицательным числом или пустым",
                 "invalid_position": "Порядок указан неверно",
-                "invalid_animation_key": "Выберите анимацию из библиотеки",
-                "invalid_animation_format": "Формат: JSON, Lottie, WebP, GIF или PNG",
-                "animation_file_too_large": "Файл анимации слишком большой",
-                "invalid_animation_file": "Файл анимации повреждён или не поддерживается",
+                "invalid_animation_key": "Выберите стикер из библиотеки или загрузите файл",
+                "invalid_animation_format": "Формат стикера: PNG, WebP, JPEG или GIF",
+                "animation_file_too_large": "Стикер слишком большой. PNG до 2,5 МБ, WebP/JPEG до 2 МБ",
+                "invalid_animation_file": "Файл стикера не удалось прочитать. Нужен настоящий PNG/WebP/JPEG/GIF, а не переименованный файл",
                 "invalid_animation_dimensions": "Холст Lottie должен быть от 64 до 2048 px",
             }
             return vault_admin_redirect(
@@ -3994,10 +3994,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "invalid_validity": "Срок действия указан неверно",
                 "invalid_inventory": "Тираж должен быть целым неотрицательным числом или пустым",
                 "invalid_position": "Порядок указан неверно",
-                "invalid_animation_key": "Выберите анимацию из библиотеки",
-                "invalid_animation_format": "Формат: JSON, Lottie, WebP, GIF или PNG",
-                "animation_file_too_large": "Файл анимации слишком большой",
-                "invalid_animation_file": "Файл анимации повреждён или не поддерживается",
+                "invalid_animation_key": "Выберите стикер из библиотеки или загрузите файл",
+                "invalid_animation_format": "Формат стикера: PNG, WebP, JPEG или GIF",
+                "animation_file_too_large": "Стикер слишком большой. PNG до 2,5 МБ, WebP/JPEG до 2 МБ",
+                "invalid_animation_file": "Файл стикера не удалось прочитать. Нужен настоящий PNG/WebP/JPEG/GIF, а не переименованный файл",
                 "invalid_animation_dimensions": "Холст Lottie должен быть от 64 до 2048 px",
             }
             return vault_admin_redirect(

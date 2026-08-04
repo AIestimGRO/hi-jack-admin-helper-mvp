@@ -1,5 +1,5 @@
 (() => {
-  const STICKER_ACCEPT = ".png,.webp,image/png,image/webp";
+  const STICKER_ACCEPT = ".png,.webp,.jpg,.jpeg,.gif,image/png,image/webp,image/jpeg,image/gif";
 
   function replaceDirectText(label, value) {
     const textNode = Array.from(label.childNodes).find(
@@ -54,7 +54,7 @@
     replaceDirectText(label, fieldset.classList.contains("compact") ? "Заменить стикер" : "Загрузить стикер");
     const note = label.querySelector("small");
     if (note) {
-      note.textContent = "PNG или WebP · 512×512 px · прозрачный фон · до 1 МБ для PNG и 1,5 МБ для WebP";
+      note.textContent = "PNG, WebP, JPEG или GIF · лучше 512×512 · прозрачный фон · PNG до 2,5 МБ";
     }
   }
 

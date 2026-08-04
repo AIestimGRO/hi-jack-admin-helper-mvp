@@ -3,7 +3,7 @@ const players = Array.from(document.querySelectorAll("[data-reward-animation-src
 function isStaticSticker(source) {
   try {
     const pathname = new URL(source, window.location.origin).pathname.toLowerCase();
-    return /\.(?:png|webp|gif)$/.test(pathname);
+    return /\.(?:png|webp|gif|jpe?g)$/.test(pathname);
   } catch (_error) {
     return false;
   }

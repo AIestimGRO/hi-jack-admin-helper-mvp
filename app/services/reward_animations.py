@@ -8,9 +8,13 @@ from pathlib import Path
 
 
 MAX_VECTOR_BYTES = 1_000_000
-MAX_WEBP_BYTES = 1_500_000
+MAX_WEBP_BYTES = 2_000_000
 MAX_GIF_BYTES = 2_000_000
-MAX_PNG_BYTES = 1_000_000
+MAX_PNG_BYTES = 2_500_000
+MAX_JPEG_BYTES = 1_500_000
+
+IMAGE_SUFFIXES = {".png", ".webp", ".gif", ".jpg", ".jpeg"}
+VECTOR_SUFFIXES = {".json", ".lottie"}
 
 
 @dataclass(frozen=True)
@@ -106,30 +110,64 @@ def _validate_dotlottie(content: bytes) -> None:
         raise ValueError("invalid_animation_file") from exc
 
 
+def detect_animation_kind(content: bytes) -> tuple[str, str] | None:
+    """Return (suffix, mime) from magic bytes when the payload is a known sticker/animation."""
+    if not content:
+        return None
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png", "image/png"
+    if content.startswith(b"RIFF") and len(content) >= 12 and content[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    if content[:6] in {b"GIF87a", b"GIF89a"}:
+        return ".gif", "image/gif"
+    if content.startswith(b"\xff\xd8\xff"):
+        return ".jpg", "image/jpeg"
+    if content[:1] in {b"{", b"["}:
+        return ".json", "application/json"
+    if content[:2] == b"PK":
+        return ".lottie", "application/zip"
+    return None
+
+
+def _ensure_within_limit(size: int, limit: int) -> None:
+    if size > limit:
+        raise ValueError("animation_file_too_large")
+
+
 def validate_animation_upload(filename: str, content: bytes) -> tuple[str, str]:
+    if not content:
+        raise ValueError("invalid_animation_file")
+
     suffix = Path(str(filename or "")).suffix.lower()
-    if suffix == ".json":
-        if not content or len(content) > MAX_VECTOR_BYTES:
-            raise ValueError("animation_file_too_large")
-        _validate_lottie_json(content)
-        return suffix, "application/json"
-    if suffix == ".lottie":
-        if not content or len(content) > MAX_VECTOR_BYTES:
-            raise ValueError("animation_file_too_large")
-        _validate_dotlottie(content)
-        return suffix, "application/zip"
-    if suffix == ".webp":
-        if not content or len(content) > MAX_WEBP_BYTES or not content.startswith(b"RIFF") or content[8:12] != b"WEBP":
-            raise ValueError("invalid_animation_file")
-        return suffix, "image/webp"
-    if suffix == ".gif":
-        if not content or len(content) > MAX_GIF_BYTES or content[:6] not in {b"GIF87a", b"GIF89a"}:
-            raise ValueError("invalid_animation_file")
-        return suffix, "image/gif"
-    if suffix == ".png":
-        if not content or len(content) > MAX_PNG_BYTES or not content.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise ValueError("invalid_animation_file")
-        return suffix, "image/png"
+    detected = detect_animation_kind(content)
+
+    # Prefer magic-byte detection so a JPEG renamed to .png still uploads as JPEG.
+    if detected:
+        kind, mime = detected
+        if kind == ".png":
+            _ensure_within_limit(len(content), MAX_PNG_BYTES)
+            return kind, mime
+        if kind == ".webp":
+            _ensure_within_limit(len(content), MAX_WEBP_BYTES)
+            return kind, mime
+        if kind == ".gif":
+            _ensure_within_limit(len(content), MAX_GIF_BYTES)
+            return kind, mime
+        if kind == ".jpg":
+            _ensure_within_limit(len(content), MAX_JPEG_BYTES)
+            return kind, mime
+        if kind == ".json":
+            _ensure_within_limit(len(content), MAX_VECTOR_BYTES)
+            _validate_lottie_json(content)
+            return kind, mime
+        if kind == ".lottie":
+            _ensure_within_limit(len(content), MAX_VECTOR_BYTES)
+            _validate_dotlottie(content)
+            return kind, mime
+
+    if suffix in IMAGE_SUFFIXES | VECTOR_SUFFIXES:
+        # Extension claims a known type, but bytes do not match.
+        raise ValueError("invalid_animation_file")
     raise ValueError("invalid_animation_format")
 
 

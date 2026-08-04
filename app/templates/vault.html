@@ -38,17 +38,14 @@
     <label class="wide">Описание<textarea name="description" maxlength="1000" rows="3" placeholder="Что получает участник"></textarea></label>
     <label class="wide">Инструкция для клуба<textarea name="redeem_instructions" maxlength="1000" rows="3" placeholder="Покажите карту администратору перед началом турнира"></textarea></label>
     <fieldset class="wide reward-animation-fieldset">
-      <legend>Анимация награды</legend>
-      <p class="muted">Выберите готовую или загрузите свою. Файл заменяет выбор из библиотеки.</p>
+      <legend>Стикер награды</legend>
+      <p class="muted">Загрузите готовый стикер. Он появится в каталоге, на главной и в активной JACK CARD.</p>
       <div class="reward-animation-picker">
-        <label class="reward-animation-option none"><input type="radio" name="animation_choice" value="" checked><span class="animation-none">Без анимации</span></label>
-        {% for animation in reward_animations %}
-        <label class="reward-animation-option"><input type="radio" name="animation_choice" value="{{ animation.key }}"><span class="reward-animation-preview" data-reward-animation-src="{{ animation.path }}"></span><strong>{{ animation.title }}</strong><small>{{ animation.collection }}</small></label>
-        {% endfor %}
+        <label class="reward-animation-option none"><input type="radio" name="animation_choice" value="" checked><span class="animation-none">Без стикера</span></label>
       </div>
-      <label class="reward-upload-label">Загрузить свою
-        <input type="file" name="animation_file" accept=".json,.lottie,.webp,.gif,.png,application/json,application/zip,image/webp,image/gif,image/png">
-        <small>512×512 px · прозрачный фон · JSON/Lottie до 1 МБ · WebP до 1,5 МБ · GIF до 2 МБ</small>
+      <label class="reward-upload-label">Загрузить стикер
+        <input type="file" name="animation_file" accept=".png,.webp,.jpg,.jpeg,.gif,image/png,image/webp,image/jpeg,image/gif">
+        <small>PNG, WebP, JPEG или GIF · лучше 512×512 · прозрачный фон · PNG до 2,5 МБ</small>
       </label>
     </fieldset>
     <button class="primary" type="submit">Опубликовать награду</button>
@@ -80,17 +77,14 @@
         <label class="wide">Описание<textarea name="description" maxlength="1000" rows="3">{{ reward.description }}</textarea></label>
         <label class="wide">Инструкция<textarea name="redeem_instructions" maxlength="1000" rows="3">{{ reward.redeem_instructions }}</textarea></label>
         <fieldset class="wide reward-animation-fieldset compact">
-          <legend>Анимация</legend>
+          <legend>Стикер</legend>
           <div class="reward-animation-picker">
-            <label class="reward-animation-option none"><input type="radio" name="animation_choice" value="" {% if not reward.animation_key and not reward.animation_path %}checked{% endif %}><span class="animation-none">Без анимации</span></label>
-            {% if reward.animation_path %}<label class="reward-animation-option"><input type="radio" name="animation_choice" value="__keep_upload__" checked>{{ reward_animation(reward, 'reward-animation-preview', '♦') }}<strong>Загруженная</strong><small>Текущий файл</small></label>{% endif %}
-            {% for animation in reward_animations %}
-            <label class="reward-animation-option"><input type="radio" name="animation_choice" value="{{ animation.key }}" {% if reward.animation_key == animation.key %}checked{% endif %}><span class="reward-animation-preview" data-reward-animation-src="{{ animation.path }}"></span><strong>{{ animation.title }}</strong><small>{{ animation.collection }}</small></label>
-            {% endfor %}
+            <label class="reward-animation-option none"><input type="radio" name="animation_choice" value="" {% if not reward.animation_key and not reward.animation_path %}checked{% endif %}><span class="animation-none">Без стикера</span></label>
+            {% if reward.animation_path %}<label class="reward-animation-option"><input type="radio" name="animation_choice" value="__keep_upload__" checked>{{ reward_animation(reward, 'reward-animation-preview', '♦') }}<strong>Текущий стикер</strong><small>Оставить без изменений</small></label>{% endif %}
           </div>
-          <label class="reward-upload-label">Заменить файлом
-            <input type="file" name="animation_file" accept=".json,.lottie,.webp,.gif,.png,application/json,application/zip,image/webp,image/gif,image/png">
-            <small>512×512 px · прозрачный фон</small>
+          <label class="reward-upload-label">Заменить стикер
+            <input type="file" name="animation_file" accept=".png,.webp,.jpg,.jpeg,.gif,image/png,image/webp,image/jpeg,image/gif">
+            <small>PNG, WebP, JPEG или GIF · лучше 512×512 · PNG до 2,5 МБ</small>
           </label>
         </fieldset>
         <label class="check-label"><input name="is_active" type="checkbox" value="true" {% if reward.is_active %}checked{% endif %}> Показывать в каталоге</label>
