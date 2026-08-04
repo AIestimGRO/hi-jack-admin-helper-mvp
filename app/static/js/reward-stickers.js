@@ -58,8 +58,14 @@
     }
   }
 
+  function fixAccuracyHeading() {
+    const heading = document.querySelector(".rating-overview-copy .member-eyebrow");
+    if (heading) heading.textContent = "Точность ответов";
+  }
+
   function initRewardStickers() {
     document.querySelectorAll(".reward-animation-fieldset").forEach(prepareStickerFieldset);
+    fixAccuracyHeading();
   }
 
   if (document.readyState === "loading") {
