@@ -8,31 +8,31 @@
   {% if mode == 'forgot' %}
     <p class="member-eyebrow">Восстановление доступа</p>
     <h1>Забыли пароль?</h1>
-    <p class="member-muted">Укажите почту аккаунта. Если она найдена, мы отправим код.</p>
+    <p class="member-muted">Отправим код на почту аккаунта</p>
     <form class="member-form" action="/account/forgot-password" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Электронная почта <small>Введите ту же почту, которую использовали при регистрации.</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" required></label>
+      <label>Электронная почта<input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" required></label>
       <button class="member-primary" type="submit">Отправить код</button>
     </form>
     <p class="member-switch"><a href="/account/login">← Вернуться ко входу</a></p>
   {% elif mode == 'reset' %}
     <p class="member-eyebrow">Новый пароль</p>
     <h1>Подтвердите почту</h1>
-    <p class="member-muted">Введите код из письма и придумайте пароль длиной не менее 6 символов, содержащий хотя бы одну букву.</p>
+    <p class="member-muted">Код из письма и новый пароль</p>
     <form class="member-form" action="/account/reset-password" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Код из письма <small>Только 6 цифр без пробелов.</small><input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000000" required></label>
-      <label>Новый пароль <small>Минимум 6 символов и хотя бы одна буква. Цифры и специальные символы — по желанию.</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required></label>
-      <label>Повторите пароль <small>Введите тот же пароль ещё раз.</small><input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required></label>
-      <button class="member-primary" type="submit">Сохранить новый пароль</button>
+      <label>Код из письма <small>6 цифр</small><input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000000" required></label>
+      <label>Новый пароль <small>От 6 символов, минимум одна буква</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required></label>
+      <label>Повторите пароль<input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required></label>
+      <button class="member-primary" type="submit">Сохранить пароль</button>
     </form>
   {% else %}
     <p class="member-eyebrow">HI, JACK CLUB!</p>
-    <h1>Вход в личный кабинет</h1>
-    <p class="member-muted">Используйте подтверждённую почту и пароль.</p>
+    <h1>Вход в JACKSIDE</h1>
+    <p class="member-muted">Почта и пароль</p>
     <form class="member-form" action="/account/login" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Электронная почта <small>Почта, которую вы указали при регистрации.</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" required></label>
+      <label>Электронная почта<input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" required></label>
       <label>Пароль<input name="password" type="password" maxlength="128" autocomplete="current-password" required></label>
       <button class="member-primary" type="submit">Войти</button>
     </form>

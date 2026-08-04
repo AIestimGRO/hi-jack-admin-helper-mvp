@@ -317,3 +317,11 @@
     max-width: 100%;
   }
 }
+.registration-card > h1,
+.registration-card > .member-eyebrow,
+.registration-card > .member-muted,
+.auth-card > h1,
+.auth-card > .member-eyebrow,
+.auth-card > .member-muted {
+  text-align: center;
+}

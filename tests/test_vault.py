@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,10 @@ from app.services.member_accounts import (
     hash_password,
     issue_session,
     jackcoin_balance,
+)
+from app.services.reward_animations import (
+    REWARD_ANIMATION_BY_KEY,
+    validate_animation_upload,
 )
 from app.services.vault import (
     activate_reward,
@@ -651,6 +656,7 @@ def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
                 "validity_days": "7",
                 "inventory_total": "2",
                 "position": "10",
+                "animation_choice": "coffee_cup",
                 "csrf_token": _csrf(vault_page),
             },
             follow_redirects=False,
@@ -688,6 +694,47 @@ def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
         member_page = client.get("/account?tab=rewards")
         assert member_page.status_code == 200
         assert "Капучино" in member_page.text
+        assert (
+            'data-reward-animation-src="/static/animations/rewards/coffee_cup.json"'
+            in member_page.text
+        )
+        vault_page = client.get("/admin/vault")
+        updated = client.post(
+            "/api/vault/catalog/1/update",
+            data={
+                "title": "Капучино",
+                "description": "Кофе в клубе",
+                "category": "drink",
+                "price_jc": "350",
+                "validity_days": "7",
+                "inventory_total": "2",
+                "position": "10",
+                "is_active": "true",
+                "animation_choice": "coffee_cup",
+                "csrf_token": _csrf(vault_page),
+            },
+            files={
+                "animation_file": (
+                    "coffee.gif",
+                    b"GIF89a-reward-animation",
+                    "image/gif",
+                )
+            },
+            follow_redirects=False,
+        )
+        assert updated.status_code == 303
+        with connect(settings.db_path) as conn:
+            uploaded = conn.execute(
+                "SELECT animation_key, animation_path, animation_mime FROM vault_catalog_rewards WHERE id=1"
+            ).fetchone()
+            assert uploaded["animation_key"] is None
+            assert uploaded["animation_path"].startswith("/reward-media/reward-")
+            assert uploaded["animation_mime"] == "image/gif"
+        media = client.get(uploaded["animation_path"])
+        assert media.status_code == 200
+        assert media.content == b"GIF89a-reward-animation"
+        member_page = client.get("/account?tab=rewards")
+        assert f'src="{uploaded["animation_path"]}"' in member_page.text
         purchase_match = re.search(
             r'name="purchase_id" value="([^"]+)"', member_page.text
         )
@@ -750,3 +797,57 @@ def test_vault_admin_member_qr_and_redeem_flow(tmp_path, monkeypatch) -> None:
             assert conn.execute(
                 "SELECT status FROM vault_member_rewards WHERE id=?", (card["id"],)
             ).fetchone()[0] == "redeemed"
+
+
+def test_reward_animation_library_and_upload_validation() -> None:
+    assert {
+        "casino_chips",
+        "royal_cards",
+        "lucky_crown",
+        "champion_cup",
+        "winner_badge",
+        "premium_gem",
+        "laurel_star",
+        "jackcoin_stack",
+        "coffee_cup",
+        "club_cocktail",
+    } == set(REWARD_ANIMATION_BY_KEY)
+    content = (
+        Path(__file__).resolve().parents[1]
+        / "app/static/animations/rewards/casino_chips.json"
+    ).read_bytes()
+    assert validate_animation_upload("chip.json", content) == (
+        ".json",
+        "application/json",
+    )
+    assert validate_animation_upload("spark.gif", b"GIF89a-reward") == (
+        ".gif",
+        "image/gif",
+    )
+    with pytest.raises(ValueError, match="invalid_animation_file"):
+        validate_animation_upload(
+            "remote.json",
+            b'{"v":"5","fr":30,"ip":0,"op":30,"w":512,"h":512,'
+            b'"layers":[{"ref":"https://example.test/a.png"}]}',
+        )
+
+
+def test_reward_animation_columns_migrate_without_changing_existing_reward(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "vault-animation-migration.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        reward = _catalog(conn)
+        conn.execute("ALTER TABLE vault_catalog_rewards DROP COLUMN animation_key")
+        conn.execute("ALTER TABLE vault_catalog_rewards DROP COLUMN animation_path")
+        conn.execute("ALTER TABLE vault_catalog_rewards DROP COLUMN animation_mime")
+    init_db(db_path)
+    with connect(db_path) as conn:
+        migrated = conn.execute(
+            "SELECT * FROM vault_catalog_rewards WHERE id=?", (reward["id"],)
+        ).fetchone()
+        assert migrated["title"] == "FREE ENTRY"
+        assert migrated["animation_key"] is None
+        assert migrated["animation_path"] is None
+        assert migrated["animation_mime"] is None

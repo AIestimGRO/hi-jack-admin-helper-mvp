@@ -1,0 +1,10 @@
+{% macro reward_animation(reward, class_name='', fallback='♦') -%}
+  {% set source = reward_animation_url(animation_key=reward.animation_key, animation_path=reward.animation_path) %}
+  {% if source and reward.animation_mime and reward.animation_mime.startswith('image/') %}
+    <img class="reward-animation {{ class_name }}" src="{{ source }}" alt="" loading="lazy">
+  {% elif source %}
+    <span class="reward-animation reward-animation-lottie {{ class_name }}" data-reward-animation-src="{{ source }}" aria-hidden="true"></span>
+  {% else %}
+    <span class="reward-animation-fallback {{ class_name }}" aria-hidden="true">{{ fallback }}</span>
+  {% endif %}
+{%- endmacro %}

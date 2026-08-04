@@ -504,6 +504,9 @@ CREATE TABLE IF NOT EXISTS vault_catalog_rewards (
     validity_days INTEGER NOT NULL DEFAULT 30 CHECK(validity_days >= 0),
     inventory_total INTEGER CHECK(inventory_total IS NULL OR inventory_total >= 0),
     redeem_instructions TEXT NOT NULL DEFAULT '',
+    animation_key TEXT,
+    animation_path TEXT,
+    animation_mime TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     position INTEGER NOT NULL DEFAULT 100,
     created_by_admin_id INTEGER REFERENCES admins(id),
@@ -824,6 +827,9 @@ def init_db(db_path: str | Path) -> None:
                 WHERE activation_code IS NOT NULL AND activated_at IS NOT NULL
                 """
             )
+        _ensure_column(conn, "vault_catalog_rewards", "animation_key TEXT")
+        _ensure_column(conn, "vault_catalog_rewards", "animation_path TEXT")
+        _ensure_column(conn, "vault_catalog_rewards", "animation_mime TEXT")
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS ux_vault_active_activation_code

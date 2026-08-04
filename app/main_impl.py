@@ -102,6 +102,12 @@ from app.services.member_accounts import (
 )
 from app.services.quiz_retention import cleanup_quiz_data
 from app.services.quiz_rewards import issue_referral_reward, issue_reward, redeem_reward, render_campaign_text
+from app.services.reward_animations import (
+    REWARD_ANIMATIONS,
+    animation_url as reward_animation_url,
+    save_animation_upload,
+    validate_animation_key,
+)
 from app.services.telegram_oidc import authorization_url, exchange_telegram_code, new_pkce
 from app.services.vault import (
     activate_reward as activate_vault_reward,
@@ -138,6 +144,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     campaign_timezone = ZoneInfo(settings.timezone_name)
     quiz_media_dir = Path(settings.db_path).parent / "quiz-media"
     quiz_media_dir.mkdir(parents=True, exist_ok=True)
+    reward_media_dir = Path(settings.db_path).parent / "reward-media"
+    reward_media_dir.mkdir(parents=True, exist_ok=True)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -173,8 +181,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
     app.mount("/quiz-media", StaticFiles(directory=quiz_media_dir), name="quiz-media")
+    app.mount("/reward-media", StaticFiles(directory=reward_media_dir), name="reward-media")
     templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
     templates.env.globals["display_phone"] = display_phone
+    templates.env.globals["reward_animation_url"] = reward_animation_url
 
     def display_datetime(value: Any, with_seconds: bool = False) -> str:
         if value is None or str(value).strip() == "":
@@ -1783,7 +1793,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             member_rewards = conn.execute(
                 """
                 SELECT vmr.*, vcr.title, vcr.description, vcr.category,
-                       vcr.redeem_instructions
+                       vcr.redeem_instructions, vcr.animation_key,
+                       vcr.animation_path, vcr.animation_mime
                 FROM vault_member_rewards vmr
                 JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
                 WHERE vmr.client_id=?
@@ -3812,6 +3823,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 events=events,
                 final_prize_errors=final_prize_errors,
                 filters={"status": status, "code": code},
+                reward_animations=REWARD_ANIMATIONS,
                 ok=ok,
                 error=error,
             ),
@@ -3829,11 +3841,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         inventory_total: str = Form(""),
         redeem_instructions: str = Form(""),
         position: int = Form(100),
+        animation_choice: str = Form(""),
+        animation_file: UploadFile | None = File(None),
         csrf_token: str = Form(...),
     ):
         require_master(request, api=True)
         check_csrf(request, csrf_token)
         try:
+            animation_key = validate_animation_key(animation_choice)
+            animation_path = None
+            animation_mime = "application/json" if animation_key else None
+            if animation_file and animation_file.filename:
+                content = await animation_file.read()
+                animation_path, animation_mime = save_animation_upload(
+                    reward_media_dir, animation_file.filename, content
+                )
+                animation_key = None
             with transaction(settings.db_path) as conn:
                 reward = create_catalog_reward(
                     conn,
@@ -3847,6 +3870,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     redeem_instructions=redeem_instructions,
                     position=position,
                     admin_id=int(request.session["admin_id"]),
+                    animation_key=animation_key,
+                    animation_path=animation_path,
+                    animation_mime=animation_mime,
                 )
                 audit(
                     conn,
@@ -3859,6 +3885,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "code": reward["code"],
                         "price_jc": reward["price_jc"],
                         "inventory_total": reward["inventory_total"],
+                        "animation_key": reward["animation_key"],
+                        "animation_path": reward["animation_path"],
                     },
                 )
         except ValueError as exc:
@@ -3871,6 +3899,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "invalid_validity": "Срок действия указан неверно",
                 "invalid_inventory": "Тираж должен быть целым неотрицательным числом или пустым",
                 "invalid_position": "Порядок указан неверно",
+                "invalid_animation_key": "Выберите анимацию из библиотеки",
+                "invalid_animation_format": "Формат: JSON, Lottie, WebP, GIF или PNG",
+                "animation_file_too_large": "Файл анимации слишком большой",
+                "invalid_animation_file": "Файл анимации повреждён или не поддерживается",
+                "invalid_animation_dimensions": "Холст Lottie должен быть от 64 до 2048 px",
             }
             return vault_admin_redirect(
                 messages.get(str(exc), "Не удалось создать награду"), error=True
@@ -3890,11 +3923,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redeem_instructions: str = Form(""),
         position: int = Form(100),
         is_active: bool = Form(False),
+        animation_choice: str = Form(""),
+        animation_file: UploadFile | None = File(None),
         csrf_token: str = Form(...),
     ):
         require_master(request, api=True)
         check_csrf(request, csrf_token)
         try:
+            animation_key = None
+            animation_path = None
+            animation_mime = None
+            if animation_choice == "__keep_upload__":
+                with connect(settings.db_path) as conn:
+                    current_reward = conn.execute(
+                        "SELECT animation_path, animation_mime FROM vault_catalog_rewards WHERE id=?",
+                        (reward_id,),
+                    ).fetchone()
+                if not current_reward:
+                    raise ValueError("catalog_reward_not_found")
+                animation_path = current_reward["animation_path"]
+                animation_mime = current_reward["animation_mime"]
+            else:
+                animation_key = validate_animation_key(animation_choice)
+                animation_mime = "application/json" if animation_key else None
+            if animation_file and animation_file.filename:
+                content = await animation_file.read()
+                animation_path, animation_mime = save_animation_upload(
+                    reward_media_dir, animation_file.filename, content
+                )
+                animation_key = None
             with transaction(settings.db_path) as conn:
                 reward = update_catalog_reward(
                     conn,
@@ -3908,6 +3965,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     redeem_instructions=redeem_instructions,
                     position=position,
                     is_active=is_active,
+                    animation_key=animation_key,
+                    animation_path=animation_path,
+                    animation_mime=animation_mime,
                 )
                 audit(
                     conn,
@@ -3920,6 +3980,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "price_jc": reward["price_jc"],
                         "inventory_total": reward["inventory_total"],
                         "is_active": bool(reward["is_active"]),
+                        "animation_key": reward["animation_key"],
+                        "animation_path": reward["animation_path"],
                     },
                 )
         except ValueError as exc:
@@ -3932,6 +3994,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "invalid_validity": "Срок действия указан неверно",
                 "invalid_inventory": "Тираж должен быть целым неотрицательным числом или пустым",
                 "invalid_position": "Порядок указан неверно",
+                "invalid_animation_key": "Выберите анимацию из библиотеки",
+                "invalid_animation_format": "Формат: JSON, Lottie, WebP, GIF или PNG",
+                "animation_file_too_large": "Файл анимации слишком большой",
+                "invalid_animation_file": "Файл анимации повреждён или не поддерживается",
+                "invalid_animation_dimensions": "Холст Lottie должен быть от 64 до 2048 px",
             }
             return vault_admin_redirect(
                 messages.get(str(exc), "Не удалось сохранить награду"), error=True

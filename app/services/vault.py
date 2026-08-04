@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.member_accounts import jackcoin_balance
+from app.services.reward_animations import validate_animation_key
 
 
 CATALOG_CODE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{2,49}$")
@@ -85,6 +86,9 @@ def create_catalog_reward(
     redeem_instructions: str,
     position: int,
     admin_id: int,
+    animation_key: str | None = None,
+    animation_path: str | None = None,
+    animation_mime: str | None = None,
 ) -> sqlite3.Row:
     normalized_code = normalize_catalog_code(code)
     (
@@ -102,14 +106,22 @@ def create_catalog_reward(
         inventory_total=inventory_total,
         position=position,
     )
+    clean_animation_key = validate_animation_key(animation_key)
+    clean_animation_path = str(animation_path or "").strip() or None
+    clean_animation_mime = str(animation_mime or "").strip() or None
+    if clean_animation_key:
+        clean_animation_path = None
+        clean_animation_mime = "application/json"
+    elif clean_animation_path and not clean_animation_path.startswith("/reward-media/"):
+        raise ValueError("invalid_animation_file")
     try:
         cursor = conn.execute(
             """
             INSERT INTO vault_catalog_rewards(
                 code, title, description, category, price_jc, validity_days,
-                inventory_total, redeem_instructions, position,
-                created_by_admin_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                inventory_total, redeem_instructions, animation_key,
+                animation_path, animation_mime, position, created_by_admin_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 normalized_code,
@@ -120,6 +132,9 @@ def create_catalog_reward(
                 clean_validity,
                 clean_inventory,
                 str(redeem_instructions or "").strip()[:1_000],
+                clean_animation_key,
+                clean_animation_path,
+                clean_animation_mime,
                 clean_position,
                 admin_id,
             ),
@@ -144,6 +159,9 @@ def update_catalog_reward(
     redeem_instructions: str,
     position: int,
     is_active: bool,
+    animation_key: str | None = None,
+    animation_path: str | None = None,
+    animation_mime: str | None = None,
 ) -> sqlite3.Row:
     current = conn.execute(
         "SELECT * FROM vault_catalog_rewards WHERE id=?", (reward_id,)
@@ -168,11 +186,20 @@ def update_catalog_reward(
     allocated = catalog_inventory_used(conn, reward_id)
     if clean_inventory is not None and clean_inventory < allocated:
         raise ValueError("inventory_below_allocated")
+    clean_animation_key = validate_animation_key(animation_key)
+    clean_animation_path = str(animation_path or "").strip() or None
+    clean_animation_mime = str(animation_mime or "").strip() or None
+    if clean_animation_key:
+        clean_animation_path = None
+        clean_animation_mime = "application/json"
+    elif clean_animation_path and not clean_animation_path.startswith("/reward-media/"):
+        raise ValueError("invalid_animation_file")
     conn.execute(
         """
         UPDATE vault_catalog_rewards
         SET title=?, description=?, category=?, price_jc=?, validity_days=?,
-            inventory_total=?, redeem_instructions=?, position=?, is_active=?,
+            inventory_total=?, redeem_instructions=?, animation_key=?,
+            animation_path=?, animation_mime=?, position=?, is_active=?,
             updated_at=CURRENT_TIMESTAMP
         WHERE id=?
         """,
@@ -184,6 +211,9 @@ def update_catalog_reward(
             clean_validity,
             clean_inventory,
             str(redeem_instructions or "").strip()[:1_000],
+            clean_animation_key,
+            clean_animation_path,
+            clean_animation_mime,
             clean_position,
             int(is_active),
             reward_id,

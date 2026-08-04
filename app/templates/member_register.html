@@ -24,34 +24,34 @@
       <input type="hidden" name="document_code" value="{{ step }}">
       <label class="member-check">
         <input name="accepted" type="checkbox" value="true" required data-consent-checkbox>
-        <span>Я ознакомился(-ась) и согласен(-на) с документом</span>
+        <span>Прочитано и принято</span>
       </label>
       <button class="member-primary" type="submit" disabled data-consent-submit>Далее</button>
     </form>
   {% elif step == 'profile' %}
     <p class="member-eyebrow">Создание аккаунта · шаг 3 из 3</p>
     <h1>Личные данные</h1>
-    <p class="member-muted">Почта станет логином, а номер телефона поможет связать аккаунт с вашей карточкой участника клуба.</p>
+    <p class="member-muted">Почта для входа · телефон для карты клуба</p>
     {% if not email_available %}
       <div class="member-alert error">Регистрация откроется после настройки отправки писем.</div>
     {% endif %}
     <form class="member-form" action="/account/register/request-code" method="post" data-registration-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Имя <small>Будет отображаться в личном кабинете. Поле можно оставить пустым.</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться" value="{{ draft.first_name if draft else '' }}"></label>
-      <label>Электронная почта <small>На неё придёт код подтверждения. После регистрации почта станет вашим логином.</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" value="{{ draft.email if draft else '' }}" required></label>
-      <label>Номер телефона <small>Укажите российский номер, привязанный к вашей карточке участника Hi Jack UP!</small><input name="phone" type="tel" maxlength="80" autocomplete="tel" inputmode="tel" placeholder="+7 999 123-45-67" value="{{ draft.phone if draft else '' }}" required></label>
-      <label>Пароль <small>Минимум 6 символов и хотя бы одна буква. Цифры и специальные символы — по желанию.</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password></label>
-      <label>Повторите пароль <small>Введите тот же пароль ещё раз.</small><input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password-confirmation><small class="password-match-message" data-password-match-message hidden>Пароли не совпадают</small></label>
-      <button class="member-primary" type="submit" {% if not email_available %}disabled{% endif %} data-registration-submit>Получить код на почту</button>
+      <label>Имя <small>Можно оставить пустым</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться" value="{{ draft.first_name if draft else '' }}"></label>
+      <label>Электронная почта <small>Сюда придёт код</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" value="{{ draft.email if draft else '' }}" required></label>
+      <label>Номер телефона <small>Номер из HI JACK!</small><input name="phone" type="tel" maxlength="80" autocomplete="tel" inputmode="tel" placeholder="+7 999 123-45-67" value="{{ draft.phone if draft else '' }}" required></label>
+      <label>Пароль <small>От 6 символов, минимум одна буква</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password></label>
+      <label>Повторите пароль<input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password-confirmation><small class="password-match-message" data-password-match-message hidden>Пароли не совпадают</small></label>
+      <button class="member-primary" type="submit" {% if not email_available %}disabled{% endif %} data-registration-submit>Получить код</button>
     </form>
   {% else %}
     <p class="member-eyebrow">Подтверждение почты</p>
     <h1>Введите код</h1>
-    <p class="member-muted">Мы отправили 6 цифр на <strong>{{ pending_email }}</strong>. Код действует {{ email_code_minutes }} минут; после нескольких неверных попыток потребуется запросить новый.</p>
+    <p class="member-muted">Код отправлен на <strong>{{ pending_email }}</strong><br>Действует {{ email_code_minutes }} минут</p>
     <form class="member-form" action="/account/register/verify" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Код из письма <small>Только 6 цифр без пробелов.</small><input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000000" required autofocus></label>
-      <button class="member-primary" type="submit">Подтвердить и создать аккаунт</button>
+      <label>Код из письма <small>6 цифр</small><input class="member-code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" placeholder="000000" required autofocus></label>
+      <button class="member-primary" type="submit">Создать аккаунт</button>
     </form>
     <div class="member-verify-actions">
       <form action="/account/register/resend-code" method="post">
@@ -63,7 +63,7 @@
         <button class="member-text-action" type="submit">Указать другую почту</button>
       </form>
     </div>
-    <p class="member-muted member-verify-hint">Если письма нет во входящих, проверьте «Спам». Можно запросить код повторно или сменить адрес.</p>
+    <p class="member-muted member-verify-hint">Нет письма? Проверьте «Спам»</p>
   {% endif %}
 
   <p class="member-switch">Уже есть аккаунт? <a href="/account/login">Войти</a></p>

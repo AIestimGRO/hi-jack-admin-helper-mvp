@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_reward_animation.html" import reward_animation %}
 {% block title %}THE VAULT — Hi Jack Club{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -25,7 +26,7 @@
 {% if admin_role == 'master_admin' %}
 <details class="card vault-create-card">
   <summary>+ Добавить награду в каталог</summary>
-  <form action="/api/vault/catalog/create" method="post">
+  <form action="/api/vault/catalog/create" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Системный код<input name="code" maxlength="50" pattern="[a-z0-9][a-z0-9_-]{2,49}" placeholder="free_entry" required></label>
     <label>Название<input name="title" maxlength="100" placeholder="FREE ENTRY" required></label>
@@ -36,6 +37,20 @@
     <label>Порядок<input name="position" type="number" min="0" max="9999" value="100" required></label>
     <label class="wide">Описание<textarea name="description" maxlength="1000" rows="3" placeholder="Что получает участник"></textarea></label>
     <label class="wide">Инструкция для клуба<textarea name="redeem_instructions" maxlength="1000" rows="3" placeholder="Покажите карту администратору перед началом турнира"></textarea></label>
+    <fieldset class="wide reward-animation-fieldset">
+      <legend>Анимация награды</legend>
+      <p class="muted">Выберите готовую или загрузите свою. Файл заменяет выбор из библиотеки.</p>
+      <div class="reward-animation-picker">
+        <label class="reward-animation-option none"><input type="radio" name="animation_choice" value="" checked><span class="animation-none">Без анимации</span></label>
+        {% for animation in reward_animations %}
+        <label class="reward-animation-option"><input type="radio" name="animation_choice" value="{{ animation.key }}"><span class="reward-animation-preview" data-reward-animation-src="{{ animation.path }}"></span><strong>{{ animation.title }}</strong><small>{{ animation.collection }}</small></label>
+        {% endfor %}
+      </div>
+      <label class="reward-upload-label">Загрузить свою
+        <input type="file" name="animation_file" accept=".json,.lottie,.webp,.gif,.png,application/json,application/zip,image/webp,image/gif,image/png">
+        <small>512×512 px · прозрачный фон · JSON/Lottie до 1 МБ · WebP до 1,5 МБ · GIF до 2 МБ</small>
+      </label>
+    </fieldset>
     <button class="primary" type="submit">Опубликовать награду</button>
   </form>
 </details>
@@ -46,7 +61,7 @@
 {% for reward in catalog %}
   <article class="card vault-admin-item {{ '' if reward.is_active else 'inactive' }}">
     <div class="master-item-head">
-      <div><h3>{{ reward.title }}</h3><code>{{ reward.code }}</code></div>
+      <div class="vault-admin-reward-title">{{ reward_animation(reward, 'vault-admin-animation', '♦') }}<span><h3>{{ reward.title }}</h3><code>{{ reward.code }}</code></span></div>
       <span class="type-pill">{{ reward.price_jc }} JC</span>
     </div>
     <p class="muted">Выдано: {{ reward.allocated_count }}{% if reward.inventory_total is not none %} из {{ reward.inventory_total }}{% else %} · без лимита{% endif %} · активно {{ reward.active_count or 0 }} · сыграно {{ reward.redeemed_count or 0 }}</p>
@@ -54,7 +69,7 @@
     {% if admin_role == 'master_admin' %}
     <details>
       <summary>Настройки награды</summary>
-      <form class="vault-edit-form" action="/api/vault/catalog/{{ reward.id }}/update" method="post">
+      <form class="vault-edit-form" action="/api/vault/catalog/{{ reward.id }}/update" method="post" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label>Название<input name="title" maxlength="100" value="{{ reward.title }}" required></label>
         <label>Категория<select name="category"><option value="club" {% if reward.category=='club' %}selected{% endif %}>Клубная</option><option value="drink" {% if reward.category=='drink' %}selected{% endif %}>Напиток</option><option value="entry" {% if reward.category=='entry' %}selected{% endif %}>Вход</option><option value="card" {% if reward.category=='card' %}selected{% endif %}>JACK CARD</option><option value="profile" {% if reward.category=='profile' %}selected{% endif %}>Профиль</option><option value="protection" {% if reward.category=='protection' %}selected{% endif %}>Защита серии</option></select></label>
@@ -64,6 +79,20 @@
         <label>Порядок<input name="position" type="number" min="0" max="9999" value="{{ reward.position }}" required></label>
         <label class="wide">Описание<textarea name="description" maxlength="1000" rows="3">{{ reward.description }}</textarea></label>
         <label class="wide">Инструкция<textarea name="redeem_instructions" maxlength="1000" rows="3">{{ reward.redeem_instructions }}</textarea></label>
+        <fieldset class="wide reward-animation-fieldset compact">
+          <legend>Анимация</legend>
+          <div class="reward-animation-picker">
+            <label class="reward-animation-option none"><input type="radio" name="animation_choice" value="" {% if not reward.animation_key and not reward.animation_path %}checked{% endif %}><span class="animation-none">Без анимации</span></label>
+            {% if reward.animation_path %}<label class="reward-animation-option"><input type="radio" name="animation_choice" value="__keep_upload__" checked>{{ reward_animation(reward, 'reward-animation-preview', '♦') }}<strong>Загруженная</strong><small>Текущий файл</small></label>{% endif %}
+            {% for animation in reward_animations %}
+            <label class="reward-animation-option"><input type="radio" name="animation_choice" value="{{ animation.key }}" {% if reward.animation_key == animation.key %}checked{% endif %}><span class="reward-animation-preview" data-reward-animation-src="{{ animation.path }}"></span><strong>{{ animation.title }}</strong><small>{{ animation.collection }}</small></label>
+            {% endfor %}
+          </div>
+          <label class="reward-upload-label">Заменить файлом
+            <input type="file" name="animation_file" accept=".json,.lottie,.webp,.gif,.png,application/json,application/zip,image/webp,image/gif,image/png">
+            <small>512×512 px · прозрачный фон</small>
+          </label>
+        </fieldset>
         <label class="check-label"><input name="is_active" type="checkbox" value="true" {% if reward.is_active %}checked{% endif %}> Показывать в каталоге</label>
         <button class="button" type="submit">Сохранить</button>
       </form>

@@ -600,7 +600,7 @@ def test_quiz_campaign_schedule_blocks_early_and_late_starts(tmp_path):
         late_page = client.get("/quiz?campaign=default")
         assert late_page.status_code == 200
         assert 'data-schedule-state="ended"' in late_page.text
-        assert "Время участия в этом турнире закончилось" in late_page.text
+        assert "Приём ответов закрыт" in late_page.text
         assert client.post("/api/quiz/start", json={"campaign": "default"}).status_code == 410
 
         with transaction(settings.db_path) as conn:

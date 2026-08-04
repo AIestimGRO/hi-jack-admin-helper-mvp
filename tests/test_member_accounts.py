@@ -255,8 +255,8 @@ def test_registration_consents_account_session_and_profile(
     with client:
         accept_registration_documents(client)
         profile = client.get("/account/register")
-        assert "Минимум 6 символов и хотя бы одна буква" in profile.text
-        assert "привязанный к вашей карточке участника Hi Jack UP!" in profile.text
+        assert "От 6 символов, минимум одна буква" in profile.text
+        assert "Номер из HI JACK!" in profile.text
         assert "Подтвердить через Telegram" not in profile.text
         submit = re.search(
             r"<button[^>]+data-registration-submit[^>]*>", profile.text
@@ -294,13 +294,10 @@ def test_registration_consents_account_session_and_profile(
         telegram_step = client.get("/account/telegram")
         assert telegram_step.status_code == 200
         assert "Подключить Telegram?" in telegram_step.text
-        assert (
-            "Telegram необходим чтобы объединить Ваши достижения "
-            "из приложения Hi Jack UP!"
-        ) in telegram_step.text
+        assert "Объединим достижения HI JACK! и JACKSIDE" in telegram_step.text
         assert "Дополнительный шаг" not in telegram_step.text
         assert "Это необязательно" not in telegram_step.text
-        assert "Пропустить и перейти в кабинет" in telegram_step.text
+        assert ">Пропустить<" in telegram_step.text
 
         telegram_start = client.get(
             "/account/telegram/start", follow_redirects=False
@@ -812,11 +809,19 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         assert 'data-account-tab="rating"' in rating.text
         assert "Рейтинг и статистика" in rating.text
         assert "80%" in rating.text
+        accuracy_card = re.search(
+            r'<section class="rating-overview-card">(.*?)</section>',
+            rating.text,
+            re.S,
+        )
+        assert accuracy_card
+        assert accuracy_card.group(1).count("80%") == 1
+        assert "<strong>80" not in accuracy_card.group(1)
         assert "Пройдено квизов" in rating.text
         assert "Рейтинг JACKSIDE" in rating.text
         assert "Точный игрок" in rating.text
         assert rating.text.index("Точный игрок") < rating.text.index("Это ты")
-        assert "последние 30 дней" in rating.text
+        assert "30 дней · точность 85% · регулярность 15%" in rating.text
         assert "podium podium-1" in rating.text
         assert "podium podium-2" in rating.text
         assert "балл" in rating.text
@@ -846,7 +851,7 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         with transaction(settings.db_path) as conn:
             conn.execute("UPDATE quiz_campaigns SET is_active=0")
         empty_quizzes = client.get("/account?tab=quizzes")
-        assert "Активных квизов пока нет" in empty_quizzes.text
+        assert "Квизы готовятся" in empty_quizzes.text
         assert "Играй, поднимайся в рейтинге" not in empty_quizzes.text
         assert "<h1>Квизы</h1>" not in empty_quizzes.text
 

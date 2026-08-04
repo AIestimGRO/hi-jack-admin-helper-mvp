@@ -30,7 +30,7 @@
     <section class="quiz-screen quiz-schedule-screen" data-screen="ended">
       <p class="quiz-kicker">Турнир завершён</p>
       <h1>{{ campaign_title }}</h1>
-      <p class="quiz-lead quiz-ended-message">Время участия в этом турнире закончилось.</p>
+      <p class="quiz-lead quiz-ended-message">Приём ответов закрыт</p>
     </section>
 
     <section class="quiz-screen" data-screen="welcome">
@@ -51,14 +51,14 @@
         <strong>{{ daily_prize_title }}</strong>
         <small>{{ daily_prize_note }}</small>
       </div>
-      <p class="quiz-lead small">За финальный стол попадут до 10 участников: сначала по числу правильных ответов, затем по скорости. Начать отбор нужно в первые 5 минут. Опоздавшие всё равно проходят квиз, получают награду и JACKCOIN.</p>
+      <p class="quiz-lead small">Топ-10: сначала точность, затем скорость<br>Отбор открыт первые 5 минут</p>
       <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
     </section>
 
     <section class="quiz-screen daily-414-screen" data-screen="daily-jackcoin">
       <p class="quiz-kicker">JACKSIDE 4:14</p>
-      <h2>Ответы превращаются в ценность</h2>
-      <p class="quiz-lead">За каждый правильный ответ — 5 JACKCOIN. За завершение выпуска — ещё 10. За 10/10 — ещё 20.</p>
+      <h2>Ответы → JACKCOIN</h2>
+      <p class="quiz-lead">+5 за ответ · +10 за игру · +20 за 10/10</p>
       <div class="daily-rule-list">
         <span>Один человек</span>
         <span>Один аккаунт</span>
@@ -71,8 +71,8 @@
     <section class="quiz-screen daily-414-screen river-screen" data-screen="river">
       <p class="quiz-kicker">Последняя улица</p>
       <div class="river-mark">РИВЕР</div>
-      <h2>Последняя карта основного раунда</h2>
-      <p class="quiz-lead">Десятый вопрос завершает отборочный квиз. Ответ изменить нельзя, время продолжает идти.</p>
+      <h2>Последняя карта раунда</h2>
+      <p class="quiz-lead">Ответ нельзя изменить. Таймер идёт</p>
       <button class="quiz-primary" type="button" data-action="river-open">ОТКРЫТЬ РИВЕР</button>
     </section>
 
@@ -116,7 +116,7 @@
     <section class="quiz-screen" data-screen="remembered">
       <p class="quiz-kicker">С возвращением!</p>
       <h2 class="quiz-remembered-greeting">Добрый день! Это вы?</h2>
-      <p class="quiz-lead small">Мы запомнили вас на этом устройстве. Повторно вводить данные не нужно.</p>
+      <p class="quiz-lead small">Мы узнали это устройство</p>
       <div class="quiz-remembered-actions">
         <button class="quiz-primary" type="button" data-action="remembered-confirm">Да, продолжить</button>
         <button class="quiz-secondary" type="button" data-action="remembered-forget">Нет, это не я</button>
@@ -126,8 +126,8 @@
 
     <section class="quiz-screen" data-screen="identity">
       <p class="quiz-kicker">Перед началом</p>
-      <h2>Как подтвердить данные?</h2>
-      <p class="quiz-lead small">Выбери удобный способ — через Telegram или по номеру телефона.</p>
+      <h2>Как подтвердить себя?</h2>
+      <p class="quiz-lead small">Telegram или номер телефона</p>
       <div class="quiz-identity-methods">
         {% if telegram_available %}
         <a class="quiz-primary telegram-login-button" href="/quiz/telegram/start?campaign={{ campaign|urlencode }}&amp;referrer_id={{ referrer_id|urlencode }}&amp;source={{ source|urlencode }}">Подтвердить через Telegram</a>
@@ -144,7 +144,7 @@
           <label>Имя <small>необязательно</small><input name="name" autocomplete="name" maxlength="100" placeholder="Как к тебе обращаться"></label>
           <label>Никнейм в Hi Jack APP <small>необязательно</small><input name="nickname" maxlength="100" placeholder="Если есть"></label>
         </div>
-        <p class="quiz-contact-note">Номер телефона обязателен. Остальные данные можно заполнить по желанию.</p>
+        <p class="quiz-contact-note">Телефон обязателен · остальное по желанию</p>
         <div class="quiz-verified" hidden></div>
         <div class="quiz-actions single-action"><button class="quiz-primary" type="submit" data-action="start">Продолжить</button></div>
         <button class="quiz-method-back" type="button" data-action="identity-methods">Назад к способам подтверждения</button>
@@ -173,18 +173,18 @@
         <div><small>Время</small><strong class="daily-result-time"></strong></div>
         <p class="daily-result-prize"></p>
       </div>
-      <div class="quiz-reward" hidden><small>Твой уникальный код</small><strong class="quiz-reward-code"></strong><p class="quiz-reward-validity"></p><p>Покажи код администратору до окончания срока действия.</p></div>
+      <div class="quiz-reward" hidden><small>Твой код</small><strong class="quiz-reward-code"></strong><p class="quiz-reward-validity"></p><p>Покажи администратору</p></div>
       <p class="quiz-bonus-message" hidden></p>
       <div class="quiz-share" hidden>
-        <p>Пригласи друзей пройти этот тест</p>
-        <button class="quiz-secondary" type="button" data-action="share">Поделиться тестом</button>
+        <p>Зови друзей за стол</p>
+        <button class="quiz-secondary" type="button" data-action="share">Поделиться</button>
         <button class="quiz-method-back" type="button" data-action="copy-share">Скопировать ссылку</button>
         <small class="quiz-share-status" aria-live="polite"></small>
       </div>
       <button class="quiz-primary quiz-retry" type="button" data-action="new-attempt" hidden>Попробовать ещё раз</button>
     </section>
 
-    <section class="quiz-screen" data-screen="error"><div class="quiz-error-mark">!</div><h2>Что-то пошло не так</h2><p class="quiz-lead quiz-error-message"></p><button class="quiz-primary" type="button" data-action="retry">Вернуться</button></section>
+    <section class="quiz-screen" data-screen="error"><div class="quiz-error-mark">!</div><h2>Сбой раздачи</h2><p class="quiz-lead quiz-error-message"></p><button class="quiz-primary" type="button" data-action="retry">Ещё раз</button></section>
   </main>
   <script src="{{ url_for('static', path='/js/quiz.js') }}?v={{ asset_version }}" defer></script>
 </body>
