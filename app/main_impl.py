@@ -105,6 +105,7 @@ from app.services.quiz_rewards import issue_referral_reward, issue_reward, redee
 from app.services.reward_animations import (
     REWARD_ANIMATIONS,
     animation_url as reward_animation_url,
+    ensure_reward_media_dir,
     save_animation_upload,
     validate_animation_key,
 )
@@ -144,8 +145,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     campaign_timezone = ZoneInfo(settings.timezone_name)
     quiz_media_dir = Path(settings.db_path).parent / "quiz-media"
     quiz_media_dir.mkdir(parents=True, exist_ok=True)
-    reward_media_dir = Path(settings.db_path).parent / "reward-media"
-    reward_media_dir.mkdir(parents=True, exist_ok=True)
+    reward_media_dir = ensure_reward_media_dir(
+        Path(settings.db_path).resolve().parent / "reward-media"
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -3794,25 +3796,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             events = conn.execute(
                 "SELECT * FROM vault_reward_events ORDER BY id DESC LIMIT 150"
             ).fetchall()
-            final_prize_errors = conn.execute(
-                """
-                SELECT dft.id, dft.campaign_code, dft.campaign_version,
-                       dft.winner_reward_error, dft.prize_type,
-                       dft.prize_jackcoin_amount, qc.title AS campaign_title,
-                       vcr.title AS reward_title, qs.client_id,
-                       c.first_name, c.nickname, c.username
-                FROM daily_414_final_tables dft
-                JOIN quiz_campaigns qc ON qc.code=dft.campaign_code
-                LEFT JOIN vault_catalog_rewards vcr
-                  ON vcr.id=dft.prize_catalog_reward_id
-                LEFT JOIN quiz_submissions qs ON qs.id=dft.winner_submission_id
-                LEFT JOIN clients c ON c.id=qs.client_id
-                WHERE dft.winner_reward_error IS NOT NULL
-                  AND dft.winner_reward_id IS NULL
-                  AND dft.winner_jackcoin_awarded=0
-                ORDER BY dft.id DESC
-                """
-            ).fetchall()
+            try:
+                final_prize_errors = conn.execute(
+                    """
+                    SELECT dft.id, dft.campaign_code, dft.campaign_version,
+                           dft.winner_reward_error, dft.prize_type,
+                           dft.prize_jackcoin_amount, qc.title AS campaign_title,
+                           vcr.title AS reward_title, qs.client_id,
+                           c.first_name, c.nickname, c.username
+                    FROM daily_414_final_tables dft
+                    JOIN quiz_campaigns qc ON qc.code=dft.campaign_code
+                    LEFT JOIN vault_catalog_rewards vcr
+                      ON vcr.id=dft.prize_catalog_reward_id
+                    LEFT JOIN quiz_submissions qs ON qs.id=dft.winner_submission_id
+                    LEFT JOIN clients c ON c.id=qs.client_id
+                    WHERE dft.winner_reward_error IS NOT NULL
+                      AND dft.winner_reward_id IS NULL
+                      AND dft.winner_jackcoin_awarded=0
+                    ORDER BY dft.id DESC
+                    """
+                ).fetchall()
+            except sqlite3.Error:
+                logging.exception("vault final prize errors query failed")
+                final_prize_errors = []
         return templates.TemplateResponse(
             request,
             "vault.html",
@@ -3904,9 +3910,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "animation_file_too_large": "Стикер слишком большой. PNG до 2,5 МБ, WebP/JPEG до 2 МБ",
                 "invalid_animation_file": "Файл стикера не удалось прочитать. Нужен настоящий PNG/WebP/JPEG/GIF, а не переименованный файл",
                 "invalid_animation_dimensions": "Холст Lottie должен быть от 64 до 2048 px",
+                "animation_storage_error": "Не удалось сохранить стикер на сервере. Проверьте права на data/reward-media",
             }
             return vault_admin_redirect(
                 messages.get(str(exc), "Не удалось создать награду"), error=True
+            )
+        except Exception:
+            logging.exception("vault catalog create failed")
+            return vault_admin_redirect(
+                "Не удалось создать награду из‑за ошибки сервера. Посмотрите journalctl.",
+                error=True,
             )
         return vault_admin_redirect(f"Награда «{reward['title']}» добавлена в каталог")
 
@@ -3999,9 +4012,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "animation_file_too_large": "Стикер слишком большой. PNG до 2,5 МБ, WebP/JPEG до 2 МБ",
                 "invalid_animation_file": "Файл стикера не удалось прочитать. Нужен настоящий PNG/WebP/JPEG/GIF, а не переименованный файл",
                 "invalid_animation_dimensions": "Холст Lottie должен быть от 64 до 2048 px",
+                "animation_storage_error": "Не удалось сохранить стикер на сервере. Проверьте права на data/reward-media",
             }
             return vault_admin_redirect(
                 messages.get(str(exc), "Не удалось сохранить награду"), error=True
+            )
+        except Exception:
+            logging.exception("vault catalog update failed reward_id=%s", reward_id)
+            return vault_admin_redirect(
+                "Не удалось сохранить награду из‑за ошибки сервера. Посмотрите journalctl.",
+                error=True,
             )
         return vault_admin_redirect(f"Награда «{reward['title']}» обновлена")
 

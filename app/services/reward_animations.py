@@ -175,7 +175,25 @@ def save_animation_upload(directory: Path, filename: str, content: bytes) -> tup
     suffix, mime = validate_animation_upload(filename, content)
     import secrets
 
-    directory.mkdir(parents=True, exist_ok=True)
-    stored_name = f"reward-{secrets.token_hex(16)}{suffix}"
-    (directory / stored_name).write_bytes(content)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        stored_name = f"reward-{secrets.token_hex(16)}{suffix}"
+        target = directory / stored_name
+        target.write_bytes(content)
+    except OSError as exc:
+        raise ValueError("animation_storage_error") from exc
     return f"/reward-media/{stored_name}", mime
+
+
+def ensure_reward_media_dir(directory: Path) -> Path:
+    """Create the sticker storage dir and fail early if it is not writable."""
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        probe = directory / ".write-probe"
+        probe.write_bytes(b"ok")
+        probe.unlink(missing_ok=True)
+    except OSError as exc:
+        raise RuntimeError(
+            f"reward-media is not writable: {directory} ({exc})"
+        ) from exc
+    return directory

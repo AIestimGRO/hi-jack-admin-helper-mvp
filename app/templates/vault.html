@@ -114,8 +114,8 @@
         <td data-label="Карта"><strong class="reward-code-cell">{{ reward.activation_code or 'Не активирована' }}</strong><small>{% if reward.activation_expires_at %}Код до {{ display_datetime(reward.activation_expires_at) }}{% else %}Выдана {{ display_datetime(reward.created_at) }}{% endif %}</small></td>
         <td data-label="Клиент"><a href="/clients/{{ reward.client_id }}">{{ reward.first_name or reward.nickname or ('@' ~ reward.username if reward.username else 'Клиент #' ~ reward.client_id) }}</a><small>{{ display_phone(reward.phone_local, reward.phone_raw) }}</small></td>
         <td data-label="Награда">{{ reward.title }}<small>{% if reward.price_paid_jc %}{{ reward.price_paid_jc }} JC{% else %}Без списания JC{% endif %}</small></td>
-        <td data-label="Источник">{{ {'purchase':'Покупка','final_prize':'Главный приз','admin':'Администратор'}[reward.source_type] }}</td>
-        <td data-label="Статус"><span class="vault-status {{ reward.status }}">{{ {'active':'Активна','redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span></td>
+        <td data-label="Источник">{{ {'purchase':'Покупка','final_prize':'Главный приз','admin':'Администратор'}.get(reward.source_type, reward.source_type or '—') }}</td>
+        <td data-label="Статус"><span class="vault-status {{ reward.status }}">{{ {'active':'Активна','redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}.get(reward.status, reward.status) }}</span></td>
         <td data-label="Срок">{{ reward.valid_until or 'Без срока' }}</td>
         <td data-label="Действие">{% if reward.status=='active' and admin_role=='master_admin' %}<form action="/api/vault/rewards/{{ reward.id }}/cancel" method="post" onsubmit="return confirm('Отменить карту? Если она куплена, JACKCOIN вернутся клиенту.');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Отменить</button></form>{% endif %}</td>
       </tr>

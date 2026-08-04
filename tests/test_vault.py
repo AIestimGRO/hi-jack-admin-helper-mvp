@@ -17,6 +17,7 @@ from app.services.member_accounts import (
 from app.services.reward_animations import (
     MAX_PNG_BYTES,
     REWARD_ANIMATION_BY_KEY,
+    save_animation_upload,
     validate_animation_upload,
 )
 from app.services.vault import (
@@ -843,6 +844,24 @@ def test_reward_animation_library_and_upload_validation() -> None:
             "remote.json",
             b'{"v":"5","fr":30,"ip":0,"op":30,"w":512,"h":512,'
             b'"layers":[{"ref":"https://example.test/a.png"}]}',
+        )
+
+
+def test_reward_animation_storage_error_is_mapped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "reward-media"
+    target.mkdir()
+
+    def boom(self: Path, _data: bytes) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(Path, "write_bytes", boom)
+    with pytest.raises(ValueError, match="animation_storage_error"):
+        save_animation_upload(
+            target,
+            "sticker.png",
+            b"\x89PNG\r\n\x1a\n" + b"0" * 32,
         )
 
 
