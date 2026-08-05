@@ -6,6 +6,7 @@ import hmac
 import io
 import json
 import logging
+import os
 import re
 import secrets
 import sqlite3
@@ -27,10 +28,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.concurrency import run_in_threadpool
 
 from app.config import BASE_DIR, Settings
-from app.db import QUIZ_CAMPAIGNS, connect, init_db, transaction
+from app.db import SCHEMA_VERSION, QUIZ_CAMPAIGNS, connect, init_db, transaction
 from app.services.clients import ensure_preferences
 from app.services.auth import audit, authenticate, bootstrap_master, hash_pin, validate_username
 from app.services.import_clients import FIELD_LABELS, detect_mapping, import_rows, read_tabular
+from app.services.ops_log import log_event
 from app.services.phone import display_phone, normalize_phone
 from app.services.preferences import change_counter, set_percent
 from app.services.quiz import (
@@ -313,8 +315,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return templates.TemplateResponse(request, "error.html", context(request, status=exc.status_code, message=exc.detail), status_code=exc.status_code)
 
     @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health():
+        build_version = os.getenv("HJC_BUILD_VERSION") or SCHEMA_VERSION
+        payload: dict[str, Any] = {
+            "status": "ok",
+            "app": "ok",
+            "database": "ok",
+            "schema_version": SCHEMA_VERSION,
+            "build_version": build_version,
+            "db_readable": False,
+            "db_writable": False,
+        }
+        try:
+            with connect(settings.db_path) as conn:
+                conn.execute("SELECT 1").fetchone()
+                payload["db_readable"] = True
+                conn.execute(
+                    """
+                    INSERT INTO health_probes(id, checked_at)
+                    VALUES (1, CURRENT_TIMESTAMP)
+                    ON CONFLICT(id) DO UPDATE SET checked_at=excluded.checked_at
+                    """
+                )
+                conn.commit()
+                payload["db_writable"] = True
+        except Exception:
+            payload["status"] = "error"
+            payload["database"] = "error"
+            return JSONResponse(payload, status_code=503)
+        if not payload["db_readable"] or not payload["db_writable"]:
+            payload["status"] = "degraded"
+            payload["database"] = "error"
+            return JSONResponse(payload, status_code=503)
+        return payload
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request):
@@ -1822,6 +1855,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 item["unique_participants"] = int(
                     issue_view.get("unique_participants") or 0
                 )
+                item["completed_count"] = int(issue_view.get("completed_count") or 0)
+                item["online_count"] = int(issue_view.get("online_count") or 0)
                 item["prize_headline"] = issue_view.get("prize_headline")
                 item["base_award_hint"] = issue_view.get("base_award_hint")
                 item["issue_status"] = issue_view.get("status")
@@ -1956,7 +1991,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail="invalid_purchase_token")
         try:
             with transaction(settings.db_path) as conn:
-                reward = purchase_vault_reward(
+                purchase_vault_reward(
                     conn,
                     client_id=int(member["client_id"]),
                     catalog_reward_id=catalog_reward_id,
@@ -2441,7 +2476,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "unique_participants": int(
                         (jackside_payload or {}).get("unique_participants") or 0
                     ),
+                    "completed_count": int(
+                        (jackside_payload or {}).get("completed_count") or 0
+                    ),
+                    "online_count": int(
+                        (jackside_payload or {}).get("online_count") or 0
+                    ),
                     "prize_headline": (jackside_payload or {}).get("prize_headline"),
+                    "base_award_hint": (jackside_payload or {}).get("base_award_hint"),
                     "issue_status": (jackside_payload or {}).get("status"),
                     "final_question_count": int(
                         (jackside_payload or {}).get("final_question_count") or 0
@@ -2782,6 +2824,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/quiz/start")
     async def quiz_start(request: Request):
+        started_at = time.perf_counter()
+        event_status = "ok"
+        error_code: str | None = None
+        try:
+            return await _quiz_start(request)
+        except HTTPException as exc:
+            event_status = "error"
+            error_code = f"http_{exc.status_code}"
+            raise
+        except Exception:
+            event_status = "error"
+            error_code = "unhandled"
+            raise
+        finally:
+            log_event(
+                "quiz_start",
+                status=event_status,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+                error_code=error_code,
+            )
+
+    async def _quiz_start(request: Request):
         payload = await request_json(request)
         campaign = normalize_campaign(payload.get("campaign"))
         campaign_row = quiz_campaign_or_404(campaign)
@@ -3058,6 +3122,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/quiz/finish")
     async def quiz_finish(request: Request):
+        started_at = time.perf_counter()
+        event_status = "ok"
+        error_code: str | None = None
+        try:
+            return await _quiz_finish(request)
+        except HTTPException as exc:
+            event_status = "error"
+            error_code = f"http_{exc.status_code}"
+            raise
+        except Exception:
+            event_status = "error"
+            error_code = "unhandled"
+            raise
+        finally:
+            log_event(
+                "quiz_finish",
+                status=event_status,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+                error_code=error_code,
+            )
+
+    async def _quiz_finish(request: Request):
         payload = await request_json(request)
         token = str(payload.get("attempt_token", ""))
         if len(token) < 32:
@@ -3663,7 +3749,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "outcome": "cancelled",
                         "candidate": candidate,
                         "provisional_place": provisional_place,
-                        "message": final_cancelled_message(),
+                        "message": final_cancelled_message(
+                            jackcoin_awarded=int(
+                                submission["jackcoin_awarded"] or 0
+                            )
+                        ),
                     }
                 if not finalist:
                     return {
@@ -3799,7 +3889,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "active_count": active_count,
                         "winners": winner_ids,
                         "message": (
-                            final_cancelled_message()
+                            final_cancelled_message(
+                                jackcoin_awarded=int(
+                                    submission["jackcoin_awarded"] or 0
+                                )
+                            )
                             if table["outcome"] == "cancelled"
                             else (
                                 "Финальный стол завершён без победителя. Главный приз не выдаётся."
@@ -4942,7 +5036,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             username = validate_username(username)
             pin_hash = hash_pin(pin)
-        except ValueError as exc:
+        except ValueError:
             return master_redirect("Проверьте логин и PIN: логин от 3 символов, PIN от 4", error=True, tab="admins")
         if not display_name or len(display_name) > 80 or role not in {"admin", "master_admin"}:
             return master_redirect("Некорректные данные администратора", error=True, tab="admins")

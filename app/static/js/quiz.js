@@ -206,12 +206,15 @@
       app.querySelector('[data-content="identity-text"]').textContent = data.content.identity_text;
       app.querySelector('[data-action="identify"]').textContent = data.content.start_button_text;
       if (isDaily414 && data.daily_414) {
-        const seated = app.querySelector('[data-role="seated-count"]');
-        if (seated) seated.textContent = String(data.daily_414.unique_participants || 0);
+        const completed = app.querySelector('[data-role="completed-count"]');
+        if (completed) completed.textContent = String(data.daily_414.completed_count || 0);
+        const online = app.querySelector('[data-role="online-count"]');
+        if (online) online.textContent = String(data.daily_414.online_count || 0);
         const prize = app.querySelector('[data-role="welcome-prize"]');
         if (prize && data.daily_414.prize_headline) prize.textContent = data.daily_414.prize_headline;
         const award = app.querySelector('[data-role="welcome-award"]');
-        if (award && data.jackside?.base_award_hint) award.textContent = data.jackside.base_award_hint;
+        const awardHint = data.jackside?.base_award_hint || data.daily_414.base_award_hint;
+        if (award && awardHint) award.textContent = awardHint;
       }
 
       if (isDaily414) {

@@ -79,7 +79,8 @@
           {% if featured_campaign.base_award_hint %}
             <p class="quiz-feature-hint">{{ featured_campaign.base_award_hint }}</p>
           {% endif %}
-          <p class="quiz-feature-seated">Уже за столом: {{ featured_campaign.unique_participants or 0 }}</p>
+          <p class="quiz-feature-seated">Данный квиз прошли: {{ featured_campaign.completed_count or 0 }}</p>
+          <p class="quiz-feature-seated">Онлайн сейчас: {{ featured_campaign.online_count or 0 }}</p>
           <div class="quiz-feature-actions">
             <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">
               {{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}

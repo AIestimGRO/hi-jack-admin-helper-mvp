@@ -249,8 +249,13 @@ def final_eliminated_message() -> str:
     return "Вы не правильно ответили на последний вопрос и выбыли из игры."
 
 
-def final_cancelled_message() -> str:
-    return "Финальный стол не состоялся. Победителя сегодня не будет."
+def final_cancelled_message(*, jackcoin_awarded: int = 0) -> str:
+    jc = max(0, int(jackcoin_awarded or 0))
+    return (
+        f"Поздравляю, вы получаете {jc} JC за основной этап. "
+        "К сожалению, финальный стол не состоится из-за недостаточного "
+        "количества участников."
+    )
 
 
 MIN_FINAL_TABLE_PLAYERS = 2

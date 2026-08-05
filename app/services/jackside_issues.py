@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
@@ -891,7 +890,7 @@ def legacy_issue_from_campaign(
         synthetic["status"] = compute_issue_status(
             synthetic, now=now, timezone_name=timezone_name
         )
-    return synthetic
+    return attach_audience_counts(conn, synthetic)
 
 
 def resolve_issue_for_campaign(
@@ -933,7 +932,7 @@ def resolve_issue_for_campaign(
     payload["unique_participants"] = unique_participant_count(
         conn, issue_id=int(issue["id"])
     )
-    return payload
+    return attach_audience_counts(conn, payload)
 
 
 def current_featured_issue(
@@ -994,6 +993,56 @@ def current_featured_issue(
     return None
 
 
+ONLINE_WINDOW_MINUTES = 5
+
+
+def campaign_audience_counts(
+    conn: sqlite3.Connection, campaign_code: str
+) -> dict[str, int]:
+    """Completed = finished main round; online = active attempts in the last N minutes."""
+    code = str(campaign_code or "")
+    completed = int(
+        conn.execute(
+            """
+            SELECT COUNT(DISTINCT client_id) FROM quiz_submissions
+            WHERE campaign_code=?
+              AND client_id IS NOT NULL
+              AND IFNULL(main_round_completed, 1)=1
+            """,
+            (code,),
+        ).fetchone()[0]
+    )
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(minutes=ONLINE_WINDOW_MINUTES)
+    ).isoformat(timespec="milliseconds")
+    online = int(
+        conn.execute(
+            """
+            SELECT COUNT(DISTINCT client_id) FROM quiz_attempts
+            WHERE campaign_code=?
+              AND status='in_progress'
+              AND client_id IS NOT NULL
+              AND last_activity_at >= ?
+            """,
+            (code, cutoff),
+        ).fetchone()[0]
+    )
+    return {"completed_count": completed, "online_count": online}
+
+
+def attach_audience_counts(
+    conn: sqlite3.Connection, issue: dict[str, Any]
+) -> dict[str, Any]:
+    code = issue.get("campaign_code")
+    if not code:
+        issue.setdefault("completed_count", 0)
+        issue.setdefault("online_count", 0)
+        return issue
+    counts = campaign_audience_counts(conn, str(code))
+    issue.update(counts)
+    return issue
+
+
 def public_issue_card(issue: dict[str, Any]) -> dict[str, Any]:
     return {
         "issue_id": issue.get("id"),
@@ -1006,6 +1055,8 @@ def public_issue_card(issue: dict[str, Any]) -> dict[str, Any]:
         "prize_headline": issue.get("prize_headline"),
         "base_award_hint": issue.get("base_award_hint"),
         "unique_participants": int(issue.get("unique_participants") or 0),
+        "completed_count": int(issue.get("completed_count") or 0),
+        "online_count": int(issue.get("online_count") or 0),
         "final_question_count": int(issue.get("final_question_count") or 0),
         "main_question_count": int(
             issue.get("main_question_count") or DAILY_414_QUESTION_COUNT

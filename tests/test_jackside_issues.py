@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from app.db import connect, init_db, transaction
+from app.db import init_db, transaction
 from app.services.jackside_copy import result_copy_for_score
 from app.services.jackside_issues import (
     accept_rules,

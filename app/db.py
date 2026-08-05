@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Iterator
 
 
+SCHEMA_VERSION = "2026.08.05.jackside-launch"
+
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -493,6 +495,7 @@ CREATE TABLE IF NOT EXISTS jackcoin_ledger (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_client ON jackcoin_ledger(client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_ref ON jackcoin_ledger(source_type, source_id);
 
 CREATE TABLE IF NOT EXISTS vault_catalog_rewards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -619,6 +622,8 @@ CREATE TABLE IF NOT EXISTS daily_414_finalists (
 );
 CREATE INDEX IF NOT EXISTS ix_daily_414_finalists_status
     ON daily_414_finalists(final_table_id, status, seed);
+CREATE INDEX IF NOT EXISTS ix_daily_414_finalists_client
+    ON daily_414_finalists(final_table_id, client_id);
 
 CREATE TABLE IF NOT EXISTS daily_414_master_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -746,6 +751,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_jackside_issue_participants_account
     WHERE account_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_jackside_issue_participants_issue
     ON jackside_issue_participants(issue_id, joined_at);
+
+CREATE TABLE IF NOT EXISTS health_probes (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    checked_at TEXT
+);
 """
 
 PREFERENCE_TYPES = (
@@ -791,10 +801,12 @@ LEGAL_DOCUMENTS = (
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=15)
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
@@ -1131,6 +1143,35 @@ def init_db(db_path: str | Path) -> None:
             GROUP BY client_id, campaign_code
             """
         )
+        for statement in (
+            """
+            CREATE TABLE IF NOT EXISTS health_probes (
+                id INTEGER PRIMARY KEY CHECK(id=1),
+                checked_at TEXT
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_quiz_submissions_campaign_completed
+            ON quiz_submissions(campaign_code, main_round_completed, client_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_quiz_attempts_campaign_activity
+            ON quiz_attempts(campaign_code, status, last_activity_at)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_daily_414_finalists_client
+            ON daily_414_finalists(final_table_id, client_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_client
+            ON jackcoin_ledger(client_id, created_at DESC)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_ref
+            ON jackcoin_ledger(source_type, source_id)
+            """,
+        ):
+            conn.execute(statement)
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, definition: str) -> bool:

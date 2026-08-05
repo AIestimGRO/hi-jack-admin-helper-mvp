@@ -1,0 +1,18 @@
+{
+  "users": 500,
+  "concurrency": 500,
+  "avg_ms": 217879.95,
+  "p95_ms": 224840.72,
+  "p99_ms": 225108.78,
+  "min_ms": 209035.68,
+  "max_ms": 225182.12,
+  "ok_count": 500,
+  "errors_count": 0,
+  "error_samples": [],
+  "database_locked_count": 0,
+  "duplicate_submission_count": 0,
+  "double_jackcoin_count": 0,
+  "lost_answers": 0,
+  "duration_total_s": 225.857,
+  "campaign": "load_daily_414"
+}
