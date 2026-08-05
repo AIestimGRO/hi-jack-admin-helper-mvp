@@ -10,6 +10,8 @@ from app.services.daily_414 import (
 )
 from app.services.daily_414_final import (
     ensure_final_table,
+    final_eliminated_message,
+    final_winner_announcement,
     question_window,
     reconcile_final_table,
 )
@@ -546,6 +548,17 @@ def test_daily_414_incomplete_submission_excluded_from_top_ten(tmp_path) -> None
     assert len(finalists) == 4
     assert incomplete_client not in [row["client_id"] for row in finalists]
 
+
+
+def test_final_outcome_messages() -> None:
+    assert final_eliminated_message() == (
+        "Вы не правильно ответили на последний вопрос и выбыли из игры."
+    )
+    assert final_winner_announcement(1) == (
+        "Вы единственный победитель и ответили на все вопросы правильно."
+    )
+    assert final_winner_announcement(2) == "2 победителя ответили на все вопросы правильно."
+    assert final_winner_announcement(5) == "5 победителей ответили на все вопросы правильно."
 
 
 def test_daily_414_final_question_time_is_snapshotted(tmp_path) -> None:

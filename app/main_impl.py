@@ -84,6 +84,8 @@ from app.services.daily_414_final import (
     ensure_final_table,
     final_table_needs_reconcile,
     list_final_winners,
+    final_eliminated_message,
+    final_winner_announcement,
     question_window as final_question_window,
     reconcile_final_table,
 )
@@ -3401,29 +3403,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         my_share = winner_jackcoin
                     co_winners = len(winner_ids) > 1
                     prize_resolution = str(table["prize_resolution"] or "")
+                    announcement = final_winner_announcement(len(winner_ids))
                     if winner_reward:
                         message = (
-                            f"Вы победили! Карта «{winner_reward['title']}» уже в THE VAULT."
+                            f"{announcement} Карта «{winner_reward['title']}» уже в THE VAULT."
                         )
                     elif prize_resolution == "manual_task":
                         message = (
-                            "Совместная победа! Неделимая карта будет выдана мастером вручную."
-                            if co_winners
-                            else "Победа зафиксирована. Карта будет выдана мастером вручную."
+                            f"{announcement} Неделимая карта будет выдана мастером вручную."
                         )
                     elif my_share:
                         message = (
-                            f"Совместная победа! Вам начислено {my_share} JACKCOIN "
+                            f"{announcement} Вам начислено {my_share} JACKCOIN "
                             f"из общего фонда {winner_jackcoin}."
                             if co_winners
-                            else f"Вы победили! {my_share} JACKCOIN уже начислены на баланс."
+                            else f"{announcement} {my_share} JACKCOIN уже начислены на баланс."
                         )
                     else:
-                        message = (
-                            "Совместная победа за финальным столом!"
-                            if co_winners
-                            else "Вы победили за финальным столом!"
-                        )
+                        message = announcement
                     return {
                         **base,
                         "state": "winner",
@@ -3432,6 +3429,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         ),
                         "seed": int(finalist["seed"]),
                         "active_count": len(winner_ids),
+                        "winner_count": len(winner_ids),
                         "winners": winner_ids,
                         "prize_resolution": prize_resolution or None,
                         "reward_code": (
@@ -3464,7 +3462,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "message": (
                             "Финальный стол завершён без победителя: никто не ответил верно."
                             if table["outcome"] == "no_winner"
-                            else "Вы выбыли из финального стола."
+                            else final_eliminated_message()
                         ),
                     }
                 if table["status"] == "completed":

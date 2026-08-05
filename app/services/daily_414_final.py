@@ -235,6 +235,20 @@ def seed_finalists(
     )
 
 
+def final_winner_announcement(winner_count: int) -> str:
+    """Human-readable line about perfect-run winners for the final table."""
+    count = max(0, int(winner_count))
+    if count <= 1:
+        return "Вы единственный победитель и ответили на все вопросы правильно."
+    if count in (2, 3, 4):
+        return f"{count} победителя ответили на все вопросы правильно."
+    return f"{count} победителей ответили на все вопросы правильно."
+
+
+def final_eliminated_message() -> str:
+    return "Вы не правильно ответили на последний вопрос и выбыли из игры."
+
+
 def list_final_winners(
     conn: sqlite3.Connection, *, final_table_id: int
 ) -> list[sqlite3.Row]:

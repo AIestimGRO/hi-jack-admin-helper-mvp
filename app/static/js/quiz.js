@@ -942,7 +942,7 @@
       launchConfetti();
     } else if (data.state === 'eliminated') {
       title.textContent = 'Раздача завершена';
-      message.textContent = `${data.message} Вопрос на вылет: ${data.eliminated_question}.`;
+      message.textContent = data.message || 'Вы не правильно ответили на последний вопрос и выбыли из игры.';
     } else if (data.state === 'not_qualified') {
       title.textContent = 'Топ-10 сформирован';
       message.textContent = data.message;
