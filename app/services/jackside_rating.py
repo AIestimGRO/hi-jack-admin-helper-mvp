@@ -73,9 +73,15 @@ def jackside_leaderboard(
                MAX(qs.created_at) AS last_result_at
         FROM clients c
         JOIN quiz_submissions qs ON qs.client_id=c.id
+        LEFT JOIN quiz_campaigns qc ON qc.code=qs.campaign_code
         WHERE qs.max_correct_count > 0
           AND qs.created_at >= ?
           AND qs.created_at <= ?
+          AND (
+            qc.campaign_type IS NULL
+            OR qc.campaign_type != 'daily_414'
+            OR IFNULL(qs.main_round_completed, 1)=1
+          )
         GROUP BY c.id
         """,
         (

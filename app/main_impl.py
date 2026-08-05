@@ -71,6 +71,7 @@ from app.services.daily_414 import (
     DAILY_414_QUESTION_COUNT,
     DAILY_414_TIME_LIMIT_SECONDS,
     award_daily_jackcoin,
+    daily_main_round_completed,
     elapsed_milliseconds,
     final_table_candidate_eligible,
     final_table_starts_at as daily_final_table_starts_at,
@@ -82,6 +83,7 @@ from app.services.daily_414 import (
 from app.services.daily_414_final import (
     ensure_final_table,
     final_table_needs_reconcile,
+    list_final_winners,
     question_window as final_question_window,
     reconcile_final_table,
 )
@@ -2804,6 +2806,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             passed = bool(not timed_out and (pass_score <= 0 or scoring["score"] >= pass_score))
             client_row = conn.execute("SELECT * FROM clients WHERE id=?", (attempt["client_id"],)).fetchone()
             is_daily_414 = campaign_row["campaign_type"] == "daily_414"
+            main_completed = (
+                daily_main_round_completed(
+                    timed_out=timed_out,
+                    questions=questions,
+                    answers=answers,
+                )
+                if is_daily_414
+                else True
+            )
             started_at = datetime.fromisoformat(
                 attempt["question_started_at"] or attempt["created_at"]
             )
@@ -2825,6 +2836,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     started_at=started_local,
                     finished_at=local_finished_at,
                     timed_out=timed_out,
+                    main_round_completed=main_completed,
                 )
             )
             bonus_eligible = bool(
@@ -2840,8 +2852,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     answers_json, questions_snapshot_json, score, max_score, correct_count, max_correct_count, passed,
                     bonus_granted, bonus_pending, bonus_type, is_duplicate, is_new_client,
                     quiz_referrer_id, source, completion_time_ms, main_prize_eligible,
-                    user_agent, ip_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+                    main_round_completed, user_agent, ip_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     attempt["id"], attempt["campaign_code"], attempt["campaign_version"], attempt["client_id"], client_row["phone_raw"] or "",
@@ -2850,7 +2862,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     json.dumps(questions, ensure_ascii=False, sort_keys=True), scoring["score"], scoring["max_score"],
                     scoring["correct_count"], scoring["max_correct_count"], int(passed), int(bonus_eligible),
                     campaign_row["bonus_preference_code"], attempt["is_new_client"], attempt["quiz_referrer_id"],
-                    attempt["source"], completion_time_ms, int(prize_eligible),
+                    attempt["source"], completion_time_ms, int(prize_eligible), int(main_completed),
                     attempt["user_agent"], attempt["ip_hash"],
                 ),
             )
@@ -2878,32 +2890,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         starts_at=final_start_utc,
                         questions=final_questions,
                     )
-                daily_award = award_daily_jackcoin(
-                    conn,
-                    client_id=int(attempt["client_id"]),
-                    submission_id=submission_id,
-                    issue_day=daily_issue_date(
-                        campaign_row,
-                        local_finished_at=local_finished_at,
-                    ),
-                    correct_count=int(scoring["correct_count"]),
-                    max_correct_count=int(scoring["max_correct_count"]),
-                    jackcoin_per_correct=int(campaign_row["jackcoin_per_correct"]),
-                    jackcoin_completion_bonus=int(campaign_row["jackcoin_completion_bonus"]),
-                    jackcoin_perfect_bonus=int(campaign_row["jackcoin_perfect_bonus"]),
-                )
-                conn.execute(
-                    """
-                    UPDATE quiz_submissions
-                    SET jackcoin_awarded=?, streak_days=?
-                    WHERE id=?
-                    """,
-                    (
-                        daily_award["total"],
-                        daily_award["streak_days"],
-                        submission_id,
-                    ),
-                )
+                if main_completed:
+                    daily_award = award_daily_jackcoin(
+                        conn,
+                        client_id=int(attempt["client_id"]),
+                        submission_id=submission_id,
+                        issue_day=daily_issue_date(
+                            campaign_row,
+                            local_finished_at=local_finished_at,
+                        ),
+                        correct_count=int(scoring["correct_count"]),
+                        max_correct_count=int(scoring["max_correct_count"]),
+                        jackcoin_per_correct=int(campaign_row["jackcoin_per_correct"]),
+                        jackcoin_completion_bonus=int(campaign_row["jackcoin_completion_bonus"]),
+                        jackcoin_perfect_bonus=int(campaign_row["jackcoin_perfect_bonus"]),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE quiz_submissions
+                        SET jackcoin_awarded=?, streak_days=?
+                        WHERE id=?
+                        """,
+                        (
+                            daily_award["total"],
+                            daily_award["streak_days"],
+                            submission_id,
+                        ),
+                    )
                 if prize_eligible:
                     ranked = rank_final_candidates(
                         conn.execute(
@@ -2912,6 +2925,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             FROM quiz_submissions
                             WHERE campaign_code=? AND campaign_version=?
                               AND main_prize_eligible=1
+                              AND IFNULL(main_round_completed, 1)=1
                             """,
                             (
                                 attempt["campaign_code"],
@@ -2935,7 +2949,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             referral_reward = None
             referral_count = 0
             referral_code = str(attempt["quiz_referrer_id"] or "")
-            if campaign_row["referral_enabled"] and referral_code:
+            referral_allowed = (not is_daily_414) or main_completed
+            if campaign_row["referral_enabled"] and referral_code and referral_allowed:
                 referral_owner = conn.execute(
                     "SELECT * FROM quiz_referral_codes WHERE code=? AND campaign_code=?",
                     (referral_code, attempt["campaign_code"]),
@@ -3030,11 +3045,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         if is_daily_414:
             outcome = "completed"
-            title = "Раздача завершена"
-            message = (
-                f"{scoring['correct_count']} из {scoring['max_correct_count']} "
-                f"правильно · +{daily_award['total']} JACKCOIN"
-            )
+            title = "Раздача завершена" if main_completed else "Попытка сохранена"
+            if main_completed and daily_award:
+                message = (
+                    f"{scoring['correct_count']} из {scoring['max_correct_count']} "
+                    f"правильно · +{daily_award['total']} JACKCOIN"
+                )
+            elif timed_out:
+                message = (
+                    "Время основной части истекло. Попытка сохранена для диагностики, "
+                    "награды и рейтинг не начисляются."
+                )
+            else:
+                message = (
+                    "Основная часть не завершена полностью. Попытка сохранена для диагностики, "
+                    "награды и рейтинг не начисляются."
+                )
         elif reward:
             outcome = "won"
             title = render_campaign_text(campaign_row["victory_title"], values)
@@ -3069,6 +3095,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "campaign_type": campaign_row["campaign_type"],
             "completion_time_ms": completion_time_ms,
             "main_prize_eligible": prize_eligible,
+            "main_round_completed": main_completed,
             "daily_place": daily_place,
             "final_table_starts_at": final_table_start_iso,
             "final_table_available": bool(
@@ -3160,7 +3187,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ) or (
                 table is not None
                 and table["status"] == "completed"
-                and table["winner_submission_id"]
+                and str(table["outcome"] or "") != "no_winner"
+                and str(table["prize_resolution"] or "")
+                not in {"awarded", "manual_task", "none"}
                 and not table["winner_reward_id"]
                 and not table["winner_jackcoin_awarded"]
                 and (
@@ -3200,7 +3229,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             now=now,
                             schedule_starts_at=final_start,
                         )
-                    if table["status"] == "completed" and table["winner_submission_id"]:
+                    if table["status"] == "completed" and str(table["outcome"] or "") != "no_winner":
                         attach_final_table_reward(
                             conn, final_table_id=int(table["id"]), now=now
                         )
@@ -3250,6 +3279,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         FROM quiz_submissions
                         WHERE campaign_code=? AND campaign_version=?
                           AND main_prize_eligible=1
+                          AND IFNULL(main_round_completed, 1)=1
                         """,
                         (campaign, campaign_version),
                     ).fetchall()
@@ -3271,12 +3301,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         ),
                         None,
                     )
+                final_question_total = 0
+                try:
+                    final_question_total = len(
+                        json.loads(table["questions_snapshot_json"] or "[]")
+                    )
+                except json.JSONDecodeError:
+                    final_question_total = 0
                 lobby_stats = {
                     "correct_count": int(submission["correct_count"] or 0),
                     "max_correct_count": int(submission["max_correct_count"] or 0),
                     "completion_time_ms": submission["completion_time_ms"],
                     "jackcoin_awarded": int(submission["jackcoin_awarded"] or 0),
                     "standings": standings,
+                    "final_question_count": final_question_total,
+                    "elimination_rule": "каждый вопрос — на вылет",
                 }
                 if now < final_start:
                     return {
@@ -3286,7 +3325,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "provisional_place": provisional_place,
                         **lobby_stats,
                         "message": (
-                            "Основной раунд завершён. Ждём финальный стол."
+                            (
+                                f"Основной раунд завершён. В финале {final_question_total} "
+                                f"вопрос(ов): каждый вопрос — на вылет."
+                            )
                             if candidate
                             else (
                                 "Отбор за финальный стол уже завершён. "
@@ -3328,6 +3370,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ).fetchone()[0]
                 )
                 if finalist["status"] == "winner":
+                    winners = list_final_winners(conn, final_table_id=int(table["id"]))
+                    winner_ids = [int(row["client_id"]) for row in winners]
                     winner_reward = None
                     if table["winner_reward_id"]:
                         winner_reward = conn.execute(
@@ -3341,47 +3385,109 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             (table["winner_reward_id"],),
                         ).fetchone()
                     winner_jackcoin = int(table["winner_jackcoin_awarded"] or 0)
+                    my_share = 0
+                    if winner_jackcoin and len(winner_ids) > 1:
+                        share_row = conn.execute(
+                            """
+                            SELECT amount FROM jackcoin_ledger
+                            WHERE source_type='final_prize' AND source_id=?
+                              AND client_id=?
+                            ORDER BY id DESC LIMIT 1
+                            """,
+                            (str(table["id"]), client_id),
+                        ).fetchone()
+                        my_share = int(share_row["amount"]) if share_row else 0
+                    elif winner_jackcoin:
+                        my_share = winner_jackcoin
+                    co_winners = len(winner_ids) > 1
+                    prize_resolution = str(table["prize_resolution"] or "")
+                    if winner_reward:
+                        message = (
+                            f"Вы победили! Карта «{winner_reward['title']}» уже в THE VAULT."
+                        )
+                    elif prize_resolution == "manual_task":
+                        message = (
+                            "Совместная победа! Неделимая карта будет выдана мастером вручную."
+                            if co_winners
+                            else "Победа зафиксирована. Карта будет выдана мастером вручную."
+                        )
+                    elif my_share:
+                        message = (
+                            f"Совместная победа! Вам начислено {my_share} JACKCOIN "
+                            f"из общего фонда {winner_jackcoin}."
+                            if co_winners
+                            else f"Вы победили! {my_share} JACKCOIN уже начислены на баланс."
+                        )
+                    else:
+                        message = (
+                            "Совместная победа за финальным столом!"
+                            if co_winners
+                            else "Вы победили за финальным столом!"
+                        )
                     return {
                         **base,
                         "state": "winner",
+                        "outcome": table["outcome"] or (
+                            "co_winners" if co_winners else "single_winner"
+                        ),
                         "seed": int(finalist["seed"]),
-                        "active_count": 1,
+                        "active_count": len(winner_ids),
+                        "winners": winner_ids,
+                        "prize_resolution": prize_resolution or None,
                         "reward_code": (
                             winner_reward["activation_code"]
                             if winner_reward
                             else None
                         ),
                         "reward_title": winner_reward["title"] if winner_reward else None,
-                        "reward_jackcoin": winner_jackcoin,
-                        "message": (
-                            f"Вы победили! Карта «{winner_reward['title']}» уже в THE VAULT."
-                            if winner_reward
-                            else f"Вы победили! {winner_jackcoin} JACKCOIN уже начислены на баланс."
-                            if winner_jackcoin
-                            else "Вы победили за финальным столом!"
-                        ),
+                        "reward_jackcoin": my_share or winner_jackcoin,
+                        "reward_jackcoin_total": winner_jackcoin,
+                        "message": message,
                     }
                 if finalist["status"] == "eliminated":
                     return {
                         **base,
                         "state": "eliminated",
+                        "outcome": table["outcome"],
                         "seed": int(finalist["seed"]),
                         "active_count": active_count,
+                        "winners": [
+                            int(row["client_id"])
+                            for row in list_final_winners(
+                                conn, final_table_id=int(table["id"])
+                            )
+                        ],
                         "eliminated_question": int(
                             finalist["eliminated_question_index"] or 0
                         )
                         + 1,
-                        "message": "Вы выбыли из финального стола.",
+                        "message": (
+                            "Финальный стол завершён без победителя: никто не ответил верно."
+                            if table["outcome"] == "no_winner"
+                            else "Вы выбыли из финального стола."
+                        ),
                     }
                 if table["status"] == "completed":
+                    winners = list_final_winners(conn, final_table_id=int(table["id"]))
+                    winner_ids = [int(row["client_id"]) for row in winners]
                     return {
                         **base,
-                        "state": "completed",
+                        "state": (
+                            "winner"
+                            if finalist["status"] == "winner"
+                            else "completed"
+                        ),
+                        "outcome": table["outcome"] or "no_winner",
                         "seed": int(finalist["seed"]),
                         "active_count": active_count,
+                        "winners": winner_ids,
                         "message": (
-                            "Финальные вопросы закончились. "
-                            "Результат сохранён для ведущего."
+                            "Финальный стол завершён без победителя. Главный приз не выдаётся."
+                            if table["outcome"] == "no_winner"
+                            else (
+                                "Финальные вопросы закончились. "
+                                "Результат сохранён для ведущего."
+                            )
                         ),
                     }
 
@@ -3427,6 +3533,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                 question = public[0]
                 question["final_number"] = question_index + 1
+                question_total = len(questions)
                 return {
                     **base,
                     "state": "final_question",
@@ -3438,6 +3545,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "active_count": active_count,
                     "heads_up": active_count == 2,
                     "question_index": question_index,
+                    "question_number": question_index + 1,
+                    "question_total": question_total,
+                    "final_question_count": question_total,
+                    "elimination_rule": "каждый вопрос — на вылет",
                     "question_started_at": question_start.isoformat(
                         timespec="milliseconds"
                     ),
@@ -3525,7 +3636,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(
                     status_code=409, detail="Этот вопрос уже закрыт"
                 )
-            if now < question_start or now >= question_deadline:
+            if now < question_start or now > question_deadline:
                 raise HTTPException(
                     status_code=409, detail="Время ответа закончилось"
                 )
@@ -3591,6 +3702,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     UPDATE daily_414_finalists
                     SET final_correct_count=final_correct_count+1,
                         final_response_time_ms=final_response_time_ms+?,
+                        updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (response_time_ms, finalist["id"]),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE daily_414_finalists
+                    SET final_response_time_ms=final_response_time_ms+?,
                         updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
@@ -4079,8 +4200,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
             if not table:
                 return vault_admin_redirect("Финальный стол не найден", error=True)
-            if table["winner_reward_id"] or table["winner_jackcoin_awarded"]:
-                return vault_admin_redirect("Главный приз уже выдан")
+            if table["winner_reward_id"] or table["winner_jackcoin_awarded"] or str(
+                table["prize_resolution"] or ""
+            ) in {"awarded", "manual_task", "none"}:
+                return vault_admin_redirect("Главный приз уже обработан")
+            if str(table["outcome"] or "") == "no_winner":
+                return vault_admin_redirect(
+                    "Финальный стол без победителя — приз не выдаётся", error=True
+                )
             conn.execute(
                 "UPDATE daily_414_final_tables SET winner_reward_error=NULL WHERE id=?",
                 (final_table_id,),
@@ -4113,6 +4240,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 return vault_admin_redirect(
                     f"Главный приз выдан: {int(prize['amount'])} JACKCOIN"
+                )
+            if isinstance(prize, dict) and prize.get("kind") == "manual_task":
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="retry_final_prize",
+                    entity_type="daily_414_final_table",
+                    entity_id=final_table_id,
+                    details={"manual_task_id": prize.get("task_id")},
+                )
+                return vault_admin_redirect(
+                    "Создана ручная задача мастеру: неделимая карта при совместной победе"
                 )
             audit(
                 conn,

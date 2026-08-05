@@ -753,54 +753,108 @@ def cancel_reward(
 
 def attach_final_table_reward(
     conn: sqlite3.Connection, *, final_table_id: int, now: datetime | None = None
-) -> sqlite3.Row | dict[str, int | str] | None:
+) -> sqlite3.Row | dict[str, Any] | None:
+    from app.services.daily_414_final import list_final_winners, split_jackcoin_amounts
+
     table = conn.execute(
-        """
-        SELECT dft.*, qs.client_id AS winner_client_id
-        FROM daily_414_final_tables dft
-        LEFT JOIN quiz_submissions qs ON qs.id=dft.winner_submission_id
-        WHERE dft.id=?
-        """,
+        "SELECT * FROM daily_414_final_tables WHERE id=?",
         (final_table_id,),
     ).fetchone()
-    if not table or table["status"] != "completed" or not table["winner_client_id"]:
+    if not table or table["status"] != "completed":
         return None
+    outcome = str(table["outcome"] or "")
+    prize_resolution = str(table["prize_resolution"] or "")
+    if outcome == "no_winner" or prize_resolution == "none":
+        return None
+
+    winners = list_final_winners(conn, final_table_id=final_table_id)
+    if not winners and table["winner_submission_id"]:
+        legacy = conn.execute(
+            """
+            SELECT qs.id AS submission_id, qs.client_id, qs.completion_time_ms
+                   AS main_completion_time_ms, 0 AS final_response_time_ms,
+                   qs.id AS id
+            FROM quiz_submissions qs
+            WHERE qs.id=?
+            """,
+            (table["winner_submission_id"],),
+        ).fetchone()
+        winners = [legacy] if legacy else []
+    if not winners:
+        return None
+
     prize_type = str(table["prize_type"] or "none")
     if prize_type == "none" and table["prize_catalog_reward_id"]:
         prize_type = "reward_card"
+
     if prize_type == "jackcoin":
         amount = max(0, int(table["prize_jackcoin_amount"] or 0))
-        if table["winner_jackcoin_awarded"]:
+        if prize_resolution == "awarded" or table["winner_jackcoin_awarded"]:
+            shares = conn.execute(
+                """
+                SELECT client_id, amount FROM jackcoin_ledger
+                WHERE source_type='final_prize' AND source_id=?
+                ORDER BY id
+                """,
+                (str(final_table_id),),
+            ).fetchall()
             return {
                 "kind": "jackcoin",
-                "amount": int(table["winner_jackcoin_awarded"]),
+                "amount": int(table["winner_jackcoin_awarded"] or amount),
+                "shares": [
+                    {"client_id": int(row["client_id"]), "amount": int(row["amount"])}
+                    for row in shares
+                ],
+                "winner_client_ids": [int(row["client_id"]) for row in winners],
             }
         if amount <= 0:
             return None
+        portions = split_jackcoin_amounts(amount, len(winners))
         try:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO jackcoin_ledger(
-                    client_id, amount, operation_type, source_type, source_id,
-                    idempotency_key, comment
-                ) VALUES (?, ?, 'earn', 'final_prize', ?, ?, ?)
-                """,
-                (
-                    int(table["winner_client_id"]),
-                    amount,
-                    str(final_table_id),
-                    f"jackcoin:final-table:{final_table_id}",
-                    f"Главный приз финального стола: {amount} JACKCOIN",
-                ),
+            for winner, share in zip(winners, portions):
+                if share <= 0:
+                    continue
+                # Single-winner keeps the legacy idempotency key for older rows.
+                key = (
+                    f"jackcoin:final-table:{final_table_id}"
+                    if len(winners) == 1
+                    else (
+                        f"jackcoin:final-table:{final_table_id}"
+                        f":client:{int(winner['client_id'])}"
+                    )
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO jackcoin_ledger(
+                        client_id, amount, operation_type, source_type, source_id,
+                        idempotency_key, comment
+                    ) VALUES (?, ?, 'earn', 'final_prize', ?, ?, ?)
+                    """,
+                    (
+                        int(winner["client_id"]),
+                        share,
+                        str(final_table_id),
+                        key,
+                        (
+                            f"Главный приз финального стола: {share} JACKCOIN"
+                            + (
+                                f" (доля из {amount})"
+                                if len(winners) > 1
+                                else ""
+                            )
+                        ),
+                    ),
+                )
+            awarded_total = int(
+                conn.execute(
+                    """
+                    SELECT COALESCE(SUM(amount), 0) FROM jackcoin_ledger
+                    WHERE source_type='final_prize' AND source_id=?
+                    """,
+                    (str(final_table_id),),
+                ).fetchone()[0]
             )
-            awarded = conn.execute(
-                """
-                SELECT amount FROM jackcoin_ledger
-                WHERE idempotency_key=?
-                """,
-                (f"jackcoin:final-table:{final_table_id}",),
-            ).fetchone()
-            if not awarded:
+            if awarded_total <= 0:
                 raise ValueError("final_prize_jackcoin_not_recorded")
         except (sqlite3.Error, ValueError) as exc:
             conn.execute(
@@ -816,14 +870,86 @@ def attach_final_table_reward(
             """
             UPDATE daily_414_final_tables
             SET winner_jackcoin_awarded=?, winner_reward_error=NULL,
+                prize_resolution='awarded', updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (awarded_total, final_table_id),
+        )
+        shares = conn.execute(
+            """
+            SELECT client_id, amount FROM jackcoin_ledger
+            WHERE source_type='final_prize' AND source_id=?
+            ORDER BY id
+            """,
+            (str(final_table_id),),
+        ).fetchall()
+        return {
+            "kind": "jackcoin",
+            "amount": awarded_total,
+            "shares": [
+                {"client_id": int(row["client_id"]), "amount": int(row["amount"])}
+                for row in shares
+            ],
+            "winner_client_ids": [int(row["client_id"]) for row in winners],
+        }
+
+    if prize_type != "reward_card":
+        return None
+
+    if prize_resolution == "manual_task":
+        task = conn.execute(
+            "SELECT * FROM daily_414_master_tasks WHERE final_table_id=?",
+            (final_table_id,),
+        ).fetchone()
+        return {
+            "kind": "manual_task",
+            "task_id": int(task["id"]) if task else None,
+            "winner_client_ids": [int(row["client_id"]) for row in winners],
+        }
+
+    if len(winners) > 1:
+        payload = json.dumps(
+            {
+                "reason": "indivisible_card_co_winners",
+                "catalog_reward_id": table["prize_catalog_reward_id"],
+                "winner_client_ids": [int(row["client_id"]) for row in winners],
+                "winner_submission_ids": [
+                    int(row["submission_id"]) for row in winners
+                ],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        try:
+            conn.execute(
+                """
+                INSERT INTO daily_414_master_tasks(
+                    final_table_id, task_type, status, payload_json
+                ) VALUES (?, 'co_winner_card_prize', 'open', ?)
+                """,
+                (final_table_id, payload),
+            )
+        except sqlite3.IntegrityError:
+            pass
+        task = conn.execute(
+            "SELECT * FROM daily_414_master_tasks WHERE final_table_id=?",
+            (final_table_id,),
+        ).fetchone()
+        conn.execute(
+            """
+            UPDATE daily_414_final_tables
+            SET prize_resolution='manual_task', winner_reward_error=NULL,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (int(awarded["amount"]), final_table_id),
+            (final_table_id,),
         )
-        return {"kind": "jackcoin", "amount": int(awarded["amount"])}
-    if prize_type != "reward_card":
-        return None
+        return {
+            "kind": "manual_task",
+            "task_id": int(task["id"]) if task else None,
+            "winner_client_ids": [int(row["client_id"]) for row in winners],
+        }
+
     if table["winner_reward_id"]:
         return conn.execute(
             "SELECT * FROM vault_member_rewards WHERE id=?",
@@ -832,10 +958,11 @@ def attach_final_table_reward(
     catalog_reward_id = table["prize_catalog_reward_id"]
     if not catalog_reward_id:
         return None
+    winner_client_id = int(winners[0]["client_id"])
     try:
         reward = issue_reward(
             conn,
-            client_id=int(table["winner_client_id"]),
+            client_id=winner_client_id,
             catalog_reward_id=int(catalog_reward_id),
             source_type="final_prize",
             source_id=str(final_table_id),
@@ -858,7 +985,7 @@ def attach_final_table_reward(
         """
         UPDATE daily_414_final_tables
         SET winner_reward_id=?, winner_reward_error=NULL,
-            updated_at=CURRENT_TIMESTAMP
+            prize_resolution='awarded', updated_at=CURRENT_TIMESTAMP
         WHERE id=?
         """,
         (reward["id"], final_table_id),

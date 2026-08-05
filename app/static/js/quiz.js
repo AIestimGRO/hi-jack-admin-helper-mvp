@@ -757,9 +757,17 @@
     const place = app.querySelector('.final-lobby-place');
     const result = state.finalResult;
     if (!state.openingFinal) {
-      message.textContent = result?.correct_count != null
+      const questionCount = data.final_question_count
+        ?? state.finalResult?.final_question_count;
+      const scoreLine = result?.correct_count != null
         ? `${result.correct_count} из ${result.max_correct_count || result.correct_count} правильно · +${result.jackcoin_awarded || 0} JACKCOIN.`
-        : (data.message || 'Основной раунд завершён. Собираем десятку лучших игроков.');
+        : '';
+      const finalLine = questionCount
+        ? ` В финале ${questionCount} вопрос(ов): каждый вопрос — на вылет.`
+        : '';
+      message.textContent = data.message
+        || `${scoreLine}${finalLine}`.trim()
+        || 'Основной раунд завершён. Собираем десятку лучших игроков.';
     }
     const provisionalPlace = data.provisional_place ?? result?.daily_place;
     const youStanding = Array.isArray(data.standings)
@@ -839,7 +847,8 @@
     try {
       app.querySelector('.final-table-heading .quiz-section-label').textContent = data.heads_up ? 'ХЕДЗ-АП' : 'ФИНАЛЬНЫЙ СТОЛ';
       app.querySelector('.final-active-count').textContent = `В игре: ${data.active_count}`;
-      app.querySelector('.final-question-number').textContent = `Вопрос финала ${question.final_number}`;
+      const total = data.question_total || data.final_question_count || question.final_number;
+      app.querySelector('.final-question-number').textContent = `Вопрос ${question.final_number} из ${total} · каждый вопрос — на вылет`;
       const media = app.querySelector('.final-question-media');
       const image = (media && media.querySelector('.final-question-image')) || app.querySelector('.final-question-image');
       if (media) media.hidden = !question.image_path;

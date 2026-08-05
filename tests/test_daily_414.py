@@ -368,10 +368,8 @@ def test_daily_414_final_questions_eliminate_synchronously(tmp_path) -> None:
     assert winner["seed"] == 2
 
 
-def test_daily_414_final_round_keeps_table_when_nobody_is_correct(
-    tmp_path,
-) -> None:
-    db_path = tmp_path / "daily-final-redeal.sqlite3"
+def test_daily_414_final_all_miss_ends_without_winner(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-all-miss.sqlite3"
     init_db(db_path)
     start = datetime(2026, 7, 30, 18, 23, 14)
     with transaction(db_path) as conn:
@@ -400,17 +398,154 @@ def test_daily_414_final_round_keeps_table_when_nobody_is_correct(
             final_table_id=int(table["id"]),
             now=start + timedelta(seconds=30),
         )
-        active_count = conn.execute(
+        winners = conn.execute(
             """
             SELECT COUNT(*) FROM daily_414_finalists
-            WHERE final_table_id=? AND status='active'
+            WHERE final_table_id=? AND status='winner'
             """,
             (table["id"],),
         ).fetchone()[0]
 
-    assert after_missed_question["status"] == "live"
-    assert after_missed_question["current_question_index"] == 1
-    assert active_count == 2
+    assert after_missed_question["status"] == "completed"
+    assert after_missed_question["outcome"] == "no_winner"
+    assert after_missed_question["prize_resolution"] == "none"
+    assert after_missed_question["winner_submission_id"] is None
+    assert winners == 0
+
+
+def test_daily_414_candidate_requires_completed_main_round() -> None:
+    start = datetime(2026, 7, 29, 18, 14)
+    campaign = {"active_from": start.isoformat(timespec="minutes")}
+    final_start = final_table_starts_at(campaign)
+    assert not final_table_candidate_eligible(
+        campaign,
+        started_at=start + timedelta(minutes=4, seconds=59),
+        finished_at=final_start,
+        main_round_completed=False,
+    )
+
+
+def test_daily_414_final_co_winners_after_last_question(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-co-winners.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 7, 30, 18, 23, 14)
+    with transaction(db_path) as conn:
+        for index in range(1, 4):
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=10,
+                completion_time_ms=10_000 + index,
+            )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}],
+        )
+        reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start,
+        )
+        finalists = conn.execute(
+            """
+            SELECT id, seed FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+        for finalist in finalists[:2]:
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_answers(
+                    final_table_id, finalist_id, question_index, question_code,
+                    answer_json, is_correct, response_time_ms, answered_at
+                ) VALUES (?, ?, 0, 'f1', '"yes"', 1, ?, ?)
+                """,
+                (
+                    table["id"],
+                    finalist["id"],
+                    1000 + int(finalist["seed"]),
+                    start.isoformat(),
+                ),
+            )
+        completed = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=30),
+        )
+        winners = conn.execute(
+            """
+            SELECT seed, status FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+
+    assert completed["status"] == "completed"
+    assert completed["outcome"] == "co_winners"
+    assert [row["status"] for row in winners] == ["winner", "winner", "eliminated"]
+
+
+def test_split_jackcoin_amounts_with_and_without_remainder() -> None:
+    from app.services.daily_414_final import split_jackcoin_amounts
+
+    assert split_jackcoin_amounts(100, 2) == [50, 50]
+    assert split_jackcoin_amounts(100, 3) == [34, 33, 33]
+    assert sum(split_jackcoin_amounts(100, 3)) == 100
+    assert split_jackcoin_amounts(7, 3) == [3, 2, 2]
+
+
+def test_daily_414_incomplete_submission_excluded_from_top_ten(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-incomplete.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 7, 30, 18, 23, 14)
+    with transaction(db_path) as conn:
+        for index in range(1, 5):
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=10,
+                completion_time_ms=10_000 + index,
+            )
+        incomplete_client = int(
+            conn.execute(
+                "INSERT INTO clients(first_name, source) VALUES ('Incomplete', 'test')"
+            ).lastrowid
+        )
+        conn.execute(
+            """
+            INSERT INTO quiz_submissions(
+                campaign_code, campaign_version, client_id, phone_raw,
+                phone_local, answers_json, correct_count, max_correct_count,
+                completion_time_ms, main_prize_eligible, main_round_completed, ip_hash
+            ) VALUES ('daily_final', 1, ?, '99', '99', '{}', 10, 10, 1, 1, 0, 'ip-99')
+            """,
+            (incomplete_client,),
+        )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}],
+        )
+        reconcile_final_table(conn, final_table_id=int(table["id"]), now=start)
+        finalists = conn.execute(
+            """
+            SELECT client_id FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+
+    assert len(finalists) == 4
+    assert incomplete_client not in [row["client_id"] for row in finalists]
+
 
 
 def test_daily_414_final_question_time_is_snapshotted(tmp_path) -> None:
@@ -439,6 +574,23 @@ def test_daily_414_final_question_time_is_snapshotted(tmp_path) -> None:
             final_table_id=int(table["id"]),
             now=start,
         )
+        finalists = conn.execute(
+            """
+            SELECT id FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+        for finalist in finalists:
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_answers(
+                    final_table_id, finalist_id, question_index, question_code,
+                    answer_json, is_correct, response_time_ms, answered_at
+                ) VALUES (?, ?, 0, 'f1', '"yes"', 1, 100, ?)
+                """,
+                (table["id"], finalist["id"], start.isoformat()),
+            )
         still_first = reconcile_final_table(
             conn,
             final_table_id=int(table["id"]),
@@ -486,12 +638,43 @@ def test_daily_414_final_questions_use_individual_snapshotted_times(tmp_path) ->
             now=start + timedelta(seconds=9),
         )
         first_window = question_window(first)
+        finalists = conn.execute(
+            """
+            SELECT id FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+        for finalist in finalists:
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_answers(
+                    final_table_id, finalist_id, question_index, question_code,
+                    answer_json, is_correct, response_time_ms, answered_at
+                ) VALUES (?, ?, 0, 'f1', '"yes"', 1, 100, ?)
+                """,
+                (table["id"], finalist["id"], start.isoformat()),
+            )
         second = reconcile_final_table(
             conn,
             final_table_id=int(table["id"]),
             now=start + timedelta(seconds=10),
         )
         second_window = question_window(second)
+        for finalist in finalists:
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_answers(
+                    final_table_id, finalist_id, question_index, question_code,
+                    answer_json, is_correct, response_time_ms, answered_at
+                ) VALUES (?, ?, 1, 'f2', '"yes"', 1, 100, ?)
+                """,
+                (
+                    table["id"],
+                    finalist["id"],
+                    (start + timedelta(seconds=10)).isoformat(),
+                ),
+            )
         still_second = reconcile_final_table(
             conn,
             final_table_id=int(table["id"]),

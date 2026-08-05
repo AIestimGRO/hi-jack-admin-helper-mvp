@@ -83,16 +83,48 @@ def final_table_starts_at(
     )
 
 
+def main_round_answers_complete(
+    questions: list[dict[str, Any]], answers: dict[str, Any]
+) -> bool:
+    """True when every question has a non-empty saved answer."""
+    if not questions:
+        return False
+    for question in questions:
+        question_id = str(question.get("id") or "")
+        if not question_id:
+            return False
+        value = answers.get(question_id)
+        if question.get("type") == "multi_choice":
+            if not isinstance(value, list) or not value:
+                return False
+            continue
+        if not str(value or "").strip():
+            return False
+    return True
+
+
+def daily_main_round_completed(
+    *,
+    timed_out: bool,
+    questions: list[dict[str, Any]],
+    answers: dict[str, Any],
+) -> bool:
+    """Economy/rating/final eligibility requires a finished, fully answered run."""
+    return (not timed_out) and main_round_answers_complete(questions, answers)
+
+
 def final_table_candidate_eligible(
     campaign: sqlite3.Row | dict[str, Any],
     *,
     started_at: datetime,
     finished_at: datetime,
     timed_out: bool = False,
+    main_round_completed: bool = True,
 ) -> bool:
     final_start = final_table_starts_at(campaign)
     return bool(
-        not timed_out
+        main_round_completed
+        and not timed_out
         and final_start
         and main_prize_eligible(campaign, started_at=started_at)
         and finished_at <= final_start

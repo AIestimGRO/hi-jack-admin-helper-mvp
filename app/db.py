@@ -277,6 +277,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
     main_prize_eligible INTEGER NOT NULL DEFAULT 0,
     jackcoin_awarded INTEGER NOT NULL DEFAULT 0,
     streak_days INTEGER NOT NULL DEFAULT 0,
+    main_round_completed INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     user_agent TEXT,
     ip_hash TEXT NOT NULL
@@ -589,6 +590,8 @@ CREATE TABLE IF NOT EXISTS daily_414_final_tables (
     winner_reward_id INTEGER REFERENCES vault_member_rewards(id) ON DELETE SET NULL,
     winner_jackcoin_awarded INTEGER NOT NULL DEFAULT 0,
     winner_reward_error TEXT,
+    outcome TEXT,
+    prize_resolution TEXT,
     completed_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -616,6 +619,21 @@ CREATE TABLE IF NOT EXISTS daily_414_finalists (
 );
 CREATE INDEX IF NOT EXISTS ix_daily_414_finalists_status
     ON daily_414_finalists(final_table_id, status, seed);
+
+CREATE TABLE IF NOT EXISTS daily_414_master_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    final_table_id INTEGER NOT NULL UNIQUE
+        REFERENCES daily_414_final_tables(id) ON DELETE CASCADE,
+    task_type TEXT NOT NULL DEFAULT 'co_winner_card_prize',
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'done', 'cancelled')),
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TEXT,
+    resolved_by_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_daily_414_master_tasks_status
+    ON daily_414_master_tasks(status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS daily_414_final_answers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -839,6 +857,33 @@ def init_db(db_path: str | Path) -> None:
         )
         _ensure_column(conn, "quiz_questions", "time_limit_seconds INTEGER")
         _ensure_column(conn, "quiz_submissions", "attempt_id INTEGER")
+        _ensure_column(
+            conn, "quiz_submissions", "main_round_completed INTEGER NOT NULL DEFAULT 1"
+        )
+        _ensure_column(conn, "daily_414_final_tables", "outcome TEXT")
+        _ensure_column(conn, "daily_414_final_tables", "prize_resolution TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_414_master_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                final_table_id INTEGER NOT NULL UNIQUE
+                    REFERENCES daily_414_final_tables(id) ON DELETE CASCADE,
+                task_type TEXT NOT NULL DEFAULT 'co_winner_card_prize',
+                status TEXT NOT NULL DEFAULT 'open'
+                    CHECK(status IN ('open', 'done', 'cancelled')),
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT,
+                resolved_by_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_daily_414_master_tasks_status
+            ON daily_414_master_tasks(status, created_at DESC)
+            """
+        )
         _ensure_column(conn, "quiz_attempts", "attempt_deadline_at TEXT")
         _ensure_column(conn, "quiz_attempts", "client_id INTEGER REFERENCES clients(id)")
         _ensure_column(conn, "quiz_attempts", "attempt_number INTEGER NOT NULL DEFAULT 1")

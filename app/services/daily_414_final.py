@@ -203,8 +203,12 @@ def seed_finalists(
         """
         SELECT id, client_id
         FROM quiz_submissions
-        WHERE campaign_code=? AND campaign_version=? AND main_prize_eligible=1
-        ORDER BY correct_count DESC, IFNULL(completion_time_ms, 2147483647) ASC, id ASC
+        WHERE campaign_code=? AND campaign_version=?
+          AND main_prize_eligible=1
+          AND IFNULL(main_round_completed, 1)=1
+        ORDER BY correct_count DESC,
+                 IFNULL(completion_time_ms, 2147483647) ASC,
+                 id ASC
         LIMIT ?
         """,
         (
@@ -228,6 +232,145 @@ def seed_finalists(
             )
             for seed, submission in enumerate(submissions, start=1)
         ],
+    )
+
+
+def list_final_winners(
+    conn: sqlite3.Connection, *, final_table_id: int
+) -> list[sqlite3.Row]:
+    winners = conn.execute(
+        """
+        SELECT df.*, qs.completion_time_ms AS main_completion_time_ms
+        FROM daily_414_finalists df
+        JOIN quiz_submissions qs ON qs.id=df.submission_id
+        WHERE df.final_table_id=? AND df.status='winner'
+        ORDER BY IFNULL(df.final_response_time_ms, 2147483647) ASC,
+                 IFNULL(qs.completion_time_ms, 2147483647) ASC,
+                 df.id ASC
+        """,
+        (final_table_id,),
+    ).fetchall()
+    if winners:
+        return list(winners)
+    table = conn.execute(
+        "SELECT * FROM daily_414_final_tables WHERE id=?",
+        (final_table_id,),
+    ).fetchone()
+    if not table or not table["winner_submission_id"]:
+        return []
+    legacy = conn.execute(
+        """
+        SELECT df.*, qs.completion_time_ms AS main_completion_time_ms
+        FROM daily_414_finalists df
+        JOIN quiz_submissions qs ON qs.id=df.submission_id
+        WHERE df.final_table_id=? AND df.submission_id=?
+        """,
+        (final_table_id, table["winner_submission_id"]),
+    ).fetchone()
+    return [legacy] if legacy else []
+
+
+def split_jackcoin_amounts(total: int, winner_count: int) -> list[int]:
+    """Split prize as evenly as possible; remainder goes to earliest slots."""
+    count = max(0, int(winner_count))
+    fund = max(0, int(total))
+    if count <= 0 or fund <= 0:
+        return []
+    base = fund // count
+    remainder = fund % count
+    return [base + (1 if index < remainder else 0) for index in range(count)]
+
+
+def _mark_completed(
+    conn: sqlite3.Connection,
+    *,
+    table_id: int,
+    now_utc: datetime,
+    outcome: str,
+    winner_submission_id: int | None,
+    prize_resolution: str | None = None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE daily_414_final_tables
+        SET status='completed', outcome=?, winner_submission_id=?,
+            prize_resolution=COALESCE(?, prize_resolution),
+            completed_at=?, updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+        """,
+        (
+            outcome,
+            winner_submission_id,
+            prize_resolution,
+            _timestamp(now_utc),
+            table_id,
+        ),
+    )
+
+
+def _promote_winners(
+    conn: sqlite3.Connection,
+    *,
+    table_id: int,
+    winners: list[sqlite3.Row],
+    now_utc: datetime,
+    outcome: str,
+) -> None:
+    if not winners:
+        _mark_completed(
+            conn,
+            table_id=table_id,
+            now_utc=now_utc,
+            outcome="no_winner",
+            winner_submission_id=None,
+            prize_resolution="none",
+        )
+        return
+    winner_ids = [int(row["id"]) for row in winners]
+    placeholders = ",".join("?" for _ in winner_ids)
+    conn.execute(
+        f"""
+        UPDATE daily_414_finalists
+        SET status='winner', updated_at=CURRENT_TIMESTAMP
+        WHERE id IN ({placeholders})
+        """,
+        winner_ids,
+    )
+    ordered = list_final_winners(conn, final_table_id=table_id)
+    _mark_completed(
+        conn,
+        table_id=table_id,
+        now_utc=now_utc,
+        outcome=outcome,
+        winner_submission_id=(
+            int(ordered[0]["submission_id"]) if ordered else int(winners[0]["submission_id"])
+        ),
+    )
+
+
+def _end_without_winner(
+    conn: sqlite3.Connection,
+    *,
+    table_id: int,
+    question_index: int,
+    now_utc: datetime,
+) -> None:
+    conn.execute(
+        """
+        UPDATE daily_414_finalists
+        SET status='eliminated', eliminated_question_index=?,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE final_table_id=? AND status='active'
+        """,
+        (question_index, table_id),
+    )
+    _mark_completed(
+        conn,
+        table_id=table_id,
+        now_utc=now_utc,
+        outcome="no_winner",
+        winner_submission_id=None,
+        prize_resolution="none",
     )
 
 
@@ -281,13 +424,13 @@ def reconcile_final_table(
         (table["id"],),
     ).fetchall()
     if not finalists:
-        conn.execute(
-            """
-            UPDATE daily_414_final_tables
-            SET status='completed', completed_at=?, updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (_timestamp(now_utc), table["id"]),
+        _mark_completed(
+            conn,
+            table_id=table["id"],
+            now_utc=now_utc,
+            outcome="no_winner",
+            winner_submission_id=None,
+            prize_resolution="none",
         )
         return conn.execute(
             "SELECT * FROM daily_414_final_tables WHERE id=?",
@@ -335,22 +478,31 @@ def reconcile_final_table(
                 (table["id"], question_index),
             ).fetchall()
         }
-        # If nobody answered correctly, the deal is replayed and nobody is
-        # eliminated. This prevents a single round from emptying the table.
-        if correct_ids:
-            active_ids = {int(row["id"]) for row in active}
-            eliminated_ids = active_ids - correct_ids
-            if eliminated_ids:
-                placeholders = ",".join("?" for _ in eliminated_ids)
-                conn.execute(
-                    f"""
-                    UPDATE daily_414_finalists
-                    SET status='eliminated', eliminated_question_index=?,
-                        updated_at=CURRENT_TIMESTAMP
-                    WHERE id IN ({placeholders})
-                    """,
-                    (question_index, *sorted(eliminated_ids)),
-                )
+        if not correct_ids:
+            # All remaining players missed or timed out → no winner, no prize.
+            _end_without_winner(
+                conn,
+                table_id=table["id"],
+                question_index=question_index,
+                now_utc=now_utc,
+            )
+            return conn.execute(
+                "SELECT * FROM daily_414_final_tables WHERE id=?",
+                (table["id"],),
+            ).fetchone()
+        active_ids = {int(row["id"]) for row in active}
+        eliminated_ids = active_ids - correct_ids
+        if eliminated_ids:
+            placeholders = ",".join("?" for _ in eliminated_ids)
+            conn.execute(
+                f"""
+                UPDATE daily_414_finalists
+                SET status='eliminated', eliminated_question_index=?,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id IN ({placeholders})
+                """,
+                (question_index, *sorted(eliminated_ids)),
+            )
         conn.execute(
             """
             UPDATE daily_414_final_tables
@@ -379,34 +531,31 @@ def reconcile_final_table(
         ).fetchone()[0]
     )
     if len(active) == 1:
-        winner = active[0]
-        conn.execute(
-            """
-            UPDATE daily_414_finalists
-            SET status='winner', updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (winner["id"],),
-        )
-        conn.execute(
-            """
-            UPDATE daily_414_final_tables
-            SET status='completed', winner_submission_id=?, completed_at=?,
-                updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (winner["submission_id"], _timestamp(now_utc), table["id"]),
+        _promote_winners(
+            conn,
+            table_id=table["id"],
+            winners=list(active),
+            now_utc=now_utc,
+            outcome="single_winner",
         )
     elif next_index >= len(questions):
-        conn.execute(
-            """
-            UPDATE daily_414_final_tables
-            SET status='completed', completed_at=?,
-                updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (_timestamp(now_utc), table["id"]),
-        )
+        if len(active) >= 2:
+            _promote_winners(
+                conn,
+                table_id=table["id"],
+                winners=list(active),
+                now_utc=now_utc,
+                outcome="co_winners",
+            )
+        else:
+            _mark_completed(
+                conn,
+                table_id=table["id"],
+                now_utc=now_utc,
+                outcome="no_winner",
+                winner_submission_id=None,
+                prize_resolution="none",
+            )
     else:
         conn.execute(
             """

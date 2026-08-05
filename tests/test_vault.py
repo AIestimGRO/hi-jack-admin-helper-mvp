@@ -468,7 +468,10 @@ def test_final_table_can_award_jackcoin_once(tmp_path) -> None:
         first = attach_final_table_reward(conn, final_table_id=table_id)
         repeated = attach_final_table_reward(conn, final_table_id=table_id)
 
-        assert first == {"kind": "jackcoin", "amount": 750}
+        assert first["kind"] == "jackcoin"
+        assert first["amount"] == 750
+        assert first["winner_client_ids"] == [client_id]
+        assert first["shares"] == [{"client_id": client_id, "amount": 750}]
         assert repeated == first
         assert jackcoin_balance(conn, client_id) == 750
         assert conn.execute(
@@ -478,6 +481,178 @@ def test_final_table_can_award_jackcoin_once(tmp_path) -> None:
             "SELECT * FROM daily_414_final_tables WHERE id=?", (table_id,)
         ).fetchone()
         assert table["winner_jackcoin_awarded"] == 750
+        assert table["prize_resolution"] == "awarded"
+
+
+def test_final_table_splits_jackcoin_among_co_winners(tmp_path) -> None:
+    db_path = tmp_path / "vault-final-split.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        clients = [_client(conn, index) for index in range(1, 4)]
+        submissions = []
+        for index, client_id in enumerate(clients, start=1):
+            submissions.append(
+                int(
+                    conn.execute(
+                        """
+                        INSERT INTO quiz_submissions(
+                            campaign_code, client_id, phone_raw, phone_local,
+                            answers_json, completion_time_ms, ip_hash
+                        ) VALUES ('daily_split', ?, '', '', '{}', ?, 'test')
+                        """,
+                        (client_id, 10_000 + index),
+                    ).lastrowid
+                )
+            )
+        table_id = int(
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_tables(
+                    campaign_code, campaign_version, starts_at,
+                    questions_snapshot_json, prize_type, prize_jackcoin_amount,
+                    status, outcome, winner_submission_id, completed_at
+                ) VALUES (
+                    'daily_split', 1, '2026-08-03T18:23:14+00:00',
+                    '[]', 'jackcoin', 100, 'completed', 'co_winners', ?,
+                    CURRENT_TIMESTAMP
+                )
+                """,
+                (submissions[0],),
+            ).lastrowid
+        )
+        for seed, (client_id, submission_id) in enumerate(
+            zip(clients, submissions), start=1
+        ):
+            conn.execute(
+                """
+                INSERT INTO daily_414_finalists(
+                    final_table_id, submission_id, client_id, seed, status,
+                    final_response_time_ms
+                ) VALUES (?, ?, ?, ?, 'winner', ?)
+                """,
+                (table_id, submission_id, client_id, seed, 3000 - seed * 100),
+            )
+
+        first = attach_final_table_reward(conn, final_table_id=table_id)
+        repeated = attach_final_table_reward(conn, final_table_id=table_id)
+
+        assert first["kind"] == "jackcoin"
+        assert first["amount"] == 100
+        assert sum(share["amount"] for share in first["shares"]) == 100
+        assert repeated["amount"] == 100
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jackcoin_ledger WHERE source_type='final_prize'"
+        ).fetchone()[0] == 3
+        # Remainder goes to fastest final time (seed 3: 2700ms).
+        amounts = {
+            int(row["client_id"]): int(row["amount"])
+            for row in conn.execute(
+                """
+                SELECT client_id, amount FROM jackcoin_ledger
+                WHERE source_type='final_prize'
+                """
+            )
+        }
+        assert amounts == {
+            clients[2]: 34,
+            clients[1]: 33,
+            clients[0]: 33,
+        }
+
+
+def test_final_table_card_co_winners_create_manual_task(tmp_path) -> None:
+    db_path = tmp_path / "vault-final-card-cowinners.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        catalog = _catalog(conn, code="final_card", price=0, inventory=1)
+        clients = [_client(conn, index) for index in range(1, 3)]
+        submissions = []
+        for client_id in clients:
+            submissions.append(
+                int(
+                    conn.execute(
+                        """
+                        INSERT INTO quiz_submissions(
+                            campaign_code, client_id, phone_raw, phone_local,
+                            answers_json, ip_hash
+                        ) VALUES ('daily_card_co', ?, '', '', '{}', 'test')
+                        """,
+                        (client_id,),
+                    ).lastrowid
+                )
+            )
+        table_id = int(
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_tables(
+                    campaign_code, campaign_version, starts_at,
+                    questions_snapshot_json, prize_type, prize_catalog_reward_id,
+                    status, outcome, winner_submission_id, completed_at
+                ) VALUES (
+                    'daily_card_co', 1, '2026-08-03T18:23:14+00:00',
+                    '[]', 'reward_card', ?, 'completed', 'co_winners', ?,
+                    CURRENT_TIMESTAMP
+                )
+                """,
+                (catalog["id"], submissions[0]),
+            ).lastrowid
+        )
+        for seed, (client_id, submission_id) in enumerate(
+            zip(clients, submissions), start=1
+        ):
+            conn.execute(
+                """
+                INSERT INTO daily_414_finalists(
+                    final_table_id, submission_id, client_id, seed, status
+                ) VALUES (?, ?, ?, ?, 'winner')
+                """,
+                (table_id, submission_id, client_id, seed),
+            )
+
+        first = attach_final_table_reward(conn, final_table_id=table_id)
+        repeated = attach_final_table_reward(conn, final_table_id=table_id)
+
+        assert first["kind"] == "manual_task"
+        assert first["task_id"] == repeated["task_id"]
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vault_member_rewards"
+        ).fetchone()[0] == 0
+        task = conn.execute(
+            "SELECT * FROM daily_414_master_tasks WHERE final_table_id=?",
+            (table_id,),
+        ).fetchone()
+        assert task["status"] == "open"
+        assert task["task_type"] == "co_winner_card_prize"
+        table = conn.execute(
+            "SELECT prize_resolution FROM daily_414_final_tables WHERE id=?",
+            (table_id,),
+        ).fetchone()
+        assert table["prize_resolution"] == "manual_task"
+
+
+def test_final_table_no_winner_does_not_award_prize(tmp_path) -> None:
+    db_path = tmp_path / "vault-final-no-winner.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        table_id = int(
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_tables(
+                    campaign_code, campaign_version, starts_at,
+                    questions_snapshot_json, prize_type, prize_jackcoin_amount,
+                    status, outcome, prize_resolution, completed_at
+                ) VALUES (
+                    'daily_no_winner', 1, '2026-08-03T18:23:14+00:00',
+                    '[]', 'jackcoin', 500, 'completed', 'no_winner', 'none',
+                    CURRENT_TIMESTAMP
+                )
+                """
+            ).lastrowid
+        )
+        assert attach_final_table_reward(conn, final_table_id=table_id) is None
+        assert conn.execute(
+            "SELECT COUNT(*) FROM jackcoin_ledger WHERE source_type='final_prize'"
+        ).fetchone()[0] == 0
 
 
 def test_purchase_token_is_bound_to_account_and_reward() -> None:
