@@ -671,6 +671,81 @@ CREATE TABLE IF NOT EXISTS club_rating_entries (
 );
 CREATE INDEX IF NOT EXISTS ix_club_rating_entries_client
     ON club_rating_entries(client_id, snapshot_id DESC);
+
+CREATE TABLE IF NOT EXISTS jackside_rules_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_jackside_rules_active
+    ON jackside_rules_versions(is_active, id DESC);
+
+CREATE TABLE IF NOT EXISTS jackside_rules_acceptances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES member_accounts(id) ON DELETE CASCADE,
+    rules_version_id INTEGER NOT NULL REFERENCES jackside_rules_versions(id),
+    rules_version TEXT NOT NULL,
+    accepted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip_hash TEXT NOT NULL DEFAULT 'unknown',
+    user_agent TEXT,
+    UNIQUE(account_id, rules_version)
+);
+CREATE INDEX IF NOT EXISTS ix_jackside_rules_acceptances_account
+    ON jackside_rules_acceptances(account_id, accepted_at DESC);
+
+CREATE TABLE IF NOT EXISTS jackside_issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_date TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN (
+            'draft', 'scheduled', 'lobby', 'main_live', 'waiting_final',
+            'final_live', 'closed', 'cancelled', 'technical_review'
+        )),
+    campaign_code TEXT UNIQUE,
+    rules_version_id INTEGER REFERENCES jackside_rules_versions(id),
+    rules_version TEXT,
+    starts_at TEXT,
+    ends_at TEXT,
+    main_question_count INTEGER NOT NULL DEFAULT 0,
+    final_question_count INTEGER NOT NULL DEFAULT 0,
+    jackcoin_per_correct INTEGER NOT NULL DEFAULT 5,
+    jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10,
+    jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20,
+    final_question_time_seconds INTEGER NOT NULL DEFAULT 30,
+    final_prize_type TEXT NOT NULL DEFAULT 'none'
+        CHECK(final_prize_type IN ('none', 'reward_card', 'jackcoin')),
+    final_prize_catalog_reward_id INTEGER REFERENCES vault_catalog_rewards(id) ON DELETE SET NULL,
+    final_prize_jackcoin_amount INTEGER NOT NULL DEFAULT 0,
+    unique_participants INTEGER NOT NULL DEFAULT 0,
+    results_json TEXT NOT NULL DEFAULT '{}',
+    published_at TEXT,
+    created_by_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_jackside_issues_status
+    ON jackside_issues(status, starts_at);
+CREATE INDEX IF NOT EXISTS ix_jackside_issues_campaign
+    ON jackside_issues(campaign_code);
+
+CREATE TABLE IF NOT EXISTS jackside_issue_participants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES jackside_issues(id) ON DELETE CASCADE,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    account_id INTEGER REFERENCES member_accounts(id) ON DELETE SET NULL,
+    joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(issue_id, client_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_jackside_issue_participants_account
+    ON jackside_issue_participants(issue_id, account_id)
+    WHERE account_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_jackside_issue_participants_issue
+    ON jackside_issue_participants(issue_id, joined_at);
 """
 
 PREFERENCE_TYPES = (
@@ -901,6 +976,107 @@ def init_db(db_path: str | Path) -> None:
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_quiz_submissions_attempt ON quiz_submissions(attempt_id) WHERE attempt_id IS NOT NULL"
         )
+        for statement in (
+            """
+            CREATE TABLE IF NOT EXISTS jackside_rules_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS jackside_rules_acceptances (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES member_accounts(id) ON DELETE CASCADE,
+                rules_version_id INTEGER NOT NULL REFERENCES jackside_rules_versions(id),
+                rules_version TEXT NOT NULL,
+                accepted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                ip_hash TEXT NOT NULL DEFAULT 'unknown',
+                user_agent TEXT,
+                UNIQUE(account_id, rules_version)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS jackside_issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_date TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft'
+                    CHECK(status IN (
+                        'draft', 'scheduled', 'lobby', 'main_live', 'waiting_final',
+                        'final_live', 'closed', 'cancelled', 'technical_review'
+                    )),
+                campaign_code TEXT UNIQUE,
+                rules_version_id INTEGER REFERENCES jackside_rules_versions(id),
+                rules_version TEXT,
+                starts_at TEXT,
+                ends_at TEXT,
+                main_question_count INTEGER NOT NULL DEFAULT 0,
+                final_question_count INTEGER NOT NULL DEFAULT 0,
+                jackcoin_per_correct INTEGER NOT NULL DEFAULT 5,
+                jackcoin_completion_bonus INTEGER NOT NULL DEFAULT 10,
+                jackcoin_perfect_bonus INTEGER NOT NULL DEFAULT 20,
+                final_question_time_seconds INTEGER NOT NULL DEFAULT 30,
+                final_prize_type TEXT NOT NULL DEFAULT 'none'
+                    CHECK(final_prize_type IN ('none', 'reward_card', 'jackcoin')),
+                final_prize_catalog_reward_id INTEGER REFERENCES vault_catalog_rewards(id) ON DELETE SET NULL,
+                final_prize_jackcoin_amount INTEGER NOT NULL DEFAULT 0,
+                unique_participants INTEGER NOT NULL DEFAULT 0,
+                results_json TEXT NOT NULL DEFAULT '{}',
+                published_at TEXT,
+                created_by_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS jackside_issue_participants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_id INTEGER NOT NULL REFERENCES jackside_issues(id) ON DELETE CASCADE,
+                client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+                account_id INTEGER REFERENCES member_accounts(id) ON DELETE SET NULL,
+                joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(issue_id, client_id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_jackside_rules_active ON jackside_rules_versions(is_active, id DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_jackside_rules_acceptances_account ON jackside_rules_acceptances(account_id, accepted_at DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_jackside_issues_status ON jackside_issues(status, starts_at)",
+            "CREATE INDEX IF NOT EXISTS ix_jackside_issues_campaign ON jackside_issues(campaign_code)",
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_jackside_issue_participants_account
+            ON jackside_issue_participants(issue_id, account_id)
+            WHERE account_id IS NOT NULL
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_jackside_issue_participants_issue ON jackside_issue_participants(issue_id, joined_at)",
+        ):
+            conn.execute(statement)
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO jackside_rules_versions(version, title, content, is_active)
+            VALUES (
+                '1.0',
+                'Правила JACKSIDE 4:14',
+                'JACKSIDE — один общий стол на весь клуб Hi, Jack. 10 вопросов, 4:14, одна попытка, финал на вылет.',
+                1
+            )
+            """
+        )
+        # Keep a single active rules version if none marked active.
+        if not conn.execute(
+            "SELECT 1 FROM jackside_rules_versions WHERE is_active=1 LIMIT 1"
+        ).fetchone():
+            conn.execute(
+                """
+                UPDATE jackside_rules_versions
+                SET is_active=1
+                WHERE id=(SELECT MIN(id) FROM jackside_rules_versions)
+                """
+            )
         conn.execute(
             """
             INSERT OR IGNORE INTO quiz_participation_versions(

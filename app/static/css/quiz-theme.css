@@ -21,6 +21,27 @@ body {
 .quiz-shell { position: relative; isolation: isolate; }
 .quiz-shell::before { content: "♠"; position: fixed; z-index: -1; right: -48px; bottom: -110px; color: rgba(255, 255, 255, .025); font-size: 360px; line-height: 1; transform: rotate(-12deg); }
 
+.jackside-welcome-points {
+  margin: 0 0 16px;
+  padding: 0 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.jackside-welcome-points li {
+  margin: 0 0 6px;
+}
+
+.quiz-rules-link {
+  margin: 0 0 18px;
+}
+
+.quiz-rules-link a {
+  color: var(--red2);
+  font-weight: 700;
+}
+
 .quiz-brand {
   grid-template-columns: 50px 1fr;
   column-gap: 12px;
@@ -165,10 +186,13 @@ body {
 .quiz-screen[data-screen="question"] { padding-bottom: 88px; }
 
 .final-lobby-screen { text-align: center; }
+.final-lobby-stats { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; text-align: left; }
+.final-lobby-stats li { margin: 0; padding: 10px 12px; border: 1px solid rgba(0,161,132,.28); border-radius: 12px; background: rgba(0,161,132,.08); color: #a9eadc; font-weight: 700; font-size: .92rem; }
+.final-lobby-elim { margin: 0 0 14px; color: #d8bd87; font-weight: 700; }
 .final-lobby-countdown { display: grid; gap: 7px; margin: 2px 0 18px; padding: 24px; border: 1px solid rgba(213,165,71,.5); border-radius: 22px; background: linear-gradient(145deg,rgba(129,56,0,.22),rgba(213,165,71,.08)); }
 .final-lobby-countdown small { color: #d8bd87; text-transform: uppercase; letter-spacing: 1px; }
 .final-lobby-countdown strong { color: #ffd878; font-family: "Arial Black",Inter,sans-serif; font-size: clamp(44px,13vw,72px); letter-spacing: .04em; }
-.final-lobby-place { margin: 0 0 22px; padding: 13px; border: 1px solid rgba(0,161,132,.36); border-radius: 14px; background: rgba(0,161,132,.1); color: #a9eadc; font-weight: 800; }
+.jackside-day-rating { display: inline-flex; margin-top: 12px; }
 .final-table-screen { justify-content: flex-start; }
 .final-table-heading { position: relative; display: flex; justify-content: center; align-items: center; min-height: 34px; margin-bottom: 8px; }
 .final-table-heading .quiz-section-label { margin: 0; }

@@ -48,21 +48,57 @@
       <div class="quiz-feature-art" aria-hidden="true"><span>4</span><i>:</i><span>14</span></div>
       <div class="quiz-feature-copy">
         <div class="status-row">
-          <span class="live-status {{ featured_campaign.schedule_state }}">{{ 'Можно играть' if featured_campaign.schedule_state == 'active' else 'Скоро' }}</span>
+          <span class="live-status {{ featured_campaign.schedule_state }}">
+            {% if featured_campaign.campaign_type == 'daily_414' and featured_campaign.issue_status %}
+              {% if featured_campaign.issue_status == 'lobby' %}Лобби
+              {% elif featured_campaign.issue_status == 'main_live' %}Идёт игра
+              {% elif featured_campaign.issue_status == 'waiting_final' %}Ждём финал
+              {% elif featured_campaign.issue_status == 'final_live' %}Финал
+              {% elif featured_campaign.issue_status == 'scheduled' %}Скоро
+              {% else %}{{ 'Можно играть' if featured_campaign.schedule_state == 'active' else 'Скоро' }}{% endif %}
+            {% else %}
+              {{ 'Можно играть' if featured_campaign.schedule_state == 'active' else 'Скоро' }}
+            {% endif %}
+          </span>
           <small>{{ 'JACKSIDE 4:14' if featured_campaign.campaign_type == 'daily_414' else 'КВИЗ HI, JACK' }}</small>
         </div>
         <h3>{{ featured_campaign.title }}</h3>
-        {% if featured_campaign.schedule_state == 'upcoming' %}
-          <p>Старт {{ featured_campaign.active_from_display }}</p>
-          <strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>
-        {% elif featured_campaign.active_until %}
-          <p>Доступен до {{ featured_campaign.active_until_display }}</p>
+        {% if featured_campaign.campaign_type == 'daily_414' %}
+          <p>
+            {% if featured_campaign.issue_date %}{{ featured_campaign.issue_date }} · {% endif %}
+            {% if featured_campaign.schedule_state == 'upcoming' %}Старт {{ featured_campaign.active_from_display }}
+            {% elif featured_campaign.active_from_display %}Сегодня {{ featured_campaign.active_from_display }}
+            {% else %}Ежедневный стол клуба{% endif %}
+          </p>
+          {% if featured_campaign.schedule_state == 'upcoming' %}
+            <strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>
+          {% endif %}
+          {% if featured_campaign.prize_headline %}
+            <p class="quiz-feature-prize">{{ featured_campaign.prize_headline }}</p>
+          {% endif %}
+          {% if featured_campaign.base_award_hint %}
+            <p class="quiz-feature-hint">{{ featured_campaign.base_award_hint }}</p>
+          {% endif %}
+          <p class="quiz-feature-seated">Уже за столом: {{ featured_campaign.unique_participants or 0 }}</p>
+          <div class="quiz-feature-actions">
+            <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">
+              {{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}
+            </a>
+            <a class="app-secondary-action" href="/jackside/rules">Полные правила</a>
+          </div>
         {% else %}
-          <p>Играй и забирай JACKCOIN</p>
+          {% if featured_campaign.schedule_state == 'upcoming' %}
+            <p>Старт {{ featured_campaign.active_from_display }}</p>
+            <strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>
+          {% elif featured_campaign.active_until %}
+            <p>Доступен до {{ featured_campaign.active_until_display }}</p>
+          {% else %}
+            <p>Играй и забирай JACKCOIN</p>
+          {% endif %}
+          <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">
+            {{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}
+          </a>
         {% endif %}
-        <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">
-          {{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}
-        </a>
       </div>
     </article>
     {% else %}

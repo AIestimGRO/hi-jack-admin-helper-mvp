@@ -1,0 +1,93 @@
+"""Centralized JACKSIDE copy: result ranges and shared UI strings."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+RESULT_COPY_BY_RANGE: tuple[dict[str, Any], ...] = (
+    {
+        "code": "0_3",
+        "min_correct": 0,
+        "max_correct": 3,
+        "title": "Тёплый стол",
+        "message": "Сегодня раздача сложилась иначе. JACKCOIN за участие уже на балансе — завтра новый шанс.",
+    },
+    {
+        "code": "4_6",
+        "min_correct": 4,
+        "max_correct": 6,
+        "title": "Достойный результат",
+        "message": "Хороший ход. Есть запас роста — следите за серией и возвращайтесь завтра.",
+    },
+    {
+        "code": "7_8",
+        "min_correct": 7,
+        "max_correct": 8,
+        "title": "Сильная раздача",
+        "message": "Почти у финального стола. Ещё чуть точнее — и вы среди претендентов.",
+    },
+    {
+        "code": "9",
+        "min_correct": 9,
+        "max_correct": 9,
+        "title": "Почти идеально",
+        "message": "Девять из десяти. Один промах от максимума — отличный день за JACKSIDE.",
+    },
+    {
+        "code": "10",
+        "min_correct": 10,
+        "max_correct": 10,
+        "title": "Идеальная десятка",
+        "message": "10/10. Вы собрали максимум основной части. Ждём финальный стол!",
+    },
+)
+
+DEFAULT_RULES_VERSION = "1.0"
+DEFAULT_RULES_TITLE = "Правила JACKSIDE 4:14"
+DEFAULT_RULES_CONTENT = """\
+JACKSIDE — один общий стол на весь клуб Hi, Jack.
+
+Каждый выпуск:
+• 10 вопросов основной части;
+• 4 минуты 14 секунд на основную часть;
+• одна попытка без возврата к уже сохранённым ответам;
+• допуск в финальный стол только у тех, кто полностью завершил основную часть в окне выпуска;
+• в финал проходят до 10 лучших по правильным ответам, затем по времени;
+• в финале каждый вопрос — на вылет;
+• если все оставшиеся ошиблись или не успели — победителя нет, главный приз не выдаётся;
+• если после последнего вопроса осталось двое и больше — это совместные победители.
+
+JACKCOIN начисляются только за полностью завершённую основную часть.
+Главный приз выпуска указывается в карточке дня.
+
+Время сервера является источником истины для статуса выпуска и таймеров.
+"""
+
+
+def result_copy_for_score(correct_count: int) -> dict[str, str]:
+    score = max(0, int(correct_count))
+    for item in RESULT_COPY_BY_RANGE:
+        if item["min_correct"] <= score <= item["max_correct"]:
+            return {"code": item["code"], "title": item["title"], "message": item["message"]}
+    return {
+        "code": "0_3",
+        "title": RESULT_COPY_BY_RANGE[0]["title"],
+        "message": RESULT_COPY_BY_RANGE[0]["message"],
+    }
+
+
+def prize_headline(
+    *,
+    prize_type: str,
+    jackcoin_amount: int = 0,
+    card_title: str | None = None,
+) -> str:
+    kind = str(prize_type or "none")
+    if kind == "jackcoin" and int(jackcoin_amount or 0) > 0:
+        return f"Победитель получит {int(jackcoin_amount)} JACKCOIN"
+    if kind == "reward_card" and card_title:
+        return f"Победитель получит карту «{card_title}»"
+    if kind == "reward_card":
+        return "Победитель получит карту из THE VAULT"
+    return "Главный приз выпуска уточняется"

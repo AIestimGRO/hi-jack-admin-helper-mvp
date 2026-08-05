@@ -122,6 +122,7 @@
     <button type="button" role="tab" aria-selected="false" data-campaign-tab="daily_414">JACKSIDE 4:14 <span>{{ quiz_campaigns_daily_414|length }}</span></button>
     <button type="button" role="tab" aria-selected="false" data-campaign-tab="archived">Архив <span>{{ quiz_campaigns_archived|length }}</span></button>
   </div>
+  <p class="campaign-tools"><a class="button" href="/master/jackside-issues">Мастер ежедневных выпусков</a></p>
   <div class="master-list">
   {% for campaign in quiz_campaigns %}
     {% if loop.first or loop.previtem.campaign_type != campaign.campaign_type %}

@@ -38,6 +38,17 @@
       <h1>{{ campaign_title }}</h1>
       <p class="quiz-lead" data-content="welcome-text"></p>
       <p class="quiz-welcome-meta"></p>
+      {% if campaign_type == 'daily_414' %}
+      <ul class="jackside-welcome-points">
+        <li>Один стол на весь клуб</li>
+        <li>Уже за столом: <strong data-role="seated-count">{{ jackside.unique_participants if jackside else 0 }}</strong></li>
+        <li>10 вопросов · 4 минуты 14 секунд · одна попытка</li>
+        <li>К сохранённым ответам возврата нет</li>
+        <li data-role="welcome-prize">{{ jackside.prize_headline if jackside else daily_prize_title }}</li>
+        <li data-role="welcome-award">{{ jackside.base_award_hint if jackside else 'JACKCOIN за правильные ответы' }}</li>
+      </ul>
+      <p class="quiz-rules-link"><a href="/jackside/rules">Полные правила</a></p>
+      {% endif %}
       {% if telegram_error %}<p class="quiz-validation">{{ telegram_error }}</p>{% endif %}
       <button class="quiz-primary" type="button" data-action="identify">Начать</button>
     </section>
@@ -80,11 +91,20 @@
       <p class="quiz-kicker">Основной раунд завершён</p>
       <h2>Лобби финального стола</h2>
       <p class="quiz-lead final-lobby-message">Собираем десятку лучших игроков.</p>
+      <ul class="final-lobby-stats">
+        <li class="final-lobby-result" hidden></li>
+        <li class="final-lobby-time" hidden></li>
+        <li class="final-lobby-place" hidden></li>
+        <li class="final-lobby-participants" hidden></li>
+        <li class="final-lobby-cutoff" hidden></li>
+        <li class="final-lobby-questions" hidden></li>
+      </ul>
+      <p class="final-lobby-elim">Каждый вопрос — на вылет</p>
       <div class="final-lobby-countdown" aria-live="polite">
         <small>Финальный стол начнётся через</small>
         <strong>0:00</strong>
       </div>
-      <div class="final-lobby-place" hidden></div>
+      <p class="quiz-rules-link"><a href="/jackside/rules">Полные правила</a></p>
     </section>
 
     <section class="quiz-screen final-table-screen" data-screen="final-question">
@@ -171,6 +191,9 @@
         <div><small>JACKCOIN</small><strong class="daily-result-jackcoin"></strong></div>
         <div><small>Серия</small><strong class="daily-result-streak"></strong></div>
         <div><small>Время</small><strong class="daily-result-time"></strong></div>
+        <div hidden><small>Место</small><strong class="daily-result-place"></strong></div>
+        <div hidden><small>Участники</small><strong class="daily-result-participants"></strong></div>
+        <div hidden><small>Финал</small><strong class="daily-result-final-status"></strong></div>
         <p class="daily-result-prize"></p>
       </div>
       <div class="quiz-reward" hidden><small>Твой код</small><strong class="quiz-reward-code"></strong><p class="quiz-reward-validity"></p><p>Покажи администратору</p></div>
@@ -181,6 +204,7 @@
         <button class="quiz-method-back" type="button" data-action="copy-share">Скопировать ссылку</button>
         <small class="quiz-share-status" aria-live="polite"></small>
       </div>
+      <a class="quiz-secondary jackside-day-rating" href="/account?tab=stats" hidden>Дневной рейтинг</a>
       <button class="quiz-primary quiz-retry" type="button" data-action="new-attempt" hidden>Попробовать ещё раз</button>
     </section>
 

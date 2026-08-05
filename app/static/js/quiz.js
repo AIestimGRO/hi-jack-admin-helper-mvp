@@ -205,6 +205,14 @@
       app.querySelector('[data-content="welcome-text"]').textContent = data.content.welcome_text;
       app.querySelector('[data-content="identity-text"]').textContent = data.content.identity_text;
       app.querySelector('[data-action="identify"]').textContent = data.content.start_button_text;
+      if (isDaily414 && data.daily_414) {
+        const seated = app.querySelector('[data-role="seated-count"]');
+        if (seated) seated.textContent = String(data.daily_414.unique_participants || 0);
+        const prize = app.querySelector('[data-role="welcome-prize"]');
+        if (prize && data.daily_414.prize_headline) prize.textContent = data.daily_414.prize_headline;
+        const award = app.querySelector('[data-role="welcome-award"]');
+        if (award && data.jackside?.base_award_hint) award.textContent = data.jackside.base_award_hint;
+      }
 
       if (isDaily414) {
         const resumedFinal = await resumeFinalFlow({ force: getFlow() === 'lobby' });
@@ -550,19 +558,45 @@
     const score = app.querySelector('.quiz-score-message');
     if (data.max_correct_count > 0) { score.textContent = `Правильных ответов: ${data.correct_count} из ${data.max_correct_count}. Баллы: ${data.score} из ${data.max_score}.`; score.hidden = false; score.classList.toggle('passed', Boolean(data.passed)); } else score.hidden = true;
     const dailyResult = app.querySelector('.daily-result');
+    const dayRating = app.querySelector('.jackside-day-rating');
+    if (dayRating) dayRating.hidden = data.campaign_type !== 'daily_414';
     if (dailyResult) {
       dailyResult.hidden = data.campaign_type !== 'daily_414';
       if (!dailyResult.hidden) {
         dailyResult.querySelector('.daily-result-jackcoin').textContent = `+${data.jackcoin_awarded} JC`;
         dailyResult.querySelector('.daily-result-streak').textContent = `${data.streak_days} дн.`;
         dailyResult.querySelector('.daily-result-time').textContent = formatPreciseTime(data.completion_time_ms);
+        const placeEl = dailyResult.querySelector('.daily-result-place');
+        const placeWrap = placeEl?.parentElement;
+        if (placeWrap) {
+          placeWrap.hidden = data.daily_place == null;
+          if (data.daily_place != null) placeEl.textContent = String(data.daily_place);
+        }
+        const partEl = dailyResult.querySelector('.daily-result-participants');
+        const partWrap = partEl?.parentElement;
+        if (partWrap) {
+          partWrap.hidden = data.participant_count == null;
+          if (data.participant_count != null) partEl.textContent = String(data.participant_count);
+        }
+        const finalEl = dailyResult.querySelector('.daily-result-final-status');
+        const finalWrap = finalEl?.parentElement;
+        if (finalWrap) {
+          finalWrap.hidden = false;
+          if (data.main_prize_eligible && data.final_table_available) {
+            finalEl.textContent = 'Ожидание финала';
+          } else if (data.main_prize_eligible) {
+            finalEl.textContent = 'В отборе / вне стола';
+          } else {
+            finalEl.textContent = 'Вне топ-10';
+          }
+        }
         const prize = dailyResult.querySelector('.daily-result-prize');
         if (data.main_prize_eligible) {
           prize.textContent = data.daily_place
-            ? `Предварительное место отбора: ${data.daily_place}. Финальный стол начнётся одновременно для всех.`
+            ? `Место отбора: ${data.daily_place}. Финальный стол начнётся одновременно для всех.`
             : 'Результат участвует в отборе за финальный стол.';
         } else {
-          prize.textContent = 'JACKCOIN, награда и серия сохранены. Отбор за финальный стол уже закрыт.';
+          prize.textContent = 'JACKCOIN и серия сохранены. В топ-10 финала вы не попали.';
         }
       }
     }
@@ -737,6 +771,14 @@
     }, 1000);
   }
 
+  function setLobbyStat(selector, text) {
+    const el = app.querySelector(selector);
+    if (!el) return;
+    const value = text == null || text === '' ? null : String(text);
+    el.hidden = !value;
+    if (value) el.textContent = value;
+  }
+
   function updateFinalLobbyCopy(data = {}) {
     if (data.starts_at) {
       state.finalResult = {
@@ -751,36 +793,65 @@
         max_correct_count: data.max_correct_count ?? state.finalResult?.max_correct_count,
         jackcoin_awarded: data.jackcoin_awarded ?? state.finalResult?.jackcoin_awarded,
         daily_place: data.provisional_place ?? state.finalResult?.daily_place,
+        completion_time_ms: data.completion_time_ms ?? state.finalResult?.completion_time_ms,
+        participant_count: data.participant_count ?? state.finalResult?.participant_count,
+        final_question_count:
+          data.final_question_count ?? state.finalResult?.final_question_count,
       };
     }
     const message = app.querySelector('.final-lobby-message');
-    const place = app.querySelector('.final-lobby-place');
     const result = state.finalResult;
+    const questionCount = data.final_question_count
+      ?? state.finalResult?.final_question_count;
     if (!state.openingFinal) {
-      const questionCount = data.final_question_count
-        ?? state.finalResult?.final_question_count;
-      const scoreLine = result?.correct_count != null
-        ? `${result.correct_count} из ${result.max_correct_count || result.correct_count} правильно · +${result.jackcoin_awarded || 0} JACKCOIN.`
-        : '';
-      const finalLine = questionCount
-        ? ` В финале ${questionCount} вопрос(ов): каждый вопрос — на вылет.`
-        : '';
       message.textContent = data.message
-        || `${scoreLine}${finalLine}`.trim()
         || 'Основной раунд завершён. Собираем десятку лучших игроков.';
+    }
+    if (result?.correct_count != null) {
+      setLobbyStat(
+        '.final-lobby-result',
+        `Результат: ${result.correct_count} из ${result.max_correct_count || result.correct_count} · +${result.jackcoin_awarded || 0} JACKCOIN`,
+      );
+    } else {
+      setLobbyStat('.final-lobby-result', null);
+    }
+    if (result?.completion_time_ms != null) {
+      setLobbyStat('.final-lobby-time', `Время: ${formatPreciseTime(result.completion_time_ms)}`);
+    } else {
+      setLobbyStat('.final-lobby-time', null);
     }
     const provisionalPlace = data.provisional_place ?? result?.daily_place;
     const youStanding = Array.isArray(data.standings)
       ? data.standings.find((item) => item.is_you)
       : null;
     const placeValue = youStanding?.place ?? provisionalPlace;
-    place.hidden = placeValue == null;
     if (placeValue != null) {
       const scoreHint = youStanding?.correct_count != null
         ? ` (${youStanding.correct_count} верных)`
         : '';
-      place.textContent = `Сейчас вы на ${placeValue}-м месте отбора${scoreHint}. В финал попадут не более 10 игроков.`;
+      setLobbyStat(
+        '.final-lobby-place',
+        `Место: ${placeValue}${scoreHint}`,
+      );
+      setLobbyStat(
+        '.final-lobby-cutoff',
+        placeValue <= 10
+          ? 'Вы в топ-10 финального стола'
+          : 'В топ-10 финала вы не попали',
+      );
+    } else {
+      setLobbyStat('.final-lobby-place', null);
+      setLobbyStat('.final-lobby-cutoff', null);
     }
+    const participants = data.participant_count ?? result?.participant_count;
+    setLobbyStat(
+      '.final-lobby-participants',
+      participants != null ? `Участников выпуска: ${participants}` : null,
+    );
+    setLobbyStat(
+      '.final-lobby-questions',
+      questionCount != null ? `Финальных вопросов: ${questionCount}` : null,
+    );
   }
 
   function renderFinalLobby(data = {}) {

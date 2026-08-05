@@ -1,0 +1,24 @@
+{% extends "member_base.html" %}
+{% block title %}Правила JACKSIDE — Hi, Jack!{% endblock %}
+{% block content %}
+<section class="member-card registration-card">
+  <p class="member-eyebrow">JACKSIDE 4:14</p>
+  <h1>{{ rules.title }}</h1>
+  <p class="document-version">Версия {{ rules.version }}</p>
+  <div class="legal-copy">{{ rules.content }}</div>
+  {% if needs_accept %}
+  <form class="member-form consent-form" method="post" action="/jackside/rules/accept" data-consent-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <label class="member-check">
+      <input type="checkbox" name="accepted" value="1" required data-consent-checkbox>
+      <span>Принимаю правила версии {{ rules.version }}</span>
+    </label>
+    <button class="member-primary" type="submit" disabled data-consent-submit>Принять и продолжить</button>
+  </form>
+  {% else %}
+  <p>Вы уже приняли эту версию правил.</p>
+  <a class="member-primary" href="{{ next_url or '/account' }}">Назад</a>
+  {% endif %}
+</section>
+{% endblock %}

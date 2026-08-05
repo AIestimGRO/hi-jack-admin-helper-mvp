@@ -482,6 +482,36 @@
   font-size: 13px;
 }
 
+.quiz-feature-prize,
+.quiz-feature-hint,
+.quiz-feature-seated {
+  margin: 2px 0;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.quiz-feature-prize {
+  color: #f4f7f6;
+}
+
+.quiz-feature-actions {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.app-secondary-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border-radius: 14px;
+  border: 1px solid rgba(116, 210, 238, .35);
+  color: #74d2ee;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .app-primary-action {
   display: flex;
   align-items: center;

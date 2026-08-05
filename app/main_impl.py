@@ -12,7 +12,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
@@ -92,6 +92,24 @@ from app.services.daily_414_final import (
 )
 from app.services.quiz_mail import send_member_email_code, send_quiz_email_code
 from app.services.jackside_rating import jackside_leaderboard
+from app.services.jackside_copy import result_copy_for_score
+from app.services.jackside_issues import (
+    accept_rules as accept_jackside_rules,
+    active_rules as active_jackside_rules,
+    copy_issue,
+    create_issue,
+    current_featured_issue,
+    list_issues,
+    missing_jackside_rules,
+    public_issue_card,
+    register_issue_participant,
+    resolve_issue_for_campaign,
+    schedule_issue,
+    update_issue_settings,
+    validate_issue_for_publish,
+    get_issue_by_campaign,
+    refresh_issue_question_counts,
+)
 from app.services.member_accounts import (
     MEMBER_COOKIE_NAME,
     active_legal_documents,
@@ -1618,6 +1636,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jackside_leaderboard_rows = []
         rating_leaderboard = []
         rating_snapshot = None
+        jackside_card = None
         with connect(settings.db_path) as conn:
             balance = jackcoin_balance(conn, int(member["client_id"]))
             history = conn.execute(
@@ -1781,6 +1800,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     int(item["id"]),
                 )
             )
+            jackside_card = current_featured_issue(
+                conn,
+                now=datetime.now(timezone.utc),
+                timezone_name=settings.timezone_name,
+            )
+            if jackside_card:
+                jackside_card = public_issue_card(jackside_card)
+            else:
+                jackside_card = None
+            for item in campaign_cards:
+                if item["campaign_type"] != "daily_414":
+                    continue
+                issue_view = resolve_issue_for_campaign(
+                    conn,
+                    item,
+                    now=datetime.now(timezone.utc),
+                    timezone_name=settings.timezone_name,
+                )
+                item["jackside"] = public_issue_card(issue_view)
+                item["unique_participants"] = int(
+                    issue_view.get("unique_participants") or 0
+                )
+                item["prize_headline"] = issue_view.get("prize_headline")
+                item["base_award_hint"] = issue_view.get("base_award_hint")
+                item["issue_status"] = issue_view.get("status")
+                item["issue_date"] = issue_view.get("issue_date")
 
             expire_vault_rewards(conn, client_id=int(member["client_id"]))
             expire_vault_activations(conn, client_id=int(member["client_id"]))
@@ -1865,6 +1910,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 streak=streak,
                 campaign_cards=campaign_cards,
                 featured_campaign=campaign_cards[0] if campaign_cards else None,
+                jackside_card=jackside_card,
                 home_rewards=home_rewards[:4],
                 vault_catalog=vault_catalog,
                 vault_active_rewards=vault_active_rewards,
@@ -2078,8 +2124,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if missing_member_documents(int(member["id"])):
                 remember_member_next(request, current_path)
                 return RedirectResponse("/account/consents", status_code=303)
+            with connect(settings.db_path) as conn:
+                issue_row = get_issue_by_campaign(conn, campaign)
+                missing_rules = (
+                    missing_jackside_rules(conn, account_id=int(member["id"]))
+                    if issue_row
+                    else None
+                )
+            if missing_rules:
+                remember_member_next(request, current_path)
+                return RedirectResponse(
+                    f"/jackside/rules?{urlencode({'next': current_path})}",
+                    status_code=303,
+                )
         schedule_state = campaign_schedule_state(campaign_row)
         daily_prize = final_prize_display(campaign_row)
+        jackside_meta = None
+        if campaign_row["campaign_type"] == "daily_414":
+            with connect(settings.db_path) as conn:
+                jackside_meta = public_issue_card(
+                    resolve_issue_for_campaign(
+                        conn,
+                        campaign_row,
+                        now=datetime.now(timezone.utc),
+                        timezone_name=settings.timezone_name,
+                    )
+                )
         return templates.TemplateResponse(
             request,
             "quiz.html",
@@ -2101,8 +2171,187 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "campaign_background": campaign_background(campaign),
                 "daily_prize_title": daily_prize["title"],
                 "daily_prize_note": daily_prize["note"],
+                "jackside": jackside_meta,
             },
         )
+
+    @app.get("/jackside/rules", response_class=HTMLResponse)
+    async def jackside_rules_page(request: Request, next: str = "/account"):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        next_url = next if str(next).startswith("/") else "/account"
+        with connect(settings.db_path) as conn:
+            rules = active_jackside_rules(conn)
+            needs_accept = missing_jackside_rules(conn, account_id=int(member["id"])) is not None
+        return templates.TemplateResponse(
+            request,
+            "jackside_rules.html",
+            member_context(
+                request,
+                member=member,
+                rules=rules,
+                needs_accept=needs_accept,
+                next_url=next_url,
+            ),
+        )
+
+    @app.post("/jackside/rules/accept")
+    async def jackside_rules_accept(
+        request: Request,
+        csrf_token: str = Form(...),
+        accepted: str = Form(""),
+        next: str = Form("/account"),
+    ):
+        member_portal_or_404()
+        check_csrf(request, csrf_token)
+        member = current_member(request, required=True)
+        if accepted not in {"1", "true", "on", "yes"}:
+            return RedirectResponse("/jackside/rules?error=accept", status_code=303)
+        with transaction(settings.db_path) as conn:
+            rules = active_jackside_rules(conn)
+            accept_jackside_rules(
+                conn,
+                account_id=int(member["id"]),
+                rules=rules,
+                ip_hash=request.client.host if request.client else "unknown",
+                user_agent=request.headers.get("user-agent"),
+            )
+        next_url = next if str(next).startswith("/") else "/account"
+        return RedirectResponse(next_url, status_code=303)
+
+    @app.get("/master/jackside-issues", response_class=HTMLResponse)
+    async def jackside_issues_page(
+        request: Request, ok: str = "", error: str = ""
+    ):
+        require_master(request)
+        with connect(settings.db_path) as conn:
+            issues = []
+            for issue in list_issues(conn):
+                item = dict(issue)
+                campaign = conn.execute(
+                    "SELECT id FROM quiz_campaigns WHERE code=?",
+                    (issue["campaign_code"],),
+                ).fetchone()
+                item["campaign_id"] = campaign["id"] if campaign else None
+                issues.append(item)
+        return templates.TemplateResponse(
+            request,
+            "jackside_issues.html",
+            context(request, issues=issues, ok=ok, error=error),
+        )
+
+    def jackside_issues_redirect(message: str, *, error: bool = False) -> RedirectResponse:
+        key = "error" if error else "ok"
+        return RedirectResponse(
+            f"/master/jackside-issues?{urlencode({key: message})}",
+            status_code=303,
+        )
+
+    @app.post("/api/master/jackside-issues/create")
+    async def master_create_jackside_issue(
+        request: Request,
+        csrf_token: str = Form(...),
+        issue_date: str = Form(...),
+        starts_at: str = Form(...),
+        prize_jackcoin: int = Form(500),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            day = date.fromisoformat(issue_date)
+            starts_local = datetime.fromisoformat(starts_at)
+            starts_utc = starts_local.replace(tzinfo=campaign_timezone).astimezone(
+                timezone.utc
+            )
+            with transaction(settings.db_path) as conn:
+                issue = create_issue(
+                    conn,
+                    issue_date_value=day,
+                    starts_at=starts_utc,
+                    admin_id=int(request.session["admin_id"]),
+                    final_prize_type="jackcoin" if prize_jackcoin > 0 else "none",
+                    final_prize_jackcoin_amount=max(0, int(prize_jackcoin)),
+                )
+                from app.services.jackside_issues import ensure_issue_campaign
+
+                ensure_issue_campaign(conn, issue=issue)
+        except ValueError as exc:
+            messages = {
+                "issue_date_exists": "Выпуск на эту дату уже есть",
+            }
+            return jackside_issues_redirect(
+                messages.get(str(exc), str(exc)), error=True
+            )
+        return jackside_issues_redirect(f"Создан draft {issue['campaign_code']}")
+
+    @app.post("/api/master/jackside-issues/copy")
+    async def master_copy_jackside_issue(
+        request: Request,
+        csrf_token: str = Form(...),
+        source_issue_id: int = Form(...),
+        issue_date: str = Form(...),
+        starts_at: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            day = date.fromisoformat(issue_date)
+            starts_local = datetime.fromisoformat(starts_at)
+            starts_utc = starts_local.replace(tzinfo=campaign_timezone).astimezone(
+                timezone.utc
+            )
+            with transaction(settings.db_path) as conn:
+                issue = copy_issue(
+                    conn,
+                    source_issue_id=source_issue_id,
+                    issue_date_value=day,
+                    starts_at=starts_utc,
+                    admin_id=int(request.session["admin_id"]),
+                )
+                from app.services.jackside_issues import ensure_issue_campaign
+
+                ensure_issue_campaign(conn, issue=issue)
+        except ValueError as exc:
+            return jackside_issues_redirect(str(exc), error=True)
+        return jackside_issues_redirect(f"Скопирован выпуск {issue['issue_date']}")
+
+    @app.post("/api/master/jackside-issues/{issue_id:int}/validate")
+    async def master_validate_jackside_issue(
+        request: Request, issue_id: int, csrf_token: str = Form(...)
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            issue = refresh_issue_question_counts(conn, issue_id)
+            errors = validate_issue_for_publish(conn, issue)
+        if errors:
+            return jackside_issues_redirect(
+                "Ошибки: " + ", ".join(errors), error=True
+            )
+        return jackside_issues_redirect("Выпуск готов к публикации")
+
+    @app.post("/api/master/jackside-issues/{issue_id:int}/schedule")
+    async def master_schedule_jackside_issue(
+        request: Request, issue_id: int, csrf_token: str = Form(...)
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                issue = schedule_issue(conn, issue_id=issue_id)
+        except ValueError as exc:
+            return jackside_issues_redirect(str(exc), error=True)
+        return jackside_issues_redirect(f"Запланирован: {issue['campaign_code']}")
+
+    @app.post("/api/master/jackside-issues/{issue_id:int}/cancel")
+    async def master_cancel_jackside_issue(
+        request: Request, issue_id: int, csrf_token: str = Form(...)
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            update_issue_settings(conn, issue_id=issue_id, status="cancelled")
+        return jackside_issues_redirect("Выпуск отменён")
 
     @app.get("/api/quiz/questions")
     async def quiz_questions(request: Request, campaign: str = "default"):
@@ -2132,6 +2381,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             campaign_row,
             required=campaign_row["campaign_type"] == "daily_414",
         )
+        jackside_payload = None
+        if campaign_row["campaign_type"] == "daily_414":
+            with connect(settings.db_path) as conn:
+                jackside_payload = public_issue_card(
+                    resolve_issue_for_campaign(
+                        conn,
+                        campaign_row,
+                        now=datetime.now(timezone.utc),
+                        timezone_name=settings.timezone_name,
+                    )
+                )
         return {
             "campaign": campaign,
             "campaign_version": int(campaign_row["current_version"] or 1),
@@ -2155,6 +2415,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "start_button_text": campaign_row["start_button_text"],
                 "identity_text": campaign_row["identity_text"],
             },
+            "jackside": jackside_payload,
             "daily_414": (
                 {
                     "question_count": DAILY_414_QUESTION_COUNT,
@@ -2177,6 +2438,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "prize_type": final_prize_display(campaign_row)["type"],
                     "prize_title": final_prize_display(campaign_row)["title"],
                     "prize_note": final_prize_display(campaign_row)["note"],
+                    "unique_participants": int(
+                        (jackside_payload or {}).get("unique_participants") or 0
+                    ),
+                    "prize_headline": (jackside_payload or {}).get("prize_headline"),
+                    "issue_status": (jackside_payload or {}).get("status"),
+                    "final_question_count": int(
+                        (jackside_payload or {}).get("final_question_count") or 0
+                    ),
+                    "rules_url": "/jackside/rules",
                 }
                 if campaign_row["campaign_type"] == "daily_414"
                 else None
@@ -2580,6 +2850,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         conn, campaign=campaign, phone_raw=phone, username=username, name=name, nickname=nickname,
                         email=email, telegram_user_id=telegram_user_id, source=source, referrer_id=referrer_id,
                     )
+                if campaign_row["campaign_type"] == "daily_414":
+                    from app.services.jackside_issues import get_issue_by_campaign
+
+                    issue_row = get_issue_by_campaign(conn, campaign)
+                    if issue_row:
+                        register_issue_participant(
+                            conn,
+                            issue_id=int(issue_row["id"]),
+                            client_id=client_id,
+                            account_id=int(member["id"]) if member else None,
+                        )
                 active = conn.execute(
                     "SELECT * FROM quiz_attempts WHERE client_id=? AND campaign_code=? AND campaign_version=? AND status='in_progress' ORDER BY id DESC LIMIT 1",
                     (client_id, campaign, campaign_version),
@@ -2874,7 +3155,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             daily_place = None
             final_table_start_iso = None
             final_questions: list[dict[str, Any]] = []
+            participant_count = None
             if is_daily_414:
+                issue_view = resolve_issue_for_campaign(
+                    conn,
+                    campaign_row,
+                    now=now,
+                    timezone_name=settings.timezone_name,
+                )
+                participant_count = int(issue_view.get("unique_participants") or 0)
                 final_start_local = daily_final_table_starts_at(campaign_row)
                 if final_start_local:
                     final_start_utc = final_start_local.replace(
@@ -3048,18 +3337,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         if is_daily_414:
             outcome = "completed"
-            title = "Раздача завершена" if main_completed else "Попытка сохранена"
             if main_completed and daily_award:
+                copy = result_copy_for_score(int(scoring["correct_count"]))
+                title = copy["title"]
                 message = (
+                    f"{copy['message']} "
                     f"{scoring['correct_count']} из {scoring['max_correct_count']} "
                     f"правильно · +{daily_award['total']} JACKCOIN"
                 )
             elif timed_out:
+                title = "Попытка сохранена"
                 message = (
                     "Время основной части истекло. Попытка сохранена для диагностики, "
                     "награды и рейтинг не начисляются."
                 )
             else:
+                title = "Попытка сохранена"
                 message = (
                     "Основная часть не завершена полностью. Попытка сохранена для диагностики, "
                     "награды и рейтинг не начисляются."
@@ -3107,6 +3400,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "jackcoin_awarded": daily_award["total"] if daily_award else 0,
             "jackcoin_breakdown": daily_award,
             "streak_days": daily_award["streak_days"] if daily_award else 0,
+            "result_copy": (
+                result_copy_for_score(int(scoring["correct_count"]))
+                if is_daily_414 and main_completed
+                else None
+            ),
+            "participant_count": participant_count,
             "share_url": (
                 f"{(settings.public_base_url if is_daily_414 else settings.quiz_public_base_url).rstrip('/')}/quiz?campaign={quote(attempt['campaign_code'])}&ref={quote(own_referral['code'])}"
                 if own_referral else None
