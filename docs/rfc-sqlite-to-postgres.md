@@ -1,9 +1,24 @@
 # RFC: SQLite → Postgres (JACKSIDE)
 
-**Status:** stub — **not required yet** if the load harness passes under the
-thresholds below.
+**Status:** stub — **not required for public launch** after the 2026-08-05
+ASGI load matrix (50/100/300/500 users: 0 errors, 0 `database is locked`,
+0 duplicate submissions, 0 double JACKCOIN, 0 lost answers). See
+`docs/load-reports/matrix.md`.
 
 **Related:** [jackside-launch-hardening.md](jackside-launch-hardening.md)
+
+## Measured baseline (single-process ASGI + SQLite WAL)
+
+| users | journey p99 | errors | locked |
+| ---: | ---: | ---: | ---: |
+| 100 | ~38 s | 0 | 0 |
+| 300 | ~121 s | 0 | 0 |
+| 500 | ~225 s | 0 | 0 |
+
+Journey latency scales with concurrency because writers serialize on one DB
+file; integrity stayed clean. That is acceptable for launch if nginx keeps
+request timeouts high enough and workers are not over-parallelized against
+one SQLite file.
 
 ## When to migrate
 
@@ -13,12 +28,14 @@ shows either:
 
 | Signal | Threshold |
 | --- | --- |
-| Quiz start/finish p99 | **> 2000 ms** |
+| Single request (start/answer/finish) p99 | **> 2000 ms** under load |
 | Database locked / busy rate | **> 1%** of requests |
-| Concurrent participants | sustained **≥ 300** with the above symptoms |
+| Integrity failures | any lost answers / double JACKCOIN / duplicate submissions |
+| Sustained concurrent finishers | **≥ 300** with the latency or lock symptoms above |
 
-Passing 50/100/300 users without crossing those signals means SQLite + WAL
-remains acceptable for public launch.
+Passing 50–500 users without integrity or lock failures means SQLite + WAL
+remains acceptable for public launch; Postgres is the next step when locks or
+integrity break, not merely when wall-clock journey time grows linearly.
 
 ## What would move
 
@@ -38,15 +55,3 @@ mechanics.
 - Dual-write or cutover downtime during migration
 - Subtle SQL dialect differences (types, constraints, JSON helpers)
 - Connection pool misconfiguration under burst (worse than SQLite if wrong)
-- Need for new backup/monitoring runbooks
-- Cost and ops complexity vs current single-file DB
-
-## Decision note
-
-Until load evidence trips the thresholds, prefer:
-
-1. WAL + busy timeout + launch indexes
-2. Structured ops logging and richer `/health`
-3. Online SQLite backups
-
-Escalate to a full Postgres design only with measured lock/latency data.
