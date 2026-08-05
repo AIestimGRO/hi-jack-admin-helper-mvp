@@ -655,6 +655,48 @@ def test_final_table_no_winner_does_not_award_prize(tmp_path) -> None:
         ).fetchone()[0] == 0
 
 
+def test_final_table_cancelled_solo_does_not_award_prize(tmp_path) -> None:
+    db_path = tmp_path / "vault-final-cancelled.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        submission_id = int(
+            conn.execute(
+                """
+                INSERT INTO quiz_submissions(
+                    campaign_code, campaign_version, client_id, phone_raw,
+                    phone_local, answers_json, correct_count, max_correct_count,
+                    completion_time_ms, main_prize_eligible, main_round_completed,
+                    ip_hash
+                ) VALUES (
+                    'daily_cancelled', 1, ?, '', '', '{}', 10, 10, 10000, 1, 1, 'test'
+                )
+                """,
+                (client_id,),
+            ).lastrowid
+        )
+        from datetime import datetime, timezone
+        from app.services.daily_414_final import ensure_final_table, reconcile_final_table
+
+        start = datetime(2026, 8, 5, 18, 23, 14, tzinfo=timezone.utc)
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_cancelled",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}],
+            prize_type="jackcoin",
+            prize_jackcoin_amount=500,
+        )
+        completed = reconcile_final_table(
+            conn, final_table_id=int(table["id"]), now=start
+        )
+        assert completed["outcome"] == "cancelled"
+        assert attach_final_table_reward(conn, final_table_id=int(table["id"])) is None
+        assert jackcoin_balance(conn, client_id) == 0
+        assert submission_id  # keep seed used
+
+
 def test_purchase_token_is_bound_to_account_and_reward() -> None:
     token = purchase_token(
         "s" * 32,

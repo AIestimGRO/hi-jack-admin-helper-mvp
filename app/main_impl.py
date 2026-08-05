@@ -86,6 +86,7 @@ from app.services.daily_414_final import (
     list_final_winners,
     final_eliminated_message,
     final_winner_announcement,
+    final_cancelled_message,
     question_window as final_question_window,
     reconcile_final_table,
 )
@@ -3190,6 +3191,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 table is not None
                 and table["status"] == "completed"
                 and str(table["outcome"] or "") != "no_winner"
+                and str(table["outcome"] or "") != "cancelled"
                 and str(table["prize_resolution"] or "")
                 not in {"awarded", "manual_task", "none"}
                 and not table["winner_reward_id"]
@@ -3231,7 +3233,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             now=now,
                             schedule_starts_at=final_start,
                         )
-                    if table["status"] == "completed" and str(table["outcome"] or "") != "no_winner":
+                    if table["status"] == "completed" and str(table["outcome"] or "") not in {
+                        "no_winner",
+                        "cancelled",
+                    }:
                         attach_final_table_reward(
                             conn, final_table_id=int(table["id"]), now=now
                         )
@@ -3318,25 +3323,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "standings": standings,
                     "final_question_count": final_question_total,
                     "elimination_rule": "каждый вопрос — на вылет",
+                    "candidate_count": len(ranked),
                 }
                 if now < final_start:
+                    if candidate and len(ranked) < 2:
+                        lobby_message = (
+                            "Пока в отборе только вы. Для финального стола нужно "
+                            "минимум 2 участника — иначе финал не состоится."
+                        )
+                    elif candidate:
+                        lobby_message = (
+                            f"Основной раунд завершён. В финале {final_question_total} "
+                            f"вопрос(ов): каждый вопрос — на вылет."
+                        )
+                    else:
+                        lobby_message = (
+                            "Отбор за финальный стол уже завершён. "
+                            "JACKCOIN и награда за основной квиз сохранены."
+                        )
                     return {
                         **base,
                         "state": "lobby" if candidate else "not_eligible",
                         "candidate": candidate,
                         "provisional_place": provisional_place,
                         **lobby_stats,
-                        "message": (
-                            (
-                                f"Основной раунд завершён. В финале {final_question_total} "
-                                f"вопрос(ов): каждый вопрос — на вылет."
-                            )
-                            if candidate
-                            else (
-                                "Отбор за финальный стол уже завершён. "
-                                "JACKCOIN и награда за основной квиз сохранены."
-                            )
-                        ),
+                        "message": lobby_message,
                     }
 
                 finalist = conn.execute(
@@ -3346,6 +3357,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     """,
                     (table["id"], client_id),
                 ).fetchone()
+                if str(table["outcome"] or "") == "cancelled":
+                    return {
+                        **base,
+                        "state": "cancelled",
+                        "outcome": "cancelled",
+                        "candidate": candidate,
+                        "provisional_place": provisional_place,
+                        "message": final_cancelled_message(),
+                    }
                 if not finalist:
                     return {
                         **base,
@@ -3480,11 +3500,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "active_count": active_count,
                         "winners": winner_ids,
                         "message": (
-                            "Финальный стол завершён без победителя. Главный приз не выдаётся."
-                            if table["outcome"] == "no_winner"
+                            final_cancelled_message()
+                            if table["outcome"] == "cancelled"
                             else (
-                                "Финальные вопросы закончились. "
-                                "Результат сохранён для ведущего."
+                                "Финальный стол завершён без победителя. Главный приз не выдаётся."
+                                if table["outcome"] == "no_winner"
+                                else (
+                                    "Финальные вопросы закончились. "
+                                    "Результат сохранён для ведущего."
+                                )
                             )
                         ),
                     }
@@ -4202,7 +4226,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 table["prize_resolution"] or ""
             ) in {"awarded", "manual_task", "none"}:
                 return vault_admin_redirect("Главный приз уже обработан")
-            if str(table["outcome"] or "") == "no_winner":
+            if str(table["outcome"] or "") in {"no_winner", "cancelled"}:
                 return vault_admin_redirect(
                     "Финальный стол без победителя — приз не выдаётся", error=True
                 )

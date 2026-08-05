@@ -943,6 +943,9 @@
     } else if (data.state === 'eliminated') {
       title.textContent = 'Раздача завершена';
       message.textContent = data.message || 'Вы не правильно ответили на последний вопрос и выбыли из игры.';
+    } else if (data.state === 'cancelled') {
+      title.textContent = 'Финальный стол не состоялся';
+      message.textContent = data.message || 'Финальный стол не состоялся. Победителя сегодня не будет.';
     } else if (data.state === 'not_qualified') {
       title.textContent = 'Топ-10 сформирован';
       message.textContent = data.message;

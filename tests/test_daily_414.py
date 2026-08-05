@@ -11,6 +11,7 @@ from app.services.daily_414 import (
 from app.services.daily_414_final import (
     ensure_final_table,
     final_eliminated_message,
+    final_cancelled_message,
     final_winner_announcement,
     question_window,
     reconcile_final_table,
@@ -554,11 +555,60 @@ def test_final_outcome_messages() -> None:
     assert final_eliminated_message() == (
         "Вы не правильно ответили на последний вопрос и выбыли из игры."
     )
+    assert final_cancelled_message() == (
+        "Финальный стол не состоялся. Победителя сегодня не будет."
+    )
     assert final_winner_announcement(1) == (
         "Вы единственный победитель и ответили на все вопросы правильно."
     )
     assert final_winner_announcement(2) == "2 победителя ответили на все вопросы правильно."
     assert final_winner_announcement(5) == "5 победителей ответили на все вопросы правильно."
+
+
+def test_daily_414_final_cancelled_with_single_finalist(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-solo.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 7, 30, 18, 23, 14)
+    with transaction(db_path) as conn:
+        _seed_final_candidate(
+            conn,
+            campaign_code="daily_final",
+            client_number=1,
+            correct_count=10,
+            completion_time_ms=10_000,
+        )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}, {"id": "f2"}],
+            prize_type="jackcoin",
+            prize_jackcoin_amount=500,
+        )
+        completed = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start,
+        )
+        winners = conn.execute(
+            """
+            SELECT COUNT(*) FROM daily_414_finalists
+            WHERE final_table_id=? AND status='winner'
+            """,
+            (table["id"],),
+        ).fetchone()[0]
+        finalist_count = conn.execute(
+            "SELECT COUNT(*) FROM daily_414_finalists WHERE final_table_id=?",
+            (table["id"],),
+        ).fetchone()[0]
+
+    assert completed["status"] == "completed"
+    assert completed["outcome"] == "cancelled"
+    assert completed["prize_resolution"] == "none"
+    assert completed["winner_submission_id"] is None
+    assert winners == 0
+    assert finalist_count == 1
 
 
 def test_daily_414_final_question_time_is_snapshotted(tmp_path) -> None:

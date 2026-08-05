@@ -249,6 +249,13 @@ def final_eliminated_message() -> str:
     return "Вы не правильно ответили на последний вопрос и выбыли из игры."
 
 
+def final_cancelled_message() -> str:
+    return "Финальный стол не состоялся. Победителя сегодня не будет."
+
+
+MIN_FINAL_TABLE_PLAYERS = 2
+
+
 def list_final_winners(
     conn: sqlite3.Connection, *, final_table_id: int
 ) -> list[sqlite3.Row]:
@@ -437,12 +444,13 @@ def reconcile_final_table(
         """,
         (table["id"],),
     ).fetchall()
-    if not finalists:
+    # A final table needs at least two players; a lone finalist is not a winner.
+    if len(finalists) < MIN_FINAL_TABLE_PLAYERS:
         _mark_completed(
             conn,
             table_id=table["id"],
             now_utc=now_utc,
-            outcome="no_winner",
+            outcome="cancelled",
             winner_submission_id=None,
             prize_resolution="none",
         )

@@ -764,7 +764,7 @@ def attach_final_table_reward(
         return None
     outcome = str(table["outcome"] or "")
     prize_resolution = str(table["prize_resolution"] or "")
-    if outcome == "no_winner" or prize_resolution == "none":
+    if outcome in {"no_winner", "cancelled"} or prize_resolution == "none":
         return None
 
     winners = list_final_winners(conn, final_table_id=final_table_id)
