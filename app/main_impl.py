@@ -73,6 +73,7 @@ from app.services.daily_414 import (
     DAILY_414_QUESTION_COUNT,
     DAILY_414_TIME_LIMIT_SECONDS,
     award_daily_jackcoin,
+    campaign_local_datetime,
     daily_main_round_completed,
     elapsed_milliseconds,
     final_table_candidate_eligible,
@@ -454,13 +455,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if campaign_row["archived_at"] or not campaign_row["is_active"]:
             return "disabled"
         now = datetime.now(campaign_timezone).replace(tzinfo=None)
-        start = datetime.fromisoformat(campaign_row["active_from"]) if campaign_row["active_from"] else None
-        end = datetime.fromisoformat(campaign_row["active_until"]) if campaign_row["active_until"] else None
+        start = campaign_local_datetime(
+            campaign_row["active_from"],
+            timezone_name=settings.timezone_name,
+        )
+        end = campaign_local_datetime(
+            campaign_row["active_until"],
+            timezone_name=settings.timezone_name,
+        )
         if start and now < start:
             return "upcoming"
         if end and now >= end:
             return "ended"
         return "active"
+
+    def format_campaign_datetime(value: str) -> str:
+        local = campaign_local_datetime(
+            value, timezone_name=settings.timezone_name
+        )
+        if not local:
+            return ""
+        return local.strftime("%d.%m.%Y в %H:%M")
+
+    def campaign_datetime_iso(value: str | None) -> str:
+        """ISO for clients: always local wall time with the club timezone."""
+        local = campaign_local_datetime(
+            value, timezone_name=settings.timezone_name
+        )
+        if not local:
+            return ""
+        return local.replace(tzinfo=campaign_timezone).isoformat()
+
+    def sync_daily_campaign_row(
+        conn: sqlite3.Connection, campaign_row: sqlite3.Row | dict[str, Any]
+    ) -> sqlite3.Row | dict[str, Any]:
+        """Apply jackside issue UTC→local schedule before schedule_state / ISO."""
+        if str(campaign_row["campaign_type"] or "") != "daily_414":
+            return campaign_row
+        resolve_issue_for_campaign(
+            conn,
+            campaign_row,
+            now=datetime.now(timezone.utc),
+            timezone_name=settings.timezone_name,
+        )
+        refreshed = conn.execute(
+            """
+            SELECT qc.*, pt.title AS bonus_title,
+                   vcr.title AS final_prize_card_title
+            FROM quiz_campaigns qc
+            LEFT JOIN preference_types pt ON pt.code = qc.bonus_preference_code
+            LEFT JOIN vault_catalog_rewards vcr
+              ON vcr.id=qc.final_prize_catalog_reward_id
+            WHERE qc.code=?
+            """,
+            (campaign_row["code"],),
+        ).fetchone()
+        return refreshed or campaign_row
 
     def campaign_has_history(conn: sqlite3.Connection, campaign_code: str) -> bool:
         for table in CAMPAIGN_HISTORY_TABLES:
@@ -478,9 +528,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (campaign_code,),
             ).fetchone()
         )
-
-    def format_campaign_datetime(value: str) -> str:
-        return datetime.fromisoformat(value).strftime("%d.%m.%Y в %H:%M")
 
     def quiz_campaign_row(code: str):
         with connect(settings.db_path) as conn:
@@ -555,11 +602,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="Финальный стол доступен только в JACKSIDE 4:14",
             )
         return row
-
-    def campaign_datetime_iso(value: str | None) -> str:
-        if not value:
-            return ""
-        return datetime.fromisoformat(value).replace(tzinfo=campaign_timezone).isoformat()
 
     def campaign_background(code: str) -> str:
         with connect(settings.db_path) as conn:
@@ -1806,6 +1848,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (member["client_id"], member["client_id"]),
             ).fetchall()
             for campaign_row in campaign_rows:
+                if campaign_row["campaign_type"] == "daily_414":
+                    campaign_row = sync_daily_campaign_row(conn, campaign_row)
                 schedule_state = campaign_schedule_state(campaign_row)
                 if schedule_state not in {"active", "upcoming"}:
                     continue
@@ -2175,6 +2219,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     f"/jackside/rules?{urlencode({'next': current_path})}",
                     status_code=303,
                 )
+        if campaign_row["campaign_type"] == "daily_414":
+            with transaction(settings.db_path) as conn:
+                campaign_row = sync_daily_campaign_row(conn, campaign_row)
         schedule_state = campaign_schedule_state(campaign_row)
         daily_prize = final_prize_display(campaign_row)
         jackside_meta = None
@@ -2403,6 +2450,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def quiz_questions(request: Request, campaign: str = "default"):
         campaign = normalize_campaign(campaign)
         campaign_row = quiz_campaign_for_meta(campaign)
+        if campaign_row["campaign_type"] == "daily_414":
+            with transaction(settings.db_path) as conn:
+                campaign_row = sync_daily_campaign_row(conn, campaign_row)
         schedule_state = campaign_schedule_state(campaign_row)
         try:
             with connect(settings.db_path) as conn:
