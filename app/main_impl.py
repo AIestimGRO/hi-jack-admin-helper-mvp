@@ -84,6 +84,7 @@ from app.services.daily_414 import (
     validate_daily_questions,
 )
 from app.services.daily_414_final import (
+    MIN_FINAL_TABLE_PLAYERS,
     ensure_final_table,
     final_table_needs_reconcile,
     list_final_winners,
@@ -99,6 +100,7 @@ from app.services.jackside_copy import result_copy_for_score
 from app.services.jackside_issues import (
     accept_rules as accept_jackside_rules,
     active_rules as active_jackside_rules,
+    campaign_audience_counts,
     copy_issue,
     create_issue,
     current_featured_issue,
@@ -2310,7 +2312,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 from app.services.jackside_issues import ensure_issue_campaign
 
-                ensure_issue_campaign(conn, issue=issue)
+                ensure_issue_campaign(
+                    conn, issue=issue, timezone_name=settings.timezone_name
+                )
         except ValueError as exc:
             messages = {
                 "issue_date_exists": "Выпуск на эту дату уже есть",
@@ -2346,7 +2350,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 from app.services.jackside_issues import ensure_issue_campaign
 
-                ensure_issue_campaign(conn, issue=issue)
+                ensure_issue_campaign(
+                    conn, issue=issue, timezone_name=settings.timezone_name
+                )
         except ValueError as exc:
             return jackside_issues_redirect(str(exc), error=True)
         return jackside_issues_redirect(f"Скопирован выпуск {issue['issue_date']}")
@@ -2374,7 +2380,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         check_csrf(request, csrf_token)
         try:
             with transaction(settings.db_path) as conn:
-                issue = schedule_issue(conn, issue_id=issue_id)
+                issue = schedule_issue(
+                    conn,
+                    issue_id=issue_id,
+                    timezone_name=settings.timezone_name,
+                )
         except ValueError as exc:
             return jackside_issues_redirect(str(exc), error=True)
         return jackside_issues_redirect(f"Запланирован: {issue['campaign_code']}")
@@ -3200,6 +3210,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             local_finished_at = now.astimezone(campaign_timezone).replace(
                 tzinfo=None
             )
+            if is_daily_414:
+                # Repair UTC→local campaign schedule before eligibility checks.
+                resolve_issue_for_campaign(
+                    conn,
+                    campaign_row,
+                    now=now,
+                    timezone_name=settings.timezone_name,
+                )
+                refreshed = conn.execute(
+                    """
+                    SELECT qc.*, pt.title AS bonus_title FROM quiz_campaigns qc
+                    LEFT JOIN preference_types pt ON pt.code=qc.bonus_preference_code
+                    WHERE qc.code=?
+                    """,
+                    (attempt["campaign_code"],),
+                ).fetchone()
+                if refreshed:
+                    campaign_row = refreshed
             prize_eligible = bool(
                 is_daily_414
                 and final_table_candidate_eligible(
@@ -3208,6 +3236,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     finished_at=local_finished_at,
                     timed_out=timed_out,
                     main_round_completed=main_completed,
+                    timezone_name=settings.timezone_name,
                 )
             )
             bonus_eligible = bool(
@@ -3251,7 +3280,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     timezone_name=settings.timezone_name,
                 )
                 participant_count = int(issue_view.get("unique_participants") or 0)
-                final_start_local = daily_final_table_starts_at(campaign_row)
+                final_start_local = daily_final_table_starts_at(
+                    campaign_row, timezone_name=settings.timezone_name
+                )
                 if final_start_local:
                     final_start_utc = final_start_local.replace(
                         tzinfo=campaign_timezone
@@ -3485,7 +3516,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "daily_place": daily_place,
             "final_table_starts_at": final_table_start_iso,
             "final_table_available": bool(
-                is_daily_414 and final_table_start_iso and final_questions
+                is_daily_414 and prize_eligible and final_table_start_iso
             ),
             "final_eligibility_reason": (
                 (
@@ -3500,13 +3531,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             else (
                                 "missed_entry_window"
                                 if not main_prize_eligible(
-                                    campaign_row, started_at=started_local
+                                    campaign_row,
+                                    started_at=started_local,
+                                    timezone_name=settings.timezone_name,
                                 )
                                 else (
                                     "finished_after_final_start"
                                     if (
                                         final_start_local := daily_final_table_starts_at(
-                                            campaign_row
+                                            campaign_row,
+                                            timezone_name=settings.timezone_name,
                                         )
                                     )
                                     and local_finished_at > final_start_local
@@ -3523,7 +3557,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "jackcoin_breakdown": daily_award,
             "streak_days": daily_award["streak_days"] if daily_award else 0,
             "result_copy": (
-                result_copy_for_score(int(scoring["correct_count"]))
+                result_copy_for_score(
+                    int(scoring["correct_count"]),
+                    final_eligible=prize_eligible,
+                )
                 if is_daily_414 and main_completed
                 else None
             ),
@@ -3537,7 +3574,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     def daily_final_start_utc(campaign_row: sqlite3.Row) -> datetime:
-        local_start = daily_final_table_starts_at(campaign_row)
+        local_start = daily_final_table_starts_at(
+            campaign_row, timezone_name=settings.timezone_name
+        )
         if not local_start:
             raise HTTPException(
                 status_code=409,
@@ -3679,16 +3718,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 or campaign_row["final_question_time_seconds"]
             )
 
-            if table["status"] == "unavailable":
-                return {
-                    **base,
-                    "state": "unavailable",
-                    "message": (
-                        "Финальные вопросы ещё не опубликованы. "
-                        "Результат основного раунда и JACKCOIN сохранены."
-                    ),
-                }
-
             with connect(settings.db_path) as conn:
                 submission = conn.execute(
                     """
@@ -3736,6 +3765,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                 except json.JSONDecodeError:
                     final_question_total = 0
+                audience = campaign_audience_counts(conn, campaign)
                 lobby_stats = {
                     "correct_count": int(submission["correct_count"] or 0),
                     "max_correct_count": int(submission["max_correct_count"] or 0),
@@ -3745,17 +3775,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "final_question_count": final_question_total,
                     "elimination_rule": "каждый вопрос — на вылет",
                     "candidate_count": len(ranked),
+                    "min_finalists": MIN_FINAL_TABLE_PLAYERS,
+                    "online_count": int(audience.get("online_count") or 0),
+                    "completed_count": int(audience.get("completed_count") or 0),
                 }
                 if now < final_start:
                     if candidate and len(ranked) < 2:
                         lobby_message = (
                             "Пока в отборе только вы. Для финального стола нужно "
-                            "минимум 2 участника — иначе финал не состоится."
+                            f"минимум {MIN_FINAL_TABLE_PLAYERS} участника — иначе "
+                            "финал не состоится. Ждём остальных до конца отсчёта."
                         )
                     elif candidate:
                         lobby_message = (
-                            f"Основной раунд завершён. В финале {final_question_total} "
-                            f"вопрос(ов): каждый вопрос — на вылет."
+                            f"В отборе сейчас {len(ranked)}. В финале "
+                            f"{final_question_total or 'несколько'} вопрос(ов): "
+                            "каждый вопрос — на вылет."
                         )
                     else:
                         lobby_message = (
@@ -3769,6 +3804,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         "provisional_place": provisional_place,
                         **lobby_stats,
                         "message": lobby_message,
+                    }
+
+                if table["status"] == "unavailable":
+                    return {
+                        **base,
+                        "state": "unavailable",
+                        "candidate": candidate,
+                        "provisional_place": provisional_place,
+                        **lobby_stats,
+                        "message": (
+                            "Финальные вопросы ещё не опубликованы. "
+                            "Результат основного раунда и JACKCOIN сохранены."
+                        ),
                     }
 
                 finalist = conn.execute(

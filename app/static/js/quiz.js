@@ -547,7 +547,7 @@
     if (
       data.campaign_type === 'daily_414'
       && data.main_prize_eligible
-      && data.final_table_available
+      && data.final_table_starts_at
     ) {
       startFinalLobby(data);
       return;
@@ -797,7 +797,8 @@
         final_table_starts_at: data.starts_at,
       };
     }
-    if (data.correct_count != null || data.provisional_place != null || data.standings) {
+    if (data.correct_count != null || data.provisional_place != null || data.standings
+      || data.candidate_count != null || data.online_count != null) {
       state.finalResult = {
         ...(state.finalResult || {}),
         correct_count: data.correct_count ?? state.finalResult?.correct_count,
@@ -806,6 +807,10 @@
         daily_place: data.provisional_place ?? state.finalResult?.daily_place,
         completion_time_ms: data.completion_time_ms ?? state.finalResult?.completion_time_ms,
         participant_count: data.participant_count ?? state.finalResult?.participant_count,
+        candidate_count: data.candidate_count ?? state.finalResult?.candidate_count,
+        online_count: data.online_count ?? state.finalResult?.online_count,
+        completed_count: data.completed_count ?? state.finalResult?.completed_count,
+        min_finalists: data.min_finalists ?? state.finalResult?.min_finalists,
         final_question_count:
           data.final_question_count ?? state.finalResult?.final_question_count,
       };
@@ -854,6 +859,24 @@
       setLobbyStat('.final-lobby-place', null);
       setLobbyStat('.final-lobby-cutoff', null);
     }
+    const candidates = data.candidate_count ?? result?.candidate_count;
+    const minFinalists = data.min_finalists ?? result?.min_finalists ?? 2;
+    setLobbyStat(
+      '.final-lobby-candidates',
+      candidates != null
+        ? `В отборе на финал: ${candidates} (нужно минимум ${minFinalists})`
+        : null,
+    );
+    const online = data.online_count ?? result?.online_count;
+    setLobbyStat(
+      '.final-lobby-online',
+      online != null ? `Сейчас проходят квиз: ${online}` : null,
+    );
+    const completed = data.completed_count ?? result?.completed_count;
+    setLobbyStat(
+      '.final-lobby-completed',
+      completed != null ? `Уже завершили основную часть: ${completed}` : null,
+    );
     const participants = data.participant_count ?? result?.participant_count;
     setLobbyStat(
       '.final-lobby-participants',
@@ -1027,7 +1050,8 @@
       message.textContent = data.message || 'Вы не правильно ответили на последний вопрос и выбыли из игры.';
     } else if (data.state === 'cancelled') {
       title.textContent = 'Финальный стол не состоялся';
-      message.textContent = data.message || 'Финальный стол не состоялся. Победителя сегодня не будет.';
+      message.textContent = data.message
+        || 'К сожалению, финальный стол не состоится из-за недостаточного количества участников.';
     } else if (data.state === 'not_qualified') {
       title.textContent = 'Топ-10 сформирован';
       message.textContent = data.message;

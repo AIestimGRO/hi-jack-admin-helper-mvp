@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 DAILY_414_TIME_LIMIT_SECONDS = 254
@@ -21,6 +22,24 @@ JACKCOIN_STREAK_BONUSES = {
     14: 70,
     30: 150,
 }
+DEFAULT_CAMPAIGN_TIMEZONE = "Europe/Moscow"
+
+
+def campaign_local_datetime(
+    value: str | datetime | None,
+    *,
+    timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
+) -> datetime | None:
+    """Normalize campaign schedule stamps to naive local wall time."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(ZoneInfo(timezone_name)).replace(tzinfo=None)
+    return parsed.replace(tzinfo=None)
 
 
 def stage_for_question(index: int) -> str:
@@ -62,25 +81,36 @@ def issue_date(
 
 
 def main_prize_eligible(
-    campaign: sqlite3.Row | dict[str, Any], *, started_at: datetime
+    campaign: sqlite3.Row | dict[str, Any],
+    *,
+    started_at: datetime,
+    timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
 ) -> bool:
-    active_from = campaign["active_from"]
-    if not active_from:
+    start = campaign_local_datetime(
+        campaign["active_from"], timezone_name=timezone_name
+    )
+    if not start:
         return False
-    start = datetime.fromisoformat(str(active_from))
+    local_started = campaign_local_datetime(
+        started_at, timezone_name=timezone_name
+    )
+    if local_started is None:
+        return False
     cutoff = start + timedelta(seconds=DAILY_414_ENTRY_WINDOW_SECONDS)
-    return start <= started_at <= cutoff
+    return start <= local_started <= cutoff
 
 
 def final_table_starts_at(
     campaign: sqlite3.Row | dict[str, Any],
+    *,
+    timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
 ) -> datetime | None:
-    active_from = campaign["active_from"]
-    if not active_from:
-        return None
-    return datetime.fromisoformat(str(active_from)) + timedelta(
-        seconds=DAILY_414_FINAL_TABLE_DELAY_SECONDS
+    start = campaign_local_datetime(
+        campaign["active_from"], timezone_name=timezone_name
     )
+    if not start:
+        return None
+    return start + timedelta(seconds=DAILY_414_FINAL_TABLE_DELAY_SECONDS)
 
 
 def main_round_answers_complete(
@@ -120,14 +150,21 @@ def final_table_candidate_eligible(
     finished_at: datetime,
     timed_out: bool = False,
     main_round_completed: bool = True,
+    timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
 ) -> bool:
-    final_start = final_table_starts_at(campaign)
+    final_start = final_table_starts_at(campaign, timezone_name=timezone_name)
+    local_finished = campaign_local_datetime(
+        finished_at, timezone_name=timezone_name
+    )
     return bool(
         main_round_completed
         and not timed_out
         and final_start
-        and main_prize_eligible(campaign, started_at=started_at)
-        and finished_at <= final_start
+        and local_finished
+        and main_prize_eligible(
+            campaign, started_at=started_at, timezone_name=timezone_name
+        )
+        and local_finished <= final_start
     )
 
 

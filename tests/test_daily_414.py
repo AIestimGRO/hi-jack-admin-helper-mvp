@@ -19,6 +19,29 @@ from app.services.daily_414_final import (
 from app.services.quiz import load_builder_questions
 
 
+def test_daily_414_entry_window_accepts_utc_active_from_as_local() -> None:
+    """Jackside issues store UTC; campaign eligibility must use local wall time."""
+    campaign = {"active_from": "2026-08-06T15:14:00+00:00"}  # 18:14 Moscow
+    assert main_prize_eligible(
+        campaign,
+        started_at=datetime(2026, 8, 6, 18, 14),
+        timezone_name="Europe/Moscow",
+    )
+    assert main_prize_eligible(
+        campaign,
+        started_at=datetime(2026, 8, 6, 18, 18),
+        timezone_name="Europe/Moscow",
+    )
+    assert not main_prize_eligible(
+        campaign,
+        started_at=datetime(2026, 8, 6, 18, 20),
+        timezone_name="Europe/Moscow",
+    )
+    assert final_table_starts_at(
+        campaign, timezone_name="Europe/Moscow"
+    ) == datetime(2026, 8, 6, 18, 23, 14)
+
+
 def test_rank_final_candidates_orders_by_score_then_speed() -> None:
     ranked = rank_final_candidates(
         [

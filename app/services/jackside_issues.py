@@ -566,17 +566,71 @@ def validate_issue_for_publish(
     return sorted(set(errors))
 
 
+def issue_schedule_local(
+    issue: sqlite3.Row | dict[str, Any],
+    *,
+    timezone_name: str = "Europe/Moscow",
+) -> tuple[str, str | None]:
+    """Campaign active_from/until must be naive local wall time, not UTC."""
+    tz = ZoneInfo(timezone_name)
+    starts = _parse_dt(str(issue["starts_at"]) if issue["starts_at"] else None)
+    if not starts:
+        raise ValueError("missing_starts_at")
+    starts_local = starts.astimezone(tz).replace(tzinfo=None)
+    ends = _parse_dt(str(issue["ends_at"]) if issue["ends_at"] else None)
+    ends_local = ends.astimezone(tz).replace(tzinfo=None) if ends else None
+    return (
+        starts_local.strftime("%Y-%m-%dT%H:%M:%S"),
+        ends_local.strftime("%Y-%m-%dT%H:%M:%S") if ends_local else None,
+    )
+
+
+def sync_campaign_schedule_from_issue(
+    conn: sqlite3.Connection,
+    issue: sqlite3.Row | dict[str, Any],
+    *,
+    timezone_name: str = "Europe/Moscow",
+) -> None:
+    code = issue.get("campaign_code") if isinstance(issue, dict) else issue["campaign_code"]
+    if not code:
+        return
+    try:
+        starts_local, ends_local = issue_schedule_local(
+            issue, timezone_name=timezone_name
+        )
+    except ValueError:
+        return
+    conn.execute(
+        """
+        UPDATE quiz_campaigns
+        SET active_from=?, active_until=COALESCE(?, active_until),
+            updated_at=CURRENT_TIMESTAMP
+        WHERE code=?
+        """,
+        (starts_local, ends_local, code),
+    )
+
+
 def ensure_issue_campaign(
-    conn: sqlite3.Connection, *, issue: sqlite3.Row
+    conn: sqlite3.Connection,
+    *,
+    issue: sqlite3.Row,
+    timezone_name: str = "Europe/Moscow",
 ) -> sqlite3.Row:
     code = str(issue["campaign_code"])
     campaign = conn.execute(
         "SELECT * FROM quiz_campaigns WHERE code=?", (code,)
     ).fetchone()
     if campaign:
-        return campaign
-    starts = str(issue["starts_at"])
-    ends = str(issue["ends_at"])
+        sync_campaign_schedule_from_issue(
+            conn, issue, timezone_name=timezone_name
+        )
+        return conn.execute(
+            "SELECT * FROM quiz_campaigns WHERE code=?", (code,)
+        ).fetchone()
+    starts_local, ends_local = issue_schedule_local(
+        issue, timezone_name=timezone_name
+    )
     conn.execute(
         """
         INSERT INTO quiz_campaigns(
@@ -596,8 +650,8 @@ def ensure_issue_campaign(
         (
             code,
             issue["title"],
-            starts,
-            ends,
+            starts_local,
+            ends_local,
             DAILY_414_TIME_LIMIT_SECONDS,
             int(issue["jackcoin_per_correct"]),
             int(issue["jackcoin_completion_bonus"]),
@@ -613,12 +667,22 @@ def ensure_issue_campaign(
     ).fetchone()
 
 
-def schedule_issue(conn: sqlite3.Connection, *, issue_id: int) -> sqlite3.Row:
+def schedule_issue(
+    conn: sqlite3.Connection,
+    *,
+    issue_id: int,
+    timezone_name: str = "Europe/Moscow",
+) -> sqlite3.Row:
     issue = refresh_issue_question_counts(conn, issue_id)
     errors = validate_issue_for_publish(conn, issue)
     if errors:
         raise ValueError("issue_invalid:" + ",".join(errors))
-    campaign = ensure_issue_campaign(conn, issue=issue)
+    campaign = ensure_issue_campaign(
+        conn, issue=issue, timezone_name=timezone_name
+    )
+    starts_local, ends_local = issue_schedule_local(
+        issue, timezone_name=timezone_name
+    )
     conn.execute(
         """
         UPDATE quiz_campaigns
@@ -631,8 +695,8 @@ def schedule_issue(conn: sqlite3.Connection, *, issue_id: int) -> sqlite3.Row:
         """,
         (
             issue["title"],
-            issue["starts_at"],
-            issue["ends_at"],
+            starts_local,
+            ends_local,
             int(issue["jackcoin_per_correct"]),
             int(issue["jackcoin_completion_bonus"]),
             int(issue["jackcoin_perfect_bonus"]),
@@ -905,6 +969,7 @@ def resolve_issue_for_campaign(
         return legacy_issue_from_campaign(
             conn, campaign, now=now, timezone_name=timezone_name
         )
+    sync_campaign_schedule_from_issue(conn, row, timezone_name=timezone_name)
     issue = sync_issue_runtime_status(
         conn,
         issue_id=int(row["id"]),
