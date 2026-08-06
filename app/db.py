@@ -805,7 +805,6 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
@@ -814,6 +813,8 @@ def init_db(db_path: str | Path) -> None:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         conn.executescript(SCHEMA)
         _ensure_column(conn, "preference_types", "position INTEGER NOT NULL DEFAULT 100")
         _ensure_column(conn, "preference_types", "created_by_admin_id INTEGER")

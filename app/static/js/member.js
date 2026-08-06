@@ -37,12 +37,20 @@ document.querySelectorAll("[data-registration-form]").forEach((form) => {
   sync();
 });
 
+const memberApp = document.querySelector("[data-account-tab]");
+const memberServerNow = Date.parse(memberApp?.dataset.serverNow || "");
+const memberServerOffset = Number.isFinite(memberServerNow)
+  ? memberServerNow - Date.now()
+  : 0;
+const memberScheduledNow = () => Date.now() + memberServerOffset;
+const memberCountdownRenderers = [];
+
 document.querySelectorAll("[data-member-countdown]").forEach((output) => {
   const target = Date.parse(output.dataset.memberCountdown || "");
   if (!Number.isFinite(target)) return;
 
   const render = () => {
-    const remaining = Math.max(0, target - Date.now());
+    const remaining = Math.max(0, target - memberScheduledNow());
     if (remaining <= 0) {
       output.textContent = "Можно играть";
       return false;
@@ -59,10 +67,17 @@ document.querySelectorAll("[data-member-countdown]").forEach((output) => {
     return true;
   };
 
+  memberCountdownRenderers.push(render);
   if (!render()) return;
   const timer = window.setInterval(() => {
     if (!render()) window.clearInterval(timer);
   }, 1000);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    memberCountdownRenderers.forEach((render) => render());
+  }
 });
 
 document.querySelectorAll("[data-reward-activation-countdown]").forEach((output) => {

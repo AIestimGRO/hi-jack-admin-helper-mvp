@@ -1,9 +1,10 @@
+> Capacity note: the existing matrix is an in-process laboratory baseline. The 500-journey p99 of about 225 seconds does not demonstrate public readiness; validation on the actual VPS through nginx is still required.
+
 # RFC: SQLite → Postgres (JACKSIDE)
 
-**Status:** stub — **not required for public launch** after the 2026-08-05
-ASGI load matrix (50/100/300/500 users: 0 errors, 0 `database is locked`,
-0 duplicate submissions, 0 double JACKCOIN, 0 lost answers). See
-`docs/load-reports/matrix.md`.
+**Status:** stub — capacity decision is still open. The 2026-08-05 ASGI
+load matrix found no lock or integrity failures, but it is not a public-launch
+capacity test. See `docs/load-reports/matrix.md`.
 
 **Related:** [jackside-launch-hardening.md](jackside-launch-hardening.md)
 
@@ -16,9 +17,9 @@ ASGI load matrix (50/100/300/500 users: 0 errors, 0 `database is locked`,
 | 500 | ~225 s | 0 | 0 |
 
 Journey latency scales with concurrency because writers serialize on one DB
-file; integrity stayed clean. That is acceptable for launch if nginx keeps
-request timeouts high enough and workers are not over-parallelized against
-one SQLite file.
+file. Integrity stayed clean, but a 500-journey p99 near 225 seconds is
+unacceptable as evidence of public readiness. A production-like test on the
+actual VPS through nginx is required before making a capacity claim.
 
 ## When to migrate
 
@@ -33,9 +34,9 @@ shows either:
 | Integrity failures | any lost answers / double JACKCOIN / duplicate submissions |
 | Sustained concurrent finishers | **≥ 300** with the latency or lock symptoms above |
 
-Passing 50–500 users without integrity or lock failures means SQLite + WAL
-remains acceptable for public launch; Postgres is the next step when locks or
-integrity break, not merely when wall-clock journey time grows linearly.
+Passing the in-process 50–500 journey runs only establishes an integrity
+baseline for SQLite + WAL. It does not establish acceptable public latency or
+capacity. The VPS/nginx run must drive the launch and migration decision.
 
 ## What would move
 

@@ -95,12 +95,12 @@
     show('error');
   }
 
-  function startCountdown({ onComplete } = {}) {
+  function startCountdown({ onComplete, screen = 'countdown' } = {}) {
     if (state.scheduleTimer) {
       window.clearInterval(state.scheduleTimer);
       state.scheduleTimer = null;
     }
-    setFlow('countdown');
+    if (isDaily414 && screen === 'countdown') setFlow('countdown');
     const start = Date.parse(app.dataset.activeFrom || '');
     if (!Number.isFinite(start)) {
       (onComplete || loadMeta)();
@@ -112,12 +112,14 @@
       return;
     }
     const output = {
-      days: app.querySelector('[data-countdown-days]'),
-      hours: app.querySelector('[data-countdown-hours]'),
-      minutes: app.querySelector('[data-countdown-minutes]'),
-      seconds: app.querySelector('[data-countdown-seconds]'),
+      days: [...app.querySelectorAll('[data-countdown-days]')],
+      hours: [...app.querySelectorAll('[data-countdown-hours]')],
+      minutes: [...app.querySelectorAll('[data-countdown-minutes]')],
+      seconds: [...app.querySelectorAll('[data-countdown-seconds]')],
     };
-    app.querySelector('.quiz-schedule-time').textContent = `Старт: ${new Date(start).toLocaleString('ru-RU')}`;
+    app.querySelectorAll('.quiz-schedule-time').forEach((node) => {
+      node.textContent = `Старт: ${new Date(start).toLocaleString('ru-RU')}`;
+    });
     let completing = false;
     const finish = () => {
       if (completing) return;
@@ -134,10 +136,10 @@
     const tick = () => {
       const remaining = Math.max(0, start - scheduledNow());
       const totalSeconds = Math.max(0, Math.ceil(remaining / 1000));
-      output.days.textContent = String(Math.floor(totalSeconds / 86400)).padStart(2, '0');
-      output.hours.textContent = String(Math.floor((totalSeconds % 86400) / 3600)).padStart(2, '0');
-      output.minutes.textContent = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-      output.seconds.textContent = String(totalSeconds % 60).padStart(2, '0');
+      output.days.forEach((node) => { node.textContent = String(Math.floor(totalSeconds / 86400)).padStart(2, '0'); });
+      output.hours.forEach((node) => { node.textContent = String(Math.floor((totalSeconds % 86400) / 3600)).padStart(2, '0'); });
+      output.minutes.forEach((node) => { node.textContent = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0'); });
+      output.seconds.forEach((node) => { node.textContent = String(totalSeconds % 60).padStart(2, '0'); });
       if (remaining <= 0) finish();
     };
     if (state.countdownVisibilityHandler) {
@@ -147,7 +149,7 @@
       if (document.visibilityState === 'visible') tick();
     };
     document.addEventListener('visibilitychange', state.countdownVisibilityHandler);
-    show('countdown');
+    show(screen);
     tick();
     state.scheduleTimer = window.setInterval(tick, 200);
   }
@@ -159,7 +161,6 @@
       showEnded();
       return;
     }
-    // 4:14: welcome screens first; countdown only after "СЕСТЬ ЗА СТОЛ".
     if (app.dataset.scheduleState === 'upcoming' && !isDaily414) startCountdown();
     else loadMeta();
   }
@@ -195,6 +196,7 @@
       const data = await readJson(response, 'Не удалось загрузить квиз. Обнови страницу и попробуй ещё раз.');
       if (!response.ok) throw new Error(data.error || data.detail || 'Не удалось загрузить квиз');
       state.meta = data;
+      applyServerNow(data.server_now);
       if (data.schedule_state) app.dataset.scheduleState = data.schedule_state;
       if (data.active_from) app.dataset.activeFrom = data.active_from;
       if (data.active_until) app.dataset.activeUntil = data.active_until;
@@ -258,7 +260,11 @@
           return;
         }
         setFlow('welcome');
-        show('welcome');
+        if (upcoming) {
+          startCountdown({ screen: 'welcome', onComplete: () => { void loadMeta(); } });
+        } else {
+          show('welcome');
+        }
         return;
       }
 
@@ -270,7 +276,7 @@
       }
       if (/Квиз начнётся/.test(error.message)) {
         app.dataset.scheduleState = 'upcoming';
-        if (isDaily414) show('welcome');
+        if (isDaily414) startCountdown({ screen: 'welcome', onComplete: () => { void loadMeta(); } });
         else startCountdown();
         return;
       }

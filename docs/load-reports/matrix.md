@@ -1,3 +1,7 @@
+> These figures are a laboratory in-process ASGI baseline, not proof of public capacity.
+> The 500-journey run has p99 around 225 seconds, which is unacceptable as a readiness claim.
+> A real VPS test through nginx with production-like networking and monitoring is still required.
+
 # JACKSIDE load matrix
 
 Generated: 2026-08-05 (local Windows run; ASGI httpx harness)

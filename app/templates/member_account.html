@@ -5,7 +5,7 @@
 {% set category_marks = {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'} %}
 {% set category_labels = {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'} %}
 {% block content %}
-<div class="member-app-page" data-account-tab="{{ current_tab }}">
+<div class="member-app-page" data-account-tab="{{ current_tab }}" data-server-now="{{ server_now_iso }}">
   {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
   {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
 

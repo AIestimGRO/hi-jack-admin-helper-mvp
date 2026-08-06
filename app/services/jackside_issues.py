@@ -184,6 +184,7 @@ def create_issue(
     final_prize_catalog_reward_id: int | None = None,
     final_prize_jackcoin_amount: int = 0,
     final_question_time_seconds: int = 30,
+    timezone_name: str = "Europe/Moscow",
 ) -> sqlite3.Row:
     rules = ensure_default_rules(conn)
     code = issue_campaign_code(issue_date_value)
@@ -197,9 +198,12 @@ def create_issue(
         final_prize_type = "reward_card"
     clean_title = (title or f"JACKSIDE {issue_date_value.isoformat()}").strip()
     starts = _as_utc(starts_at)
-    ends = starts.replace(hour=23, minute=59, second=59, microsecond=0)
+    club_tz = ZoneInfo(timezone_name)
+    ends = datetime.combine(
+        issue_date_value, datetime.max.time().replace(microsecond=0), tzinfo=club_tz
+    ).astimezone(timezone.utc)
     if ends <= starts:
-        ends = starts + timedelta(hours=6)
+        raise ValueError("issue_end_before_start")
     cursor = conn.execute(
         """
         INSERT INTO jackside_issues(
@@ -280,6 +284,7 @@ def copy_issue(
     issue_date_value: date,
     starts_at: datetime,
     admin_id: int | None = None,
+    timezone_name: str = "Europe/Moscow",
 ) -> sqlite3.Row:
     source = get_issue(conn, source_issue_id)
     if not source:
@@ -297,6 +302,7 @@ def copy_issue(
         final_prize_catalog_reward_id=source["final_prize_catalog_reward_id"],
         final_prize_jackcoin_amount=int(source["final_prize_jackcoin_amount"]),
         final_question_time_seconds=int(source["final_question_time_seconds"]),
+        timezone_name=timezone_name,
     )
     if source["campaign_code"]:
         _copy_campaign_questions(
@@ -460,6 +466,7 @@ def update_issue_settings(
     final_prize_jackcoin_amount: int | None = None,
     final_question_time_seconds: int | None = None,
     status: str | None = None,
+    timezone_name: str = "Europe/Moscow",
 ) -> sqlite3.Row:
     issue = get_issue(conn, issue_id)
     if not issue:
@@ -506,7 +513,12 @@ def update_issue_settings(
         f"UPDATE jackside_issues SET {', '.join(fields)} WHERE id=?",
         values,
     )
-    return get_issue(conn, issue_id)
+    updated = get_issue(conn, issue_id)
+    if updated and (starts_at is not None or ends_at is not None):
+        sync_campaign_schedule_from_issue(
+            conn, updated, timezone_name=timezone_name
+        )
+    return updated
 
 
 def validate_issue_for_publish(
@@ -609,6 +621,27 @@ def sync_campaign_schedule_from_issue(
         """,
         (starts_local, ends_local, code),
     )
+
+
+def effective_campaign_schedule(
+    conn: sqlite3.Connection,
+    campaign: sqlite3.Row | dict[str, Any],
+    *,
+    timezone_name: str = "Europe/Moscow",
+) -> dict[str, Any]:
+    """Return the runtime campaign schedule without mutating quiz_campaigns."""
+    payload = dict(campaign)
+    if str(payload.get("campaign_type") or "") != "daily_414":
+        return payload
+    issue = get_issue_by_campaign(conn, str(payload.get("code") or ""))
+    if not issue:
+        return payload
+    starts_local, ends_local = issue_schedule_local(
+        issue, timezone_name=timezone_name
+    )
+    payload["active_from"] = starts_local
+    payload["active_until"] = ends_local
+    return payload
 
 
 def ensure_issue_campaign(
@@ -969,11 +1002,20 @@ def resolve_issue_for_campaign(
         return legacy_issue_from_campaign(
             conn, campaign, now=now, timezone_name=timezone_name
         )
-    sync_campaign_schedule_from_issue(conn, row, timezone_name=timezone_name)
-    issue = sync_issue_runtime_status(
-        conn,
-        issue_id=int(row["id"]),
+    issue = dict(row)
+    final_table = None
+    campaign_version = int(campaign["current_version"] or 1)
+    final_table = conn.execute(
+        """
+        SELECT * FROM daily_414_final_tables
+        WHERE campaign_code=? AND campaign_version=?
+        """,
+        (campaign["code"], campaign_version),
+    ).fetchone()
+    issue["status"] = compute_issue_status(
+        issue,
         now=now or datetime.now(timezone.utc),
+        final_table=final_table,
         timezone_name=timezone_name,
     )
     card_title = None
@@ -1012,13 +1054,27 @@ def current_featured_issue(
     for issue in issues:
         if issue["status"] == "draft":
             continue
-        synced = sync_issue_runtime_status(
-            conn,
-            issue_id=int(issue["id"]),
+        issue_view = dict(issue)
+        campaign = conn.execute(
+            "SELECT * FROM quiz_campaigns WHERE code=?",
+            (issue_view["campaign_code"],),
+        ).fetchone()
+        if not campaign:
+            continue
+        final_table = conn.execute(
+            """
+            SELECT * FROM daily_414_final_tables
+            WHERE campaign_code=? AND campaign_version=?
+            """,
+            (issue_view["campaign_code"], int(campaign["current_version"] or 1)),
+        ).fetchone()
+        issue_view["status"] = compute_issue_status(
+            issue_view,
             now=now,
+            final_table=final_table,
             timezone_name=timezone_name,
         )
-        status = str(synced["status"])
+        status = str(issue_view["status"])
         rank = {
             "main_live": 0,
             "lobby": 1,
@@ -1027,12 +1083,6 @@ def current_featured_issue(
             "scheduled": 4,
         }.get(status, 50)
         if rank >= 50:
-            continue
-        campaign = conn.execute(
-            "SELECT * FROM quiz_campaigns WHERE code=?",
-            (synced["campaign_code"],),
-        ).fetchone()
-        if not campaign:
             continue
         payload = resolve_issue_for_campaign(
             conn, campaign, now=now, timezone_name=timezone_name

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db import connect, transaction
 from app.main import create_app
+from app.services.jackside_issues import accept_rules, active_rules, create_issue
 from app.services.member_accounts import (
     MEMBER_COOKIE_NAME,
     hash_password,
@@ -969,6 +970,115 @@ def test_daily_414_upcoming_allows_welcome_meta_but_blocks_start(
             "/api/quiz/start",
             json={"campaign": "daily_test"},
         ).status_code == 403
+
+
+def test_issue_schedule_is_read_only_and_shared_by_html_meta_and_start(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    with client:
+        client_id = seed_daily_member(client, settings)
+        seed_daily_campaign(settings)
+        local_now = datetime.now(ZoneInfo(settings.timezone_name))
+        future_local = local_now + timedelta(hours=1)
+        future_utc = future_local.astimezone(ZoneInfo("UTC"))
+        with transaction(settings.db_path) as conn:
+            issue = create_issue(
+                conn,
+                issue_date_value=local_now.date(),
+                starts_at=future_utc,
+                timezone_name=settings.timezone_name,
+            )
+            conn.execute(
+                "UPDATE jackside_issues SET campaign_code='daily_test' WHERE id=?",
+                (issue["id"],),
+            )
+            conn.execute(
+                """
+                UPDATE quiz_campaigns
+                SET active_from=?, active_until=?, updated_at='2000-01-01 00:00:00'
+                WHERE code='daily_test'
+                """,
+                (
+                    (local_now - timedelta(hours=1)).strftime(
+                        "%Y-%m-%dT%H:%M:%S"
+                    ),
+                    (local_now + timedelta(hours=2)).strftime(
+                        "%Y-%m-%dT%H:%M:%S"
+                    ),
+                ),
+            )
+            account = conn.execute(
+                "SELECT id FROM member_accounts WHERE client_id=?",
+                (client_id,),
+            ).fetchone()
+            accept_rules(
+                conn,
+                account_id=int(account["id"]),
+                rules=active_rules(conn),
+                ip_hash="schedule-read-only",
+                user_agent="pytest",
+            )
+
+        page = client.get("/quiz?campaign=daily_test")
+        assert page.status_code == 200
+        assert 'data-schedule-state="upcoming"' in page.text
+        assert 'data-countdown-welcome' in page.text
+
+        meta = client.get("/api/quiz/questions?campaign=daily_test")
+        assert meta.status_code == 200
+        assert meta.json()["schedule_state"] == "upcoming"
+        assert meta.json()["server_now"]
+
+        account_page = client.get("/account?tab=quizzes")
+        assert account_page.status_code == 200
+        assert 'data-server-now="' in account_page.text
+
+        blocked = client.post(
+            "/api/quiz/start", json={"campaign": "daily_test"}
+        )
+        assert blocked.status_code == 403
+        with connect(settings.db_path) as conn:
+            campaign = conn.execute(
+                "SELECT updated_at FROM quiz_campaigns WHERE code='daily_test'"
+            ).fetchone()
+            attempts = conn.execute(
+                "SELECT COUNT(*) FROM quiz_attempts WHERE campaign_code='daily_test'"
+            ).fetchone()[0]
+        assert campaign["updated_at"] == "2000-01-01 00:00:00"
+        assert attempts == 0
+
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE jackside_issues
+                SET starts_at=?, ends_at=?
+                WHERE campaign_code='daily_test'
+                """,
+                (
+                    (
+                        datetime.now(ZoneInfo("UTC")) - timedelta(seconds=5)
+                    ).isoformat(),
+                    (
+                        datetime.now(ZoneInfo("UTC")) + timedelta(hours=1)
+                    ).isoformat(),
+                ),
+            )
+
+        first = client.post(
+            "/api/quiz/start", json={"campaign": "daily_test"}
+        )
+        second = client.post(
+            "/api/quiz/start", json={"campaign": "daily_test"}
+        )
+        assert first.status_code == 200
+        assert first.json()["resumed"] is False
+        assert second.status_code == 200
+        assert second.json()["resumed"] is True
+        with connect(settings.db_path) as conn:
+            assert conn.execute(
+                "SELECT COUNT(*) FROM quiz_attempts WHERE campaign_code='daily_test'"
+            ).fetchone()[0] == 1
 
 
 def test_daily_414_lobby_ranks_by_correct_count(

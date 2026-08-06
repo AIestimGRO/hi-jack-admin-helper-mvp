@@ -15,7 +15,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from app.config import BASE_DIR, Settings
-from app.db import init_db, transaction
+from app.db import connect, init_db, transaction
 from app.services.auth import bootstrap_master
 from app.services.daily_414 import DAILY_414_TIME_LIMIT_SECONDS
 from app.services.member_accounts import MEMBER_COOKIE_NAME, hash_password, issue_session
@@ -48,9 +48,11 @@ def _wait_http(url: str, *, timeout_s: float = 25.0) -> None:
     raise RuntimeError(f"Server did not become ready: {url}") from last_error
 
 
-def _seed_e2e_world(settings: Settings) -> str:
+def _seed_e2e_world(settings: Settings, *, start_delay_seconds: int = -30) -> str:
     local_now = datetime.now(ZoneInfo(settings.timezone_name)).replace(tzinfo=None)
-    active_from = (local_now - timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%S")
+    active_from = (local_now + timedelta(seconds=start_delay_seconds)).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
     password_hash = hash_password("e2epass1")
     with transaction(settings.db_path) as conn:
         bootstrap_master(
@@ -66,11 +68,12 @@ def _seed_e2e_world(settings: Settings) -> str:
                 code, title, campaign_type, quiz_time_limit_seconds,
                 max_attempts, verification_required, current_version, is_active,
                 active_from, welcome_kicker, welcome_text, start_button_text,
-                jackcoin_per_correct, jackcoin_completion_bonus, jackcoin_perfect_bonus
+                jackcoin_per_correct, jackcoin_completion_bonus, jackcoin_perfect_bonus,
+                final_prize_type, final_prize_jackcoin_amount
             ) VALUES (
                 ?, 'JACKSIDE E2E', 'daily_414', ?, 1, 1, 1, 1,
                 ?, 'JACKSIDE 4:14', '10 вопросов. Одна попытка.',
-                'Начать', 5, 10, 20
+                'Начать', 5, 10, 20, 'jackcoin', 500
             )
             """,
             (CAMPAIGN_CODE, DAILY_414_TIME_LIMIT_SECONDS, active_from),
@@ -166,7 +169,7 @@ def _seed_e2e_world(settings: Settings) -> str:
 
 
 @pytest.fixture()
-def jackside_server(tmp_path: Path):
+def jackside_server(tmp_path: Path, request):
     db_path = tmp_path / "e2e.sqlite3"
     secret = "e2e-secret-key-that-is-longer-than-32-characters"
     settings = Settings(
@@ -180,7 +183,10 @@ def jackside_server(tmp_path: Path):
         quiz_public_base_url="http://127.0.0.1",
     )
     init_db(db_path)
-    member_token = _seed_e2e_world(settings)
+    start_delay_seconds = int(getattr(request, "param", -30))
+    member_token = _seed_e2e_world(
+        settings, start_delay_seconds=start_delay_seconds
+    )
     port = _free_port()
     env = os.environ.copy()
     env.update(
@@ -243,6 +249,8 @@ def jackside_server(tmp_path: Path):
             "campaign": CAMPAIGN_CODE,
             "member_token": member_token,
             "log_path": log_path,
+            "db_path": db_path,
+            "start_delay_seconds": start_delay_seconds,
         }
     finally:
         process.kill()
@@ -264,11 +272,12 @@ def test_jackside_welcome_points_are_shown_without_classic_meta(
                 "name": MEMBER_COOKIE_NAME,
                 "value": jackside_server["member_token"],
                 "url": base_url,
-                "path": "/",
             }
         ]
     )
-    page.goto(f"{base_url}/quiz?campaign={campaign}", wait_until="domcontentloaded")
+    page.goto(
+        f"{base_url}/quiz?campaign={campaign}", wait_until="domcontentloaded"
+    )
     points = page.locator(".jackside-welcome-points")
     try:
         # JS moves welcome from loading → active; wait for points list.
@@ -290,3 +299,129 @@ def test_jackside_welcome_points_are_shown_without_classic_meta(
                 log_path.read_text(encoding="utf-8", errors="replace")[:2500],
             )
         raise
+
+
+def _countdown_seconds(page: Page, selector: str) -> int:
+    root = page.locator(selector)
+    days = int(root.locator("[data-countdown-days]").inner_text())
+    hours = int(root.locator("[data-countdown-hours]").inner_text())
+    minutes = int(root.locator("[data-countdown-minutes]").inner_text())
+    seconds = int(root.locator("[data-countdown-seconds]").inner_text())
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
+@pytest.mark.parametrize("jackside_server", [24], indirect=True)
+def test_upcoming_jackside_countdown_survives_reload_and_starts_once(
+    page: Page, jackside_server: dict
+) -> None:
+    base_url = jackside_server["base_url"]
+    campaign = jackside_server["campaign"]
+    page.context.add_cookies(
+        [
+            {
+                "name": MEMBER_COOKIE_NAME,
+                "value": jackside_server["member_token"],
+                "url": base_url,
+            }
+        ]
+    )
+    page.add_init_script(
+        """
+        (() => {
+          const realNow = Date.now.bind(Date);
+          Date.now = () => realNow() + (12 * 60 * 60 * 1000);
+        })();
+        """
+    )
+    page.goto(
+        f"{base_url}/account?tab=quizzes", wait_until="domcontentloaded"
+    )
+    account_countdown = page.locator("[data-member-countdown]").first
+    expect(account_countdown).to_be_visible(timeout=20_000)
+    expect(account_countdown).not_to_have_text("Можно играть")
+
+    page.goto(
+        f"{base_url}/quiz?campaign={campaign}", wait_until="domcontentloaded"
+    )
+
+    welcome = page.locator("[data-countdown-welcome]")
+    expect(welcome).to_be_visible(timeout=20_000)
+    expect(page.locator(".jackside-welcome-points")).to_be_visible()
+    expect(page.locator(".jackside-welcome-points")).to_contain_text(
+        "Один стол на весь клуб"
+    )
+    expect(page.locator(".jackside-welcome-points")).to_contain_text("JACKCOIN")
+
+    first_value = _countdown_seconds(page, "[data-countdown-welcome]")
+    assert 0 < first_value <= 30
+    page.wait_for_timeout(1300)
+    second_value = _countdown_seconds(page, "[data-countdown-welcome]")
+    assert 0 <= second_value < first_value
+
+    with connect(jackside_server["db_path"]) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM quiz_attempts WHERE campaign_code=?",
+            (campaign,),
+        ).fetchone()[0] == 0
+
+    context = page.context
+    page.close()
+    page = context.new_page()
+    page.goto(f"{base_url}/quiz?campaign={campaign}", wait_until="domcontentloaded")
+    expect(page.locator("[data-countdown-welcome]")).to_be_visible(timeout=20_000)
+    reloaded_value = _countdown_seconds(page, "[data-countdown-welcome]")
+    assert 0 < reloaded_value < first_value
+
+    page.locator("[data-action='identify']").click()
+    expect(page.locator("[data-screen='daily-prize']")).to_be_visible()
+    page.locator("[data-action='daily-prize-next']").click()
+    expect(page.locator("[data-screen='daily-jackcoin']")).to_be_visible()
+    page.locator("[data-action='daily-start']").click()
+    expect(page.locator("[data-screen='countdown']")).to_be_visible()
+
+    with connect(jackside_server["db_path"]) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM quiz_attempts WHERE campaign_code=?",
+            (campaign,),
+        ).fetchone()[0] == 0
+
+    expect(page.locator("[data-screen='question']")).to_be_visible(timeout=25_000)
+    with connect(jackside_server["db_path"]) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM quiz_attempts WHERE campaign_code=?",
+            (campaign,),
+        ).fetchone()[0] == 1
+
+
+def test_classic_upcoming_countdown_is_unchanged(
+    page: Page, jackside_server: dict
+) -> None:
+    base_url = jackside_server["base_url"]
+    local_now = datetime.now(ZoneInfo("Europe/Moscow")).replace(tzinfo=None)
+    with transaction(jackside_server["db_path"]) as conn:
+        conn.execute(
+            """
+            INSERT INTO quiz_campaigns(
+                code, title, campaign_type, is_active, active_from, active_until
+            ) VALUES ('classic_upcoming', 'Classic upcoming', 'classic', 1, ?, ?)
+            """,
+            (
+                (local_now + timedelta(seconds=20)).strftime(
+                    "%Y-%m-%dT%H:%M:%S"
+                ),
+                (local_now + timedelta(hours=1)).strftime(
+                    "%Y-%m-%dT%H:%M:%S"
+                ),
+            ),
+        )
+
+    page.goto(
+        f"{base_url}/quiz?campaign=classic_upcoming",
+        wait_until="domcontentloaded",
+    )
+    countdown = page.locator("[data-screen='countdown']")
+    expect(countdown).to_be_visible(timeout=20_000)
+    first_value = _countdown_seconds(page, "[data-screen='countdown']")
+    assert 0 < first_value <= 25
+    page.wait_for_timeout(1300)
+    assert _countdown_seconds(page, "[data-screen='countdown']") < first_value

@@ -91,5 +91,6 @@ Health check after deploy:
 curl -sS http://127.0.0.1:8091/health
 ```
 
-Expect `status=ok`, `db_readable=true`, `db_writable=true`, and
-`schema_version` matching `SCHEMA_VERSION`.
+Expect `status=ok`, `db_readable=true`, `db_writable=false`, and
+`schema_version` matching `SCHEMA_VERSION`. `/health` is a read-only readiness
+check. Use `POST /health/deep` only for an explicit diagnostic write probe.

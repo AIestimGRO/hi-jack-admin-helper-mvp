@@ -104,7 +104,7 @@ from app.services.jackside_issues import (
     campaign_audience_counts,
     copy_issue,
     create_issue,
-    current_featured_issue,
+    effective_campaign_schedule,
     list_issues,
     missing_jackside_rules,
     public_issue_card,
@@ -318,22 +318,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
         return templates.TemplateResponse(request, "error.html", context(request, status=exc.status_code, message=exc.detail), status_code=exc.status_code)
 
-    @app.get("/health")
-    async def health():
-        build_version = os.getenv("HJC_BUILD_VERSION") or SCHEMA_VERSION
-        payload: dict[str, Any] = {
+    def health_payload() -> dict[str, Any]:
+        return {
             "status": "ok",
             "app": "ok",
             "database": "ok",
             "schema_version": SCHEMA_VERSION,
-            "build_version": build_version,
+            "build_version": os.getenv("HJC_BUILD_VERSION") or SCHEMA_VERSION,
             "db_readable": False,
             "db_writable": False,
         }
+
+    @app.get("/health/live")
+    async def health_live():
+        payload = health_payload()
+        payload["database"] = "not_checked"
+        return payload
+
+    @app.get("/health")
+    @app.get("/health/ready")
+    async def health():
+        payload = health_payload()
         try:
             with connect(settings.db_path) as conn:
                 conn.execute("SELECT 1").fetchone()
-                payload["db_readable"] = True
+            payload["db_readable"] = True
+        except Exception:
+            payload["status"] = "error"
+            payload["database"] = "error"
+            return JSONResponse(payload, status_code=503)
+        return payload
+
+    @app.post("/health/deep")
+    async def health_deep():
+        payload = health_payload()
+        try:
+            with transaction(settings.db_path) as conn:
                 conn.execute(
                     """
                     INSERT INTO health_probes(id, checked_at)
@@ -341,14 +361,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ON CONFLICT(id) DO UPDATE SET checked_at=excluded.checked_at
                     """
                 )
-                conn.commit()
-                payload["db_writable"] = True
+            payload["db_readable"] = True
+            payload["db_writable"] = True
         except Exception:
             payload["status"] = "error"
-            payload["database"] = "error"
-            return JSONResponse(payload, status_code=503)
-        if not payload["db_readable"] or not payload["db_writable"]:
-            payload["status"] = "degraded"
             payload["database"] = "error"
             return JSONResponse(payload, status_code=503)
         return payload
@@ -486,31 +502,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return ""
         return local.replace(tzinfo=campaign_timezone).isoformat()
 
-    def sync_daily_campaign_row(
+    def effective_runtime_campaign_row(
         conn: sqlite3.Connection, campaign_row: sqlite3.Row | dict[str, Any]
-    ) -> sqlite3.Row | dict[str, Any]:
-        """Apply jackside issue UTC→local schedule before schedule_state / ISO."""
-        if str(campaign_row["campaign_type"] or "") != "daily_414":
-            return campaign_row
-        resolve_issue_for_campaign(
-            conn,
-            campaign_row,
-            now=datetime.now(timezone.utc),
-            timezone_name=settings.timezone_name,
+    ) -> dict[str, Any]:
+        return effective_campaign_schedule(
+            conn, campaign_row, timezone_name=settings.timezone_name
         )
-        refreshed = conn.execute(
-            """
-            SELECT qc.*, pt.title AS bonus_title,
-                   vcr.title AS final_prize_card_title
-            FROM quiz_campaigns qc
-            LEFT JOIN preference_types pt ON pt.code = qc.bonus_preference_code
-            LEFT JOIN vault_catalog_rewards vcr
-              ON vcr.id=qc.final_prize_catalog_reward_id
-            WHERE qc.code=?
-            """,
-            (campaign_row["code"],),
-        ).fetchone()
-        return refreshed or campaign_row
 
     def campaign_has_history(conn: sqlite3.Connection, campaign_code: str) -> bool:
         for table in CAMPAIGN_HISTORY_TABLES:
@@ -543,6 +540,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (code,),
             ).fetchone()
+            if row:
+                row = effective_runtime_campaign_row(conn, row)
         if not row or campaign_schedule_state(row) == "disabled":
             raise HTTPException(status_code=404, detail="Кампания квиза не найдена или отключена")
         if row["campaign_type"] == "daily_414":
@@ -1714,7 +1713,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jackside_leaderboard_rows = []
         rating_leaderboard = []
         rating_snapshot = None
-        jackside_card = None
         with connect(settings.db_path) as conn:
             balance = jackcoin_balance(conn, int(member["client_id"]))
             history = conn.execute(
@@ -1848,8 +1846,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 (member["client_id"], member["client_id"]),
             ).fetchall()
             for campaign_row in campaign_rows:
-                if campaign_row["campaign_type"] == "daily_414":
-                    campaign_row = sync_daily_campaign_row(conn, campaign_row)
+                campaign_row = effective_runtime_campaign_row(conn, campaign_row)
                 schedule_state = campaign_schedule_state(campaign_row)
                 if schedule_state not in {"active", "upcoming"}:
                     continue
@@ -1880,15 +1877,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     int(item["id"]),
                 )
             )
-            jackside_card = current_featured_issue(
-                conn,
-                now=datetime.now(timezone.utc),
-                timezone_name=settings.timezone_name,
-            )
-            if jackside_card:
-                jackside_card = public_issue_card(jackside_card)
-            else:
-                jackside_card = None
             for item in campaign_cards:
                 if item["campaign_type"] != "daily_414":
                     continue
@@ -1978,6 +1966,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 member=member,
                 current_tab=tab,
                 current_rating_section=section,
+                server_now_iso=datetime.now(campaign_timezone).isoformat(),
                 balance=balance,
                 history=history,
                 rating=rating,
@@ -1992,7 +1981,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 streak=streak,
                 campaign_cards=campaign_cards,
                 featured_campaign=campaign_cards[0] if campaign_cards else None,
-                jackside_card=jackside_card,
                 home_rewards=home_rewards[:4],
                 vault_catalog=vault_catalog,
                 vault_active_rewards=vault_active_rewards,
@@ -2219,9 +2207,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     f"/jackside/rules?{urlencode({'next': current_path})}",
                     status_code=303,
                 )
-        if campaign_row["campaign_type"] == "daily_414":
-            with transaction(settings.db_path) as conn:
-                campaign_row = sync_daily_campaign_row(conn, campaign_row)
         schedule_state = campaign_schedule_state(campaign_row)
         daily_prize = final_prize_display(campaign_row)
         jackside_meta = None
@@ -2356,6 +2341,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     admin_id=int(request.session["admin_id"]),
                     final_prize_type="jackcoin" if prize_jackcoin > 0 else "none",
                     final_prize_jackcoin_amount=max(0, int(prize_jackcoin)),
+                    timezone_name=settings.timezone_name,
                 )
                 from app.services.jackside_issues import ensure_issue_campaign
 
@@ -2394,6 +2380,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     issue_date_value=day,
                     starts_at=starts_utc,
                     admin_id=int(request.session["admin_id"]),
+                    timezone_name=settings.timezone_name,
                 )
                 from app.services.jackside_issues import ensure_issue_campaign
 
@@ -2450,9 +2437,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def quiz_questions(request: Request, campaign: str = "default"):
         campaign = normalize_campaign(campaign)
         campaign_row = quiz_campaign_for_meta(campaign)
-        if campaign_row["campaign_type"] == "daily_414":
-            with transaction(settings.db_path) as conn:
-                campaign_row = sync_daily_campaign_row(conn, campaign_row)
         schedule_state = campaign_schedule_state(campaign_row)
         try:
             with connect(settings.db_path) as conn:
@@ -2496,6 +2480,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "schedule_state": schedule_state,
             "active_from": campaign_datetime_iso(campaign_row["active_from"]),
             "active_until": campaign_datetime_iso(campaign_row["active_until"]),
+            "server_now": datetime.now(campaign_timezone).isoformat(),
             "questions": [],
             "questions_count": len(questions),
             "timed": campaign_row["quiz_time_limit_seconds"] > 0,
