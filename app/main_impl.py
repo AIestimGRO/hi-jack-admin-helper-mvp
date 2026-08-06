@@ -78,6 +78,7 @@ from app.services.daily_414 import (
     final_table_candidate_eligible,
     final_table_starts_at as daily_final_table_starts_at,
     issue_date as daily_issue_date,
+    main_prize_eligible,
     public_daily_questions,
     rank_final_candidates,
     validate_daily_questions,
@@ -3424,7 +3425,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if is_daily_414:
             outcome = "completed"
             if main_completed and daily_award:
-                copy = result_copy_for_score(int(scoring["correct_count"]))
+                copy = result_copy_for_score(
+                    int(scoring["correct_count"]),
+                    final_eligible=prize_eligible,
+                )
                 title = copy["title"]
                 message = (
                     f"{copy['message']} "
@@ -3482,6 +3486,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "final_table_starts_at": final_table_start_iso,
             "final_table_available": bool(
                 is_daily_414 and final_table_start_iso and final_questions
+            ),
+            "final_eligibility_reason": (
+                (
+                    "eligible"
+                    if prize_eligible
+                    else (
+                        "incomplete"
+                        if not main_completed
+                        else (
+                            "timed_out"
+                            if timed_out
+                            else (
+                                "missed_entry_window"
+                                if not main_prize_eligible(
+                                    campaign_row, started_at=started_local
+                                )
+                                else (
+                                    "finished_after_final_start"
+                                    if (
+                                        final_start_local := daily_final_table_starts_at(
+                                            campaign_row
+                                        )
+                                    )
+                                    and local_finished_at > final_start_local
+                                    else "not_eligible"
+                                )
+                            )
+                        )
+                    )
+                )
+                if is_daily_414
+                else None
             ),
             "jackcoin_awarded": daily_award["total"] if daily_award else 0,
             "jackcoin_breakdown": daily_award,

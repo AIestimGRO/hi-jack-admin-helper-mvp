@@ -40,6 +40,7 @@ RESULT_COPY_BY_RANGE: tuple[dict[str, Any], ...] = (
         "max_correct": 10,
         "title": "Идеальная десятка",
         "message": "10/10. Вы собрали максимум основной части. Ждём финальный стол!",
+        "message_no_final": "10/10. Вы собрали максимум основной части. JACKCOIN уже на балансе.",
     },
 )
 
@@ -65,11 +66,24 @@ JACKCOIN начисляются только за полностью завер�
 """
 
 
-def result_copy_for_score(correct_count: int) -> dict[str, str]:
+def result_copy_for_score(
+    correct_count: int, *, final_eligible: bool = True
+) -> dict[str, str]:
     score = max(0, int(correct_count))
     for item in RESULT_COPY_BY_RANGE:
         if item["min_correct"] <= score <= item["max_correct"]:
-            return {"code": item["code"], "title": item["title"], "message": item["message"]}
+            message = item["message"]
+            if not final_eligible and item.get("message_no_final"):
+                message = item["message_no_final"]
+            elif not final_eligible and item["code"] in {"7_8", "9", "10"}:
+                message = item["message"].replace(
+                    "Ждём финальный стол!",
+                    "JACKCOIN уже на балансе.",
+                ).replace(
+                    "Почти у финального стола. Ещё чуть точнее — и вы среди претендентов.",
+                    "Хороший результат основной части. В отбор финала этот заход не вошёл.",
+                )
+            return {"code": item["code"], "title": item["title"], "message": message}
     return {
         "code": "0_3",
         "title": RESULT_COPY_BY_RANGE[0]["title"],

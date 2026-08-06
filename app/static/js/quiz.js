@@ -588,9 +588,13 @@
           if (data.main_prize_eligible && data.final_table_available) {
             finalEl.textContent = 'Ожидание финала';
           } else if (data.main_prize_eligible) {
-            finalEl.textContent = 'В отборе / вне стола';
+            finalEl.textContent = 'В отборе';
+          } else if (data.final_eligibility_reason === 'missed_entry_window') {
+            finalEl.textContent = 'Вне окна отбора';
+          } else if (data.final_eligibility_reason === 'finished_after_final_start') {
+            finalEl.textContent = 'После старта финала';
           } else {
-            finalEl.textContent = 'Вне топ-10';
+            finalEl.textContent = 'Вне отбора';
           }
         }
         const prize = dailyResult.querySelector('.daily-result-prize');
@@ -598,8 +602,12 @@
           prize.textContent = data.daily_place
             ? `Место отбора: ${data.daily_place}. Финальный стол начнётся одновременно для всех.`
             : 'Результат участвует в отборе за финальный стол.';
+        } else if (data.final_eligibility_reason === 'missed_entry_window') {
+          prize.textContent = 'JACKCOIN и серия сохранены. В финал берут только тех, кто сел за стол в первые 5 минут.';
+        } else if (data.final_eligibility_reason === 'finished_after_final_start') {
+          prize.textContent = 'JACKCOIN и серия сохранены. Основную часть нужно завершить до старта финального стола.';
         } else {
-          prize.textContent = 'JACKCOIN и серия сохранены. В топ-10 финала вы не попали.';
+          prize.textContent = 'JACKCOIN и серия сохранены. В отбор финального стола этот результат не вошёл.';
         }
       }
     }
