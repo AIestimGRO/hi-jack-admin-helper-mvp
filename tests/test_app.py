@@ -167,3 +167,41 @@ def test_master_creates_preference_and_standard_admin_has_no_master_access(tmp_p
 
     with transaction(settings.db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM admin_audit_log").fetchone()[0] == 2
+
+
+
+def test_master_jackside_analytics_page_and_manual_refresh(tmp_path):
+    client, settings = make_client(tmp_path)
+    with client:
+        login(client)
+        page = client.get("/master?tab=analytics")
+        assert page.status_code == 200
+        assert "JACKSIDE: аналитика" in page.text
+        assert "завершённые основные игры" in page.text
+        assert "Completion rate" in page.text
+        assert "<h3>Retention</h3>" in page.text
+        assert "По экономике" in page.text
+
+        token = re.search(
+            r'name="csrf_token" value="([^"]+)"', page.text
+        ).group(1)
+        refreshed = client.post(
+            "/api/master/jackside-analytics/refresh",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert refreshed.status_code == 303
+        assert refreshed.headers["location"].startswith("/master?tab=analytics")
+
+    with transaction(settings.db_path) as conn:
+        snapshot_count = conn.execute(
+            "SELECT COUNT(*) FROM jackside_analytics_cache"
+        ).fetchone()[0]
+        audit_count = conn.execute(
+            """
+            SELECT COUNT(*) FROM admin_audit_log
+            WHERE action='refresh' AND entity_type='jackside_analytics'
+            """
+        ).fetchone()[0]
+    assert snapshot_count == 1
+    assert audit_count == 1

@@ -5,6 +5,12 @@ from app.services.jackside_rating import jackside_leaderboard
 def _submission(conn, client_id: int, correct: int, total: int, created_at: str) -> None:
     conn.execute(
         """
+        INSERT OR IGNORE INTO quiz_campaigns(code, title, campaign_type)
+        VALUES ('rating', 'JACKSIDE rating', 'daily_414')
+        """
+    )
+    conn.execute(
+        """
         INSERT INTO quiz_submissions(
             campaign_code, client_id, phone_raw, phone_local, answers_json,
             ip_hash, correct_count, max_correct_count, created_at

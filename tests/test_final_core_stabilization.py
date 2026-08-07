@@ -194,7 +194,7 @@ def test_incomplete_daily_excluded_from_rating(tmp_path) -> None:
         scored_ids = {entry["client_id"] for entry in board}
 
     assert complete_id in scored_ids
-    assert classic_id in scored_ids
+    assert classic_id not in scored_ids
     assert incomplete_id not in scored_ids
 
 

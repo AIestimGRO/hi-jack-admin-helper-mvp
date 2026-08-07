@@ -4,6 +4,7 @@
 {% set display_name = member.first_name or member.nickname or ('@' ~ member.username if member.username else 'Игрок') %}
 {% set category_marks = {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'} %}
 {% set category_labels = {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'} %}
+{% set title_labels = {'rookie':'Новичок','participant':'Участник','regular':'Регуляр','strong_player':'Сильный игрок','final_regular':'Регуляр финального стола','legend':'Легенда JACKSIDE'} %}
 {% block content %}
 <div class="member-app-page" data-account-tab="{{ current_tab }}" data-server-now="{{ server_now_iso }}">
   {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
@@ -152,9 +153,9 @@
   <section class="home-section home-stats">
     <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p><h2>Статистика</h2></div><a href="/account?tab=rating">Подробнее</a></div>
     <div class="stat-chip-grid">
-      <article><small>Рейтинг JACKSIDE</small>{% if jackside_rating and jackside_rating.place %}<strong>#{{ jackside_rating.place }}</strong><span>Балл {{ jackside_rating.rating_score }} · {{ jackside_rating.accuracy }}% точности</span>{% elif jackside_rating %}<strong>•••</strong><span>Калибровка: {{ jackside_rating.completed_count }}/3 игр · {{ jackside_rating.question_total }}/30 ответов</span>{% else %}<strong>—</strong><span>Сыграй первый квиз</span>{% endif %}</article>
-      <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>дней подряд</span></article>
-      <article><small>Сыграно квизов</small><strong>{{ history|length }}</strong><span>завершено</span></article>
+      <article><small>Рейтинг JACKSIDE</small>{% if jackside_home_rating %}<strong>#{{ jackside_home_rating.place }}</strong><span>{{ jackside_home_rating.points }} points · {{ jackside_home_rating.accuracy }}% точности</span>{% else %}<strong>—</strong><span>Сыграй первый выпуск</span>{% endif %}</article>
+      <article><small>Серия 4:14</small><strong>{{ quiz_stats.current_streak }}</strong><span>лучшее: {{ quiz_stats.best_streak }}</span></article>
+      <article><small>Завершено выпусков</small><strong>{{ quiz_stats.completed_count }}</strong><span>только JACKSIDE</span></article>
     </div>
     <a class="profile-settings-link" href="/account?tab=profile">Личные данные и настройки <span aria-hidden="true">→</span></a>
   </section>
@@ -195,44 +196,97 @@
   {% elif current_tab == 'rating' %}
   <header class="rating-hub-hero">
     <div class="hj-hero-mark" aria-hidden="true"><span>HJ</span></div>
-    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Личные показатели, рейтинг JACKSIDE и позиция в HI JACK!</p></div>
+    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Только завершённые игры JACKSIDE. JACKSIDE points не являются JACKCOIN и не расходуются.</p></div>
   </header>
 
   <nav class="rating-section-tabs" aria-label="Раздел рейтинга">
-    <a class="{{ 'active' if current_rating_section == 'quiz' else '' }}" href="/account?tab=rating&amp;section=quiz">JACKSIDE</a>
+    <a class="{{ 'active' if current_rating_section != 'club' else '' }}" href="/account?tab=rating&amp;section=today">JACKSIDE</a>
     <a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">HI JACK!</a>
   </nav>
 
-  {% if current_rating_section == 'quiz' %}
+  {% if current_rating_section != 'club' %}
   <section class="rating-overview-card">
-    <div class="rating-overview-copy"><p class="member-eyebrow">Точность<br>ответов</p><span>{{ quiz_stats.correct_total }} из {{ quiz_stats.question_total }} верно</span></div>
+    <div class="rating-overview-copy"><p class="member-eyebrow">Точность ответов</p><span>{{ quiz_stats.correct_total }} из {{ quiz_stats.question_total }} верно · {{ quiz_stats.completed_count }} завершённых выпусков</span></div>
     <div class="rating-progress-ring" style="--rating-progress: {{ quiz_stats.accuracy }}" aria-label="Точность {{ quiz_stats.accuracy }} процентов"><span>{{ quiz_stats.accuracy }}%</span></div>
   </section>
 
-  <section class="quiz-stat-board">
-    <article><small>Пройдено квизов</small><strong>{{ quiz_stats.completed_count }}</strong><span>всего игр</span></article>
-    <article><small>Идеальных игр</small><strong>{{ quiz_stats.perfect_count }}</strong><span>без ошибок</span></article>
-    <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>лучшее: {{ streak.best_streak if streak else 0 }}</span></article>
-    <article><small>Заработано в квизах</small><strong>{{ quiz_stats.jackcoin_total }}</strong><span>JACKCOIN</span></article>
+  <div class="rating-period-tabs" role="navigation" aria-label="Период рейтинга JACKSIDE">
+    <a class="{{ 'active' if current_rating_section == 'today' else '' }}" href="/account?tab=rating&amp;section=today">Сегодня</a>
+    <a class="{{ 'active' if current_rating_section == 'month' else '' }}" href="/account?tab=rating&amp;section=month">Месяц</a>
+    <a class="{{ 'active' if current_rating_section == 'all' else '' }}" href="/account?tab=rating&amp;section=all">Всё время</a>
+  </div>
+
+  <section class="personal-stat-groups" aria-label="Личная статистика JACKSIDE">
+    <details class="member-card account-details" open>
+      <summary>Основная игра <span>{{ quiz_stats.completed_count }}</span></summary>
+      <div class="quiz-stat-board compact">
+        <article><small>Завершённые выпуски</small><strong>{{ quiz_stats.completed_count }}</strong><span>незавершённые исключены</span></article>
+        <article><small>Правильные ответы</small><strong>{{ quiz_stats.correct_total }}</strong><span>из {{ quiz_stats.question_total }}</span></article>
+        <article><small>Среднее время ответа</small><strong>{{ format_duration_ms(quiz_stats.average_answer_time_ms) }}</strong><span>на один вопрос</span></article>
+        <article><small>Лучший результат</small><strong>{{ quiz_stats.best_result }}/10</strong><span>10/10: {{ quiz_stats.perfect_count }}</span></article>
+      </div>
+    </details>
+    <details class="member-card account-details">
+      <summary>Финалы и серии <span>{{ quiz_stats.finals_count }}</span></summary>
+      <div class="quiz-stat-board compact">
+        <article><small>Финальные столы</small><strong>{{ quiz_stats.finals_count }}</strong><span>участий</span></article>
+        <article><small>Победы</small><strong>{{ quiz_stats.wins_count }}</strong><span>совместных: {{ quiz_stats.co_wins_count }}</span></article>
+        <article><small>Текущая серия</small><strong>{{ quiz_stats.current_streak }}</strong><span>лучшая: {{ quiz_stats.best_streak }}</span></article>
+        <article><small>Активный титул</small><strong class="metric-title">{{ title_labels.get(quiz_stats.title_code, 'Новичок') }}</strong><span>{{ quiz_stats.points }} JACKSIDE points</span></article>
+      </div>
+    </details>
+    <details class="member-card account-details">
+      <summary>Экономика и приглашения <span>{{ balance }} JC</span></summary>
+      <div class="quiz-stat-board compact">
+        <article><small>JACKCOIN</small><strong>{{ quiz_stats.jackcoin_earned }}</strong><span>заработано · {{ quiz_stats.jackcoin_spent }} потрачено</span></article>
+        <article><small>JACK CARDS</small><strong>{{ quiz_stats.active_cards }}</strong><span>активных · {{ quiz_stats.used_cards }} использовано</span></article>
+        <article><small>Квалифицированные рефералы</small><strong>{{ quiz_stats.qualified_referrals }}</strong><span>завершили JACKSIDE</span></article>
+        <article><small>Баланс</small><strong>{{ balance }}</strong><span>JACKCOIN доступно</span></article>
+      </div>
+    </details>
   </section>
 
   <section class="jackside-rating-section">
     <div class="app-section-head">
-      <div><p class="member-eyebrow">Все игроки клуба</p><h2>Рейтинг JACKSIDE</h2></div>
+      <div><p class="member-eyebrow">Все игроки клуба</p><h2>Рейтинг JACKSIDE — {% if current_rating_section == 'today' %}сегодня{% elif current_rating_section == 'month' %}месяц{% else %}всё время{% endif %}</h2></div>
       <span>{{ jackside_leaderboard|length }}</span>
     </div>
-    <p class="jackside-rating-note">30 дней · точность 85% · регулярность 15%<br>Место — после 3 игр и 30 ответов</p>
+    {% if current_rating_section == 'today' %}
+    <p class="jackside-rating-note">Только полностью завершённые игры сегодняшнего выпуска. Больше правильных ответов выше; при равенстве выше более быстрое прохождение.</p>
+    {% elif current_rating_section == 'month' %}
+    <p class="jackside-rating-note">Последние 30 дней. Балл = 85% подтверждённой точности по нижней границе Вилсона + 15% активности. Полная активность — 8 игр; место появляется после 3 игр и 30 ответов.</p>
+    {% else %}
+    <p class="jackside-rating-note">JACKSIDE points: +1 за правильный ответ завершённой основной части, +2 за финальный стол, +5 за победу. При равенстве: точность, среднее время ответа, количество игр и внутренний ID.</p>
+    {% endif %}
     <div class="club-leaderboard jackside-leaderboard">
       {% for row in jackside_leaderboard %}
-      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium podium-' ~ row.place if row.place and row.place <= 3 else '' }} {{ 'is-calibrating' if not row.place else '' }}">
+      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium podium-' ~ row.place if row.place and row.place <= 3 else '' }} {{ 'is-calibrating' if current_rating_section == 'month' and not row.place else '' }}">
         <span class="leaderboard-place">{{ row.place if row.place and row.place <= 30 else '•••' }}</span>
-        <span class="leaderboard-player"><strong>{{ row.display_name }}</strong><small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% точности · {{ row.completed_count }} игр · {{ row.active_days }} активн. дн.</small></span>
-        {% if row.place %}<strong class="leaderboard-points">{{ row.rating_score }}<small>балл</small></strong>{% else %}<strong class="leaderboard-calibration">Калибровка<small>{{ row.completed_count }}/3 игр · {{ row.question_total }}/30 ответов</small></strong>{% endif %}
+        <span class="leaderboard-player">
+          <strong>{{ row.display_name }}</strong>
+          {% if current_rating_section == 'today' %}
+          <small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.correct_count }}/{{ row.question_total }} · {{ format_duration_ms(row.completion_time_ms) }}{% if row.is_winner %} · {{ 'Совместная победа' if row.is_co_winner else 'Победитель' }}{% elif row.is_finalist %} · Финалист{% endif %}</small>
+          {% elif current_rating_section == 'month' %}
+          <small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% · {{ row.completed_count }} игр · {{ row.active_days }} активных дней</small>
+          {% else %}
+          <small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% · {{ format_duration_ms(row.average_answer_time_ms) }}/ответ · {{ row.completed_count }} игр</small>
+          {% endif %}
+        </span>
+        {% if current_rating_section == 'today' %}
+        <strong class="leaderboard-points">{{ row.correct_count }}<small>из {{ row.question_total }}</small></strong>
+        {% elif current_rating_section == 'month' and not row.place %}
+        <strong class="leaderboard-calibration">Калибровка<small>{{ row.completed_count }}/3 игр · {{ row.question_total }}/30 ответов</small></strong>
+        {% elif current_rating_section == 'month' %}
+        <strong class="leaderboard-points">{{ row.rating_score }}<small>балл</small></strong>
+        {% else %}
+        <strong class="leaderboard-points">{{ row.points }}<small>points</small></strong>
+        {% endif %}
       </article>
       {% else %}
-      <div class="member-card smart-empty"><span>HJ</span><div><h3>Рейтинг ждёт игроков</h3><p>Сыграй первый квиз</p></div></div>
+      <div class="member-card smart-empty"><span>HJ</span><div><h3>Здесь пока нет завершённых игр</h3><p>Незавершённые попытки в рейтинг не попадают</p></div></div>
       {% endfor %}
     </div>
+    {% if jackside_analytics_generated_at %}<p class="analytics-updated">Снимок обновлён {{ display_datetime(jackside_analytics_generated_at) }}</p>{% endif %}
   </section>
   {% else %}
   <section class="club-rating-summary">
@@ -372,11 +426,11 @@
   </section>
 
   <details class="member-card account-details" open>
-    <summary>История участия в квизах <span>{{ history|length }}</span></summary>
+    <summary>История JACKSIDE <span>{{ history|length }}</span></summary>
     <div class="member-history">
       {% for item in history %}
       <article><div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span><span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int if item.score is not none else 0 }} балл.{% endif %}</span></article>
-      {% else %}<p class="member-empty">Завершённых квизов пока нет.</p>{% endfor %}
+      {% else %}<p class="member-empty">Завершённых выпусков JACKSIDE пока нет.</p>{% endfor %}
     </div>
   </details>
 

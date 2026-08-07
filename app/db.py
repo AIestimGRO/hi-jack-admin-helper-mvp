@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = "2026.08.05.jackside-launch"
+SCHEMA_VERSION = "2026.08.06.jackside-ratings"
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -280,6 +280,7 @@ CREATE TABLE IF NOT EXISTS quiz_submissions (
     jackcoin_awarded INTEGER NOT NULL DEFAULT 0,
     streak_days INTEGER NOT NULL DEFAULT 0,
     main_round_completed INTEGER NOT NULL DEFAULT 1,
+    timed_out INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     user_agent TEXT,
     ip_hash TEXT NOT NULL
@@ -677,6 +678,19 @@ CREATE TABLE IF NOT EXISTS club_rating_entries (
 CREATE INDEX IF NOT EXISTS ix_club_rating_entries_client
     ON club_rating_entries(client_id, snapshot_id DESC);
 
+CREATE TABLE IF NOT EXISTS jackside_analytics_cache (
+    cache_key TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL,
+    generated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS jackside_analytics_state (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    source_version INTEGER NOT NULL DEFAULT 0,
+    refreshed_version INTEGER NOT NULL DEFAULT -1
+);
+INSERT OR IGNORE INTO jackside_analytics_state(id) VALUES (1);
+
 CREATE TABLE IF NOT EXISTS jackside_rules_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     version TEXT NOT NULL UNIQUE,
@@ -948,6 +962,9 @@ def init_db(db_path: str | Path) -> None:
         _ensure_column(
             conn, "quiz_submissions", "main_round_completed INTEGER NOT NULL DEFAULT 1"
         )
+        _ensure_column(
+            conn, "quiz_submissions", "timed_out INTEGER NOT NULL DEFAULT 0"
+        )
         _ensure_column(conn, "daily_414_final_tables", "outcome TEXT")
         _ensure_column(conn, "daily_414_final_tables", "prize_resolution TEXT")
         conn.execute(
@@ -972,6 +989,58 @@ def init_db(db_path: str | Path) -> None:
             ON daily_414_master_tasks(status, created_at DESC)
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS jackside_analytics_cache (
+                cache_key TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                generated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS jackside_analytics_state (
+                id INTEGER PRIMARY KEY CHECK(id=1),
+                source_version INTEGER NOT NULL DEFAULT 0,
+                refreshed_version INTEGER NOT NULL DEFAULT -1
+            )
+            """
+        )
+        conn.execute("INSERT OR IGNORE INTO jackside_analytics_state(id) VALUES (1)")
+        analytics_tables = (
+            "quiz_submissions",
+            "daily_414_final_tables",
+            "daily_414_finalists",
+            "daily_414_progress",
+            "jackcoin_ledger",
+            "vault_member_rewards",
+            "quiz_referrals",
+            "member_accounts",
+            "clients",
+        )
+        for table_name in analytics_tables:
+            for action in ("INSERT", "UPDATE", "DELETE"):
+                trigger_name = f"trg_{table_name}_analytics_{action.lower()}"
+                conn.execute(
+                    f"""
+                    CREATE TRIGGER IF NOT EXISTS {trigger_name}
+                    AFTER {action} ON {table_name}
+                    BEGIN
+                      UPDATE jackside_analytics_state
+                      SET source_version=source_version+1 WHERE id=1;
+                    END
+                    """
+                )
+        for statement in (
+            "CREATE INDEX IF NOT EXISTS ix_quiz_submissions_completed_time ON quiz_submissions(main_round_completed, created_at, client_id)",
+            "CREATE INDEX IF NOT EXISTS ix_quiz_submissions_attempt_timeout ON quiz_submissions(attempt_id, timed_out)",
+            "CREATE INDEX IF NOT EXISTS ix_quiz_campaigns_type_code ON quiz_campaigns(campaign_type, code)",
+            "CREATE INDEX IF NOT EXISTS ix_member_accounts_created_client ON member_accounts(created_at, client_id)",
+            "CREATE INDEX IF NOT EXISTS ix_jackcoin_ledger_operation_created ON jackcoin_ledger(operation_type, created_at, client_id)",
+            "CREATE INDEX IF NOT EXISTS ix_vault_member_rewards_status_created ON vault_member_rewards(status, created_at, client_id)",
+        ):
+            conn.execute(statement)
         _ensure_column(conn, "quiz_attempts", "attempt_deadline_at TEXT")
         _ensure_column(conn, "quiz_attempts", "client_id INTEGER REFERENCES clients(id)")
         _ensure_column(conn, "quiz_attempts", "attempt_number INTEGER NOT NULL DEFAULT 1")

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db import connect, transaction
 from app.main import create_app
+from app.services.jackside_analytics import refresh_jackside_analytics
 from app.services.jackside_issues import accept_rules, active_rules, create_issue
 from app.services.member_accounts import (
     MEMBER_COOKIE_NAME,
@@ -344,7 +345,7 @@ def test_registration_consents_account_session_and_profile(
 
         stats = client.get("/account?tab=stats")
         assert "Рейтинг HI, JACK CLUB!" in stats.text
-        assert "История участия в квизах" in stats.text
+        assert "История JACKSIDE" in stats.text
         rewards = client.get("/account?tab=rewards")
         assert "Каталог наград" in rewards.text
         assert "Активные награды" in rewards.text
@@ -788,6 +789,9 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
                         place,
                     ),
                 )
+            refresh_jackside_analytics(
+                conn, timezone_name=settings.timezone_name
+            )
 
         home = client.get("/account")
         assert home.status_code == 200
@@ -818,14 +822,19 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         assert accuracy_card
         assert accuracy_card.group(1).count("80%") == 1
         assert "<strong>80" not in accuracy_card.group(1)
-        assert "Пройдено квизов" in rating.text
+        assert "Завершённые выпуски" in rating.text
         assert "Рейтинг JACKSIDE" in rating.text
         assert "Точный игрок" in rating.text
         assert rating.text.index("Точный игрок") < rating.text.index("Это ты")
-        assert "30 дней · точность 85% · регулярность 15%" in rating.text
-        assert "podium podium-1" in rating.text
-        assert "podium podium-2" in rating.text
-        assert "балл" in rating.text
+        assert ">Сегодня<" in rating.text
+        assert ">Месяц<" in rating.text
+        assert ">Всё время<" in rating.text
+        month_rating = client.get("/account?tab=rating&section=month")
+        assert "Последние 30 дней" in month_rating.text
+        assert "85% подтверждённой точности" in month_rating.text
+        assert "podium podium-1" in month_rating.text
+        assert "podium podium-2" in month_rating.text
+        assert "балл" in month_rating.text
         assert "Последние игры" not in rating.text
         club_rating = client.get("/account?tab=rating&section=club")
         assert "HI JACK!" in club_rating.text
@@ -842,7 +851,7 @@ def test_member_hub_prioritizes_wallet_quizzes_and_keeps_legacy_tabs(
         legacy_profile = client.get("/account?tab=personal")
         assert 'data-account-tab="profile"' in legacy_profile.text
         assert "daily@example.test" in legacy_profile.text
-        assert "История участия в квизах" in legacy_profile.text
+        assert "История JACKSIDE" in legacy_profile.text
         assert "Следующий стол JACKSIDE" in legacy_profile.text
         legacy_stats = client.get("/account?tab=stats")
         assert 'data-account-tab="profile"' in legacy_stats.text

@@ -9,6 +9,7 @@
   <button class="{{ 'active' if current_tab=='preferences' else '' }}" type="button" data-master-tab="preferences">Преференции</button>
   <button class="{{ 'active' if current_tab=='admins' else '' }}" type="button" data-master-tab="admins">Администраторы</button>
   <button class="{{ 'active' if current_tab=='campaigns' else '' }}" type="button" data-master-tab="campaigns">Кампании квиза</button>
+  <button class="{{ 'active' if current_tab=='analytics' else '' }}" type="button" data-master-tab="analytics">JACKSIDE: аналитика</button>
   <button class="{{ 'active' if current_tab=='audit' else '' }}" type="button" data-master-tab="audit">Аудит</button>
 </div>
 
@@ -213,6 +214,79 @@
   {% else %}
     <div class="card campaign-empty" data-campaign-kind="archived"><p>Архив пока пуст.</p></div>
   {% endfor %}
+  </div>
+</section>
+
+<section data-master-panel="analytics" {% if current_tab!='analytics' %}hidden{% endif %}>
+  {% set participant_stats = jackside_admin_analytics.get('participants', {}) %}
+  {% set economy_stats = jackside_admin_analytics.get('economy', {}) %}
+  <div class="section-head analytics-heading">
+    <div><p class="eyebrow">Только JACKSIDE</p><h2>Участники и экономика</h2><p class="muted">Результаты и проценты используют только завершённые основные игры. Операционные показатели — окно 30 дней.</p></div>
+    <form action="/api/master/jackside-analytics/refresh" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" type="submit">Пересчитать сейчас</button>
+    </form>
+  </div>
+  {% if jackside_analytics_generated_at %}<p class="analytics-cache-note">Снимок: {{ display_datetime(jackside_analytics_generated_at) }} · автоматически обновляется не чаще одного раза в 5 минут.</p>{% endif %}
+
+  <div class="analytics-definition-card card">
+    <strong>Определения</strong>
+    <p><b>Completion rate</b> — завершённые основные игры / начатые попытки за 30 дней. <b>Timeout rate</b> — попытки, завершённые по лимиту времени / начатые попытки. <b>Попадание в финал</b> — финалисты / завершившие основную часть. <b>Позднее прохождение</b> — завершённые игры вне окна допуска к главному призу.</p>
+  </div>
+
+  <div class="section-head"><h2>По участникам</h2></div>
+  <div class="analytics-stat-grid">
+    <article class="card"><small>Зарегистрированные</small><strong>{{ participant_stats.get('registered', 0) }}</strong><span>активные аккаунты</span></article>
+    <article class="card"><small>Сегодня присоединились</small><strong>{{ participant_stats.get('joined_today', 0) }}</strong><span>новые аккаунты</span></article>
+    <article class="card"><small>Сегодня завершили</small><strong>{{ participant_stats.get('completed_today', 0) }}</strong><span>уникальные игроки</span></article>
+    <article class="card"><small>Средний результат</small><strong>{{ participant_stats.get('average_result', 0) }}/10</strong><span>за 30 дней</span></article>
+    <article class="card"><small>Completion rate</small><strong>{{ participant_stats.get('completion_rate', 0) }}%</strong><span>завершили начатую игру</span></article>
+    <article class="card"><small>Timeout rate</small><strong>{{ participant_stats.get('timeout_rate', 0) }}%</strong><span>истёк общий таймер</span></article>
+    <article class="card"><small>Попадание в финал</small><strong>{{ participant_stats.get('final_rate', 0) }}%</strong><span>от завершивших</span></article>
+    <article class="card"><small>Позднее прохождение</small><strong>{{ participant_stats.get('late_rate', 0) }}%</strong><span>вне призового окна</span></article>
+    <article class="card"><small>Средняя серия</small><strong>{{ participant_stats.get('average_streak', 0) }}</strong><span>дней</span></article>
+    <article class="card"><small>Медианная серия</small><strong>{{ participant_stats.get('median_streak', 0) }}</strong><span>дней</span></article>
+    <article class="card"><small>Квалифицированные рефералы</small><strong>{{ participant_stats.get('qualified_referrals', 0) }}</strong><span>приглашённый завершил JACKSIDE</span></article>
+    <article class="card"><small>Использование наград</small><strong>{{ participant_stats.get('reward_usage_rate', 0) }}%</strong><span>погашено от выданных</span></article>
+  </div>
+
+  <div class="analytics-split-grid">
+    <section class="card analytics-list-card">
+      <h3>Активность</h3>
+      {% for days in ['3', '7', '14', '30'] %}<p><span>За {{ days }} дн.</span><strong>{{ participant_stats.get('activity', {}).get(days, 0) }}</strong></p>{% endfor %}
+    </section>
+    <section class="card analytics-list-card">
+      <h3>Retention</h3>
+      {% for days in ['1', '7', '30'] %}
+      {% set retention = participant_stats.get('retention', {}).get(days, {}) %}
+      <p><span>D{{ days }}</span><strong>{{ retention.get('rate') ~ '%' if retention.get('rate') is not none else 'Недостаточно данных' }}</strong><small>{{ retention.get('returned', 0) }}/{{ retention.get('eligible', 0) }}</small></p>
+      {% endfor %}
+    </section>
+  </div>
+
+  <div class="section-head"><h2>По экономике</h2></div>
+  <div class="analytics-stat-grid economy-grid">
+    <article class="card"><small>Начислено</small><strong>{{ economy_stats.get('accrued', 0) }}</strong><span>JC без возвратов</span></article>
+    <article class="card"><small>Потрачено</small><strong>{{ economy_stats.get('spent', 0) }}</strong><span>JC</span></article>
+    <article class="card"><small>Возвращено</small><strong>{{ economy_stats.get('refunded', 0) }}</strong><span>JC</span></article>
+    <article class="card"><small>Общий баланс</small><strong>{{ economy_stats.get('current_balance', 0) }}</strong><span>JC у участников</span></article>
+    <article class="card"><small>Активированные карты</small><strong>{{ economy_stats.get('activated', 0) }}</strong><span>получен код</span></article>
+    <article class="card"><small>Погашенные</small><strong>{{ economy_stats.get('redeemed', 0) }}</strong><span>использованы</span></article>
+    <article class="card"><small>Истёкшие</small><strong>{{ economy_stats.get('expired', 0) }}</strong><span>не погашены вовремя</span></article>
+    <article class="card"><small>Неиспользованные</small><strong>{{ economy_stats.get('unused', 0) }}</strong><span>активные карты</span></article>
+    <article class="card"><small>Совместные выплаты</small><strong>{{ economy_stats.get('co_winner_payouts', 0) }}</strong><span>{{ economy_stats.get('co_winner_jackcoin', 0) }} JC</span></article>
+    <article class="card"><small>Ручные разрешения призов</small><strong>{{ economy_stats.get('manual_prize_resolutions', 0) }}</strong><span>закрытые задачи мастера</span></article>
+  </div>
+
+  <div class="analytics-split-grid">
+    <section class="card analytics-list-card">
+      <h3>Начисления по причинам</h3>
+      {% for row in economy_stats.get('accrual_reasons', []) %}<p><span>{{ {'daily_414':'Основная игра','final_prize':'Финальный приз','admin':'Ручное начисление'}.get(row.reason, row.reason) }}</span><strong>{{ row.amount }} JC</strong></p>{% else %}<p class="muted">Начислений пока нет.</p>{% endfor %}
+    </section>
+    <section class="card analytics-list-card">
+      <h3>Списания по наградам</h3>
+      {% for row in economy_stats.get('reward_spend', []) %}<p><span>{{ row.title }}</span><strong>{{ row.amount }} JC</strong></p>{% else %}<p class="muted">Покупок пока нет.</p>{% endfor %}
+    </section>
   </div>
 </section>
 

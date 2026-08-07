@@ -96,7 +96,12 @@ from app.services.daily_414_final import (
     reconcile_final_table,
 )
 from app.services.quiz_mail import send_member_email_code, send_quiz_email_code
-from app.services.jackside_rating import jackside_leaderboard
+from app.services.jackside_analytics import (
+    CACHE_REFRESH_SECONDS,
+    format_duration_ms,
+    get_or_refresh_snapshot,
+    refresh_jackside_analytics,
+)
 from app.services.jackside_copy import result_copy_for_score
 from app.services.jackside_issues import (
     accept_rules as accept_jackside_rules,
@@ -196,12 +201,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 reward_days=settings.reward_retention_days,
                 action_log_days=settings.action_log_retention_days,
             )
+            refresh_jackside_analytics(
+                conn, timezone_name=settings.timezone_name
+            )
         (BASE_DIR / "data" / "uploads").mkdir(parents=True, exist_ok=True)
         yield
 
     app = FastAPI(title="Hi Jack Club Admin Helper", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.settings = settings
     app.state.next_quiz_cleanup_at = datetime.now(timezone.utc) + timedelta(days=1)
+    app.state.next_jackside_analytics_at = datetime.now(timezone.utc) + timedelta(
+        seconds=CACHE_REFRESH_SECONDS
+    )
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key or "development-secret-key-change-before-use",
@@ -231,6 +242,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return local_value.strftime("%d.%m.%Y %H:%M:%S" if with_seconds else "%d.%m.%Y %H:%M")
 
     templates.env.globals["display_datetime"] = display_datetime
+    templates.env.globals["format_duration_ms"] = format_duration_ms
 
     static_dir = BASE_DIR / "app" / "static"
     asset_digest = hashlib.sha256()
@@ -251,6 +263,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         conn, detail_days=settings.quiz_detail_retention_days,
                         reward_days=settings.reward_retention_days,
                         action_log_days=settings.action_log_retention_days,
+                    )
+            except sqlite3.Error:
+                pass
+        if now >= app.state.next_jackside_analytics_at:
+            app.state.next_jackside_analytics_at = now + timedelta(
+                seconds=CACHE_REFRESH_SECONDS
+            )
+            try:
+                with transaction(settings.db_path) as conn:
+                    get_or_refresh_snapshot(
+                        conn,
+                        as_of=now,
+                        timezone_name=settings.timezone_name,
                     )
             except sqlite3.Error:
                 pass
@@ -1685,7 +1710,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def member_account_page(
         request: Request,
         tab: str = "home",
-        section: str = "quiz",
+        section: str = "today",
         ok: str = "",
         error: str = "",
     ):
@@ -1700,8 +1725,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }.get(tab, tab)
         if tab not in {"home", "quizzes", "rating", "vault", "profile"}:
             tab = "home"
-        if section not in {"quiz", "club"}:
-            section = "quiz"
+        section = {"quiz": "month", "all_time": "all"}.get(section, section)
+        if section not in {"today", "month", "all", "club"}:
+            section = "today"
         vault_catalog = []
         vault_active_rewards = []
         vault_reward_history = []
@@ -1710,17 +1736,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifetime_earned = 0
         quiz_stats: dict[str, Any] = {}
         jackside_rating = None
+        jackside_home_rating = None
         jackside_leaderboard_rows = []
+        jackside_analytics_generated_at = ""
         rating_leaderboard = []
         rating_snapshot = None
         with connect(settings.db_path) as conn:
+            analytics_snapshot = get_or_refresh_snapshot(
+                conn, timezone_name=settings.timezone_name
+            )
+            jackside_analytics_generated_at = str(
+                analytics_snapshot.get("generated_at") or ""
+            )
+            all_time_rows = list(analytics_snapshot.get("all_time") or [])
+            player_stats = dict(
+                (analytics_snapshot.get("player_stats") or {}).get(
+                    str(member["client_id"]), {}
+                )
+            )
+            quiz_stats = {
+                "completed_count": 0,
+                "correct_total": 0,
+                "question_total": 0,
+                "accuracy": 0,
+                "average_answer_time_ms": None,
+                "best_result": 0,
+                "perfect_count": 0,
+                "finals_count": 0,
+                "wins_count": 0,
+                "co_wins_count": 0,
+                "current_streak": 0,
+                "best_streak": 0,
+                "jackcoin_earned": 0,
+                "jackcoin_spent": 0,
+                "active_cards": 0,
+                "used_cards": 0,
+                "qualified_referrals": 0,
+                "points": 0,
+                "place": None,
+                "title_code": "rookie",
+                **player_stats,
+            }
+            selected_key = section if section in {"today", "month", "all"} else "month"
+            jackside_leaderboard_rows = list(
+                analytics_snapshot.get(selected_key) or []
+            )
+            jackside_rating = next(
+                (
+                    row
+                    for row in jackside_leaderboard_rows
+                    if int(row["client_id"]) == int(member["client_id"])
+                ),
+                None,
+            )
+            jackside_home_rating = next(
+                (
+                    row
+                    for row in all_time_rows
+                    if int(row["client_id"]) == int(member["client_id"])
+                ),
+                None,
+            )
             balance = jackcoin_balance(conn, int(member["client_id"]))
             history = conn.execute(
                 """
                 SELECT qs.*, qc.title AS campaign_title
                 FROM quiz_submissions qs
-                LEFT JOIN quiz_campaigns qc ON qc.code=qs.campaign_code
+                JOIN quiz_campaigns qc
+                  ON qc.code=qs.campaign_code AND qc.campaign_type='daily_414'
                 WHERE qs.client_id=?
+                  AND IFNULL(qs.main_round_completed, 1)=1
                 ORDER BY qs.created_at DESC LIMIT 50
                 """,
                 (member["client_id"],),
@@ -1753,51 +1838,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     """,
                     (rating_snapshot["id"],),
                 ).fetchall()
-            jackside_leaderboard_rows = jackside_leaderboard(conn)
-            jackside_rating = next(
-                (
-                    row
-                    for row in jackside_leaderboard_rows
-                    if row["client_id"] == int(member["client_id"])
-                ),
-                None,
-            )
-            quiz_stats_row = conn.execute(
-                """
-                SELECT COUNT(*) AS completed_count,
-                       COALESCE(SUM(correct_count), 0) AS correct_total,
-                       COALESCE(SUM(max_correct_count), 0) AS question_total,
-                       COALESCE(SUM(jackcoin_awarded), 0) AS jackcoin_total,
-                       COALESCE(SUM(CASE
-                         WHEN max_correct_count > 0
-                          AND correct_count=max_correct_count THEN 1 ELSE 0 END), 0)
-                         AS perfect_count,
-                       MIN(CASE WHEN completion_time_ms > 0
-                                THEN completion_time_ms END) AS fastest_time_ms
-                FROM quiz_submissions WHERE client_id=?
-                """,
-                (member["client_id"],),
-            ).fetchone()
-            question_total = int(quiz_stats_row["question_total"] or 0)
-            correct_total = int(quiz_stats_row["correct_total"] or 0)
-            accuracy_value = (
-                round(correct_total * 100 / question_total, 1)
-                if question_total
-                else 0
-            )
-            quiz_stats = {
-                "completed_count": int(quiz_stats_row["completed_count"] or 0),
-                "correct_total": correct_total,
-                "question_total": question_total,
-                "accuracy": (
-                    int(accuracy_value)
-                    if float(accuracy_value).is_integer()
-                    else accuracy_value
-                ),
-                "jackcoin_total": int(quiz_stats_row["jackcoin_total"] or 0),
-                "perfect_count": int(quiz_stats_row["perfect_count"] or 0),
-                "fastest_time_ms": quiz_stats_row["fastest_time_ms"],
-            }
             ledger = conn.execute(
                 """
                 SELECT * FROM jackcoin_ledger WHERE client_id=?
@@ -1813,15 +1853,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (member["id"],),
             ).fetchall()
-            lifetime_earned = int(
-                conn.execute(
-                    """
-                    SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0)
-                    FROM jackcoin_ledger WHERE client_id=?
-                    """,
-                    (member["client_id"],),
-                ).fetchone()[0]
-            )
+            lifetime_earned = int(quiz_stats["jackcoin_earned"] or 0)
             streak = conn.execute(
                 "SELECT * FROM daily_414_progress WHERE client_id=?",
                 (member["client_id"],),
@@ -1973,7 +2005,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 rating_leaderboard=rating_leaderboard,
                 rating_snapshot=rating_snapshot,
                 jackside_rating=jackside_rating,
+                jackside_home_rating=jackside_home_rating,
                 jackside_leaderboard=jackside_leaderboard_rows,
+                jackside_analytics_generated_at=jackside_analytics_generated_at,
                 quiz_stats=quiz_stats,
                 ledger=ledger,
                 consents=consents,
@@ -3287,8 +3321,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     answers_json, questions_snapshot_json, score, max_score, correct_count, max_correct_count, passed,
                     bonus_granted, bonus_pending, bonus_type, is_duplicate, is_new_client,
                     quiz_referrer_id, source, completion_time_ms, main_prize_eligible,
-                    main_round_completed, user_agent, ip_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+                    main_round_completed, timed_out, user_agent, ip_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     attempt["id"], attempt["campaign_code"], attempt["campaign_version"], attempt["client_id"], client_row["phone_raw"] or "",
@@ -3298,7 +3332,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     scoring["correct_count"], scoring["max_correct_count"], int(passed), int(bonus_eligible),
                     campaign_row["bonus_preference_code"], attempt["is_new_client"], attempt["quiz_referrer_id"],
                     attempt["source"], completion_time_ms, int(prize_eligible), int(main_completed),
-                    attempt["user_agent"], attempt["ip_hash"],
+                    int(timed_out), attempt["user_agent"], attempt["ip_hash"],
                 ),
             )
             submission_id = int(cursor.lastrowid)
@@ -4968,7 +5002,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/master", response_class=HTMLResponse)
     async def master_page(request: Request, ok: str = "", error: str = "", tab: str = "preferences"):
         require_master(request)
-        if tab not in {"preferences", "admins", "campaigns", "audit"}:
+        if tab not in {"preferences", "admins", "campaigns", "analytics", "audit"}:
             tab = "preferences"
         with connect(settings.db_path) as conn:
             preference_types = conn.execute(
@@ -5027,6 +5061,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             admin_audit = conn.execute(
                 "SELECT * FROM admin_audit_log ORDER BY id DESC LIMIT 100"
             ).fetchall()
+            analytics_snapshot = get_or_refresh_snapshot(
+                conn, timezone_name=settings.timezone_name
+            )
+            jackside_admin_analytics = dict(
+                analytics_snapshot.get("admin") or {}
+            )
+            jackside_analytics_generated_at = str(
+                analytics_snapshot.get("generated_at") or ""
+            )
         return templates.TemplateResponse(
             request,
             "master.html",
@@ -5040,6 +5083,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 counter_preferences=counter_preferences,
                 vault_catalog_rewards=vault_catalog_rewards,
                 admin_audit=admin_audit,
+                jackside_admin_analytics=jackside_admin_analytics,
+                jackside_analytics_generated_at=jackside_analytics_generated_at,
                 current_tab=tab,
                 quiz_public_base_url=settings.quiz_public_base_url.rstrip("/"),
                 club_public_base_url=settings.public_base_url.rstrip("/"),
@@ -5052,6 +5097,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def master_redirect(message: str, *, error: bool = False, tab: str = "preferences") -> RedirectResponse:
         parameter = "error" if error else "ok"
         return RedirectResponse(f"/master?tab={tab}&{parameter}={message}", status_code=303)
+
+    @app.post("/api/master/jackside-analytics/refresh")
+    async def refresh_master_jackside_analytics(
+        request: Request,
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            refresh_jackside_analytics(
+                conn, timezone_name=settings.timezone_name
+            )
+            audit(
+                conn,
+                admin_id=request.session["admin_id"],
+                admin_name=request.session["admin_name"],
+                action="refresh",
+                entity_type="jackside_analytics",
+                entity_id=None,
+                details={"cache_key": "jackside.analytics.v1"},
+            )
+        app.state.next_jackside_analytics_at = datetime.now(timezone.utc) + timedelta(
+            seconds=CACHE_REFRESH_SECONDS
+        )
+        return master_redirect("Статистика JACKSIDE обновлена", tab="analytics")
 
     @app.post("/api/master/preferences/create")
     async def create_preference(
