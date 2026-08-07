@@ -10,6 +10,7 @@
   <button class="{{ 'active' if current_tab=='admins' else '' }}" type="button" data-master-tab="admins">Администраторы</button>
   <button class="{{ 'active' if current_tab=='campaigns' else '' }}" type="button" data-master-tab="campaigns">Кампании квиза</button>
   <button class="{{ 'active' if current_tab=='analytics' else '' }}" type="button" data-master-tab="analytics">JACKSIDE: аналитика</button>
+  <button class="{{ 'active' if current_tab=='engagement' else '' }}" type="button" data-master-tab="engagement">Звания и рефералы</button>
   <button class="{{ 'active' if current_tab=='audit' else '' }}" type="button" data-master-tab="audit">Аудит</button>
 </div>
 
@@ -213,6 +214,56 @@
     {% include "_campaign_archive_card.html" %}
   {% else %}
     <div class="card campaign-empty" data-campaign-kind="archived"><p>Архив пока пуст.</p></div>
+  {% endfor %}
+  </div>
+</section>
+
+<section data-master-panel="engagement" {% if current_tab!='engagement' %}hidden{% endif %}>
+  <div class="section-head"><h2>Квалифицированные рефералы</h2></div>
+  <form class="card master-create" action="/api/master/jackside-referrals/settings" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Награда рефоводу<select name="referrer_preference_code"><option value="">Без материальной награды</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if referral_settings.referrer_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
+    <label>Количество<input name="referrer_amount" type="number" min="0" max="1000" value="{{ referral_settings.referrer_amount }}"></label>
+    <label>Выдача<select name="referrer_delivery_mode"><option value="automatic" {% if referral_settings.referrer_delivery_mode=='automatic' %}selected{% endif %}>Автоматически</option><option value="code" {% if referral_settings.referrer_delivery_mode=='code' %}selected{% endif %}>Кодом</option></select></label>
+    <label>Награда приглашённому<select name="invited_preference_code"><option value="">Без материальной награды</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if referral_settings.invited_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
+    <label>Количество<input name="invited_amount" type="number" min="0" max="1000" value="{{ referral_settings.invited_amount }}"></label>
+    <label>Выдача<select name="invited_delivery_mode"><option value="automatic" {% if referral_settings.invited_delivery_mode=='automatic' %}selected{% endif %}>Автоматически</option><option value="code" {% if referral_settings.invited_delivery_mode=='code' %}selected{% endif %}>Кодом</option></select></label>
+    <button class="primary" type="submit">Сохранить награды</button>
+  </form>
+  <p class="muted">Квалификация: 3 завершённых выпуска JACKSIDE в 3 разные календарные даты. Порог по количеству приглашённых отсутствует; каждая пара засчитывается один раз.</p>
+
+  <div class="section-head"><h2>Создать звание</h2></div>
+  <form class="card master-create" action="/api/master/jackside-titles/create" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Название<input name="name" maxlength="100" required></label>
+    <label>Описание<input name="description" maxlength="500"></label>
+    <label>Иконка<input name="icon" maxlength="100" placeholder="★ или URL"></label>
+    <label>Тип<select name="title_type"><option value="permanent">Постоянное</option><option value="temporary">Временное</option></select></label>
+    <label>Условие<select name="condition_code"><option value="completed_games">Завершённые игры</option><option value="correct_answers">Правильные ответы</option><option value="perfect_games">10/10</option><option value="finals">Финальные столы</option><option value="wins">Победы</option><option value="qualified_referrals">Квалифицированные рефералы</option><option value="best_streak">Лучшая серия</option><option value="current_streak">Текущая серия</option></select></label>
+    <label>Порог<input name="threshold" type="number" min="1" max="100000" value="1"></label>
+    <label>Период<select name="period_code"><option value="all_time">Всё время</option><option value="week">Неделя</option><option value="month">Месяц</option></select></label>
+    <label>Приоритет<input name="priority" type="number" min="0" max="10000" value="100"></label>
+    <label class="check-label"><input name="material_reward_enabled" type="checkbox" value="true"> Материальная награда</label>
+    <label>Награда<select name="material_preference_code"><option value="">Не выбрана</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}">{{ pref.title }}</option>{% endfor %}</select></label>
+    <label>Количество<input name="material_reward_amount" type="number" min="0" max="1000" value="0"></label>
+    <button class="primary" type="submit">Создать звание</button>
+  </form>
+
+  <div class="section-head"><h2>Все звания</h2><span class="muted">{{ title_definitions|length }}</span></div>
+  <div class="master-list">
+  {% for item in title_definitions %}
+    <article class="card master-item {{ '' if item.is_enabled else 'inactive' }}">
+      <div class="master-item-head"><div><h3>{{ item.icon }} {{ item.name }}</h3><code>{{ item.code }}</code></div><span class="type-pill">{{ 'Временное' if item.title_type=='temporary' else 'Постоянное' }}</span></div>
+      <form class="inline-edit" action="/api/master/jackside-titles/{{ item.id }}/update" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Название<input name="name" value="{{ item.name }}" maxlength="100" required></label><label>Описание<input name="description" value="{{ item.description }}" maxlength="500"></label><label>Иконка<input name="icon" value="{{ item.icon }}" maxlength="100"></label>
+        <label>Условие<select name="condition_code">{% for code,label in [('completed_games','Завершённые игры'),('correct_answers','Правильные ответы'),('perfect_games','10/10'),('finals','Финальные столы'),('wins','Победы'),('qualified_referrals','Квалифицированные рефералы'),('best_streak','Лучшая серия'),('current_streak','Текущая серия')] %}<option value="{{ code }}" {% if item.condition_code==code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        <label>Порог<input name="threshold" type="number" min="1" max="100000" value="{{ item.threshold }}"></label><label>Период<select name="period_code"><option value="all_time" {% if item.period_code=='all_time' %}selected{% endif %}>Всё время</option><option value="week" {% if item.period_code=='week' %}selected{% endif %}>Неделя</option><option value="month" {% if item.period_code=='month' %}selected{% endif %}>Месяц</option></select></label><label>Приоритет<input name="priority" type="number" min="0" max="10000" value="{{ item.priority }}"></label>
+        <label class="check-label"><input name="material_reward_enabled" type="checkbox" value="true" {% if item.material_reward_enabled %}checked{% endif %}> Материальная награда</label><label>Награда<select name="material_preference_code"><option value="">Не выбрана</option>{% for pref in counter_preferences %}<option value="{{ pref.code }}" {% if item.material_preference_code==pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label><label>Количество<input name="material_reward_amount" type="number" min="0" max="1000" value="{{ item.material_reward_amount }}"></label>
+        <button class="button" type="submit">Сохранить</button>
+      </form>
+      <form action="/api/master/jackside-titles/{{ item.id }}/toggle" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="{{ 'danger-outline' if item.is_enabled else 'success-outline' }}" type="submit">{{ 'Отключить' if item.is_enabled else 'Включить' }}</button></form>
+    </article>
   {% endfor %}
   </div>
 </section>

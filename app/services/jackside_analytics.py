@@ -438,13 +438,10 @@ def _economy_by_client(conn: sqlite3.Connection) -> dict[int, dict[str, int]]:
         item["used_cards"] = int(row["used_cards"] or 0)
     for row in conn.execute(
         """
-        SELECT qr.referrer_client_id AS client_id, COUNT(*) AS qualified
-        FROM quiz_referrals qr
-        JOIN quiz_submissions qs ON qs.id=qr.submission_id
-        JOIN quiz_campaigns qc
-          ON qc.code=qs.campaign_code AND qc.campaign_type='daily_414'
-        WHERE IFNULL(qs.main_round_completed, 1)=1
-        GROUP BY qr.referrer_client_id
+        SELECT referrer_client_id AS client_id, COUNT(*) AS qualified
+        FROM referral_qualification_progress
+        WHERE qualified_at IS NOT NULL
+        GROUP BY referrer_client_id
         """
     ).fetchall():
         result[int(row["client_id"])]["qualified_referrals"] = int(
@@ -643,11 +640,8 @@ def _admin_analytics(
     qualified_referrals = int(
         conn.execute(
             """
-            SELECT COUNT(*) FROM quiz_referrals qr
-            JOIN quiz_submissions qs ON qs.id=qr.submission_id
-            JOIN quiz_campaigns qc
-              ON qc.code=qs.campaign_code AND qc.campaign_type='daily_414'
-            WHERE IFNULL(qs.main_round_completed, 1)=1
+            SELECT COUNT(*) FROM referral_qualification_progress
+            WHERE qualified_at IS NOT NULL
             """
         ).fetchone()[0]
     )

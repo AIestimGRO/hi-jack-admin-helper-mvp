@@ -232,7 +232,7 @@
         <article><small>Финальные столы</small><strong>{{ quiz_stats.finals_count }}</strong><span>участий</span></article>
         <article><small>Победы</small><strong>{{ quiz_stats.wins_count }}</strong><span>совместных: {{ quiz_stats.co_wins_count }}</span></article>
         <article><small>Текущая серия</small><strong>{{ quiz_stats.current_streak }}</strong><span>лучшая: {{ quiz_stats.best_streak }}</span></article>
-        <article><small>Активный титул</small><strong class="metric-title">{{ title_labels.get(quiz_stats.title_code, 'Новичок') }}</strong><span>{{ quiz_stats.points }} JACKSIDE points</span></article>
+        <article><small>Активное звание</small><strong class="metric-title">{{ engagement.current_title.name if engagement.current_title else title_labels.get(quiz_stats.title_code, 'Новичок') }}</strong><span>{% if engagement.current_title and engagement.current_title.temporary %}временное · {% endif %}{{ quiz_stats.points }} JACKSIDE points</span></article>
       </div>
     </details>
     <details class="member-card account-details">
@@ -244,6 +244,35 @@
         <article><small>Баланс</small><strong>{{ balance }}</strong><span>JACKCOIN доступно</span></article>
       </div>
     </details>
+  </section>
+
+  <section class="member-card engagement-panel">
+    <div class="app-section-head"><div><p class="member-eyebrow">Приглашения</p><h2>Реферальная программа JACKSIDE</h2></div><strong>{{ engagement.referrals.qualified }} квалифицировано</strong></div>
+    <p class="member-muted">Реферал квалифицируется после трёх завершённых выпусков JACKSIDE в три разные календарные даты.</p>
+    <div class="referral-link-box"><input value="{{ referral_link }}" readonly aria-label="Реферальная ссылка"><button class="button" type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">Копировать</button></div>
+    <div class="quiz-stat-board compact referral-stats">
+      <article><small>Переходы</small><strong>{{ engagement.referrals.clicks }}</strong><span>по ссылке</span></article>
+      <article><small>Регистрации</small><strong>{{ engagement.referrals.registrations }}</strong><span>связь зафиксирована</span></article>
+      <article><small>1 день</small><strong>{{ engagement.referrals.one_day }}</strong><span>завершили 1 дату</span></article>
+      <article><small>2 дня</small><strong>{{ engagement.referrals.two_days }}</strong><span>завершили 2 даты</span></article>
+      <article><small>3 дня</small><strong>{{ engagement.referrals.three_days }}</strong><span>дошли до порога</span></article>
+      <article><small>Награды</small><strong>{{ engagement.referrals.rewards_issued }}</strong><span>выдано сторонам</span></article>
+    </div>
+    {% if engagement.active_referral_titles %}<p class="member-muted">Активные реферальные звания: {% for item in engagement.active_referral_titles %}<strong>{{ item.name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+    <details class="account-details"><summary>История приглашений <span>{{ engagement.referrals.history|length }}</span></summary>
+      <div class="engagement-history">{% for row in engagement.referrals.history %}<p><strong>{{ row.display_name }}</strong><span>{{ row.distinct_completed_days }}/3 дней{% if row.qualified_at %} · квалифицирован{% endif %}</span></p>{% else %}<p class="member-muted">Приглашений пока нет.</p>{% endfor %}</div>
+    </details>
+  </section>
+
+  <section class="member-card engagement-panel">
+    <div class="app-section-head"><div><p class="member-eyebrow">Профиль игрока</p><h2>Достижения и звания</h2></div></div>
+    {% set unread = engagement.notifications|selectattr('read_at', 'equalto', none)|list %}
+    {% if unread %}<div class="engagement-notifications"><strong>Новое</strong>{% for item in unread[:5] %}<p><b>{{ item.title }}</b><span>{{ item.body }}</span></p>{% endfor %}<form action="/account/notifications/read" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button" type="submit">Отметить прочитанным</button></form></div>{% endif %}
+    <details class="account-details" open><summary>Постоянные звания <span>{{ engagement.permanent_titles|length }}</span></summary>
+      <div class="title-choice-list">{% for item in engagement.permanent_titles %}<article><span class="engagement-icon">{{ item.icon }}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }}</small></div>{% if item.selected %}<span class="type-pill">Выбрано</span>{% else %}<form action="/account/titles/{{ item.member_title_id }}/select" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button" type="submit">Выбрать</button></form>{% endif %}</article>{% else %}<p class="member-muted">Звания откроются по мере игры.</p>{% endfor %}</div>
+    </details>
+    <details class="account-details"><summary>Временные звания <span>{{ engagement.temporary_titles|length }}</span></summary><div class="title-choice-list">{% for item in engagement.temporary_titles %}<article><span class="engagement-icon">{{ item.icon }}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }} · до {{ display_datetime(item.expires_at) if item.expires_at else '—' }}</small></div></article>{% else %}<p class="member-muted">Временных званий пока нет.</p>{% endfor %}</div></details>
+    <details class="account-details"><summary>Достижения <span>{{ engagement.achievements|length }}</span></summary><div class="title-choice-list">{% for item in engagement.achievements %}<article><span class="engagement-icon">{{ item.icon }}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }}</small></div></article>{% else %}<p class="member-muted">Первое достижение появится после завершённой игры.</p>{% endfor %}</div></details>
   </section>
 
   <section class="jackside-rating-section">

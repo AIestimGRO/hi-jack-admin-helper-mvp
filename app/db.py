@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-SCHEMA_VERSION = "2026.08.06.jackside-ratings"
+SCHEMA_VERSION = "2026.08.07.jackside-engagement"
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -1008,6 +1008,7 @@ def init_db(db_path: str | Path) -> None:
             """
         )
         conn.execute("INSERT OR IGNORE INTO jackside_analytics_state(id) VALUES (1)")
+        _ensure_jackside_engagement_schema(conn)
         analytics_tables = (
             "quiz_submissions",
             "daily_414_final_tables",
@@ -1018,6 +1019,7 @@ def init_db(db_path: str | Path) -> None:
             "quiz_referrals",
             "member_accounts",
             "clients",
+            "referral_qualification_progress",
         )
         for table_name in analytics_tables:
             for action in ("INSERT", "UPDATE", "DELETE"):
@@ -1243,6 +1245,235 @@ def init_db(db_path: str | Path) -> None:
         ):
             conn.execute(statement)
 
+
+
+def _ensure_jackside_engagement_schema(conn: sqlite3.Connection) -> None:
+    statements = (
+        """
+        CREATE TABLE IF NOT EXISTS achievement_definitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            icon TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL DEFAULT 'general',
+            condition_code TEXT NOT NULL,
+            threshold INTEGER NOT NULL DEFAULT 1 CHECK(threshold >= 1),
+            material_reward_enabled INTEGER NOT NULL DEFAULT 0,
+            material_preference_code TEXT,
+            material_reward_amount INTEGER NOT NULL DEFAULT 0,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            position INTEGER NOT NULL DEFAULT 100,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS member_achievements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+            achievement_id INTEGER NOT NULL REFERENCES achievement_definitions(id) ON DELETE CASCADE,
+            awarded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            source_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(client_id, achievement_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS title_definitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            icon TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL DEFAULT 'general',
+            title_type TEXT NOT NULL DEFAULT 'permanent' CHECK(title_type IN ('permanent','temporary')),
+            condition_code TEXT NOT NULL,
+            threshold INTEGER NOT NULL DEFAULT 1 CHECK(threshold >= 1),
+            period_code TEXT NOT NULL DEFAULT 'all_time' CHECK(period_code IN ('all_time','week','month')),
+            priority INTEGER NOT NULL DEFAULT 100,
+            material_reward_enabled INTEGER NOT NULL DEFAULT 0,
+            material_preference_code TEXT,
+            material_reward_amount INTEGER NOT NULL DEFAULT 0,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS temporary_title_periods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title_definition_id INTEGER NOT NULL REFERENCES title_definitions(id) ON DELETE CASCADE,
+            period_key TEXT NOT NULL,
+            starts_at TEXT NOT NULL,
+            ends_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(title_definition_id, period_key)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS member_titles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+            title_definition_id INTEGER NOT NULL REFERENCES title_definitions(id) ON DELETE CASCADE,
+            temporary_period_id INTEGER REFERENCES temporary_title_periods(id) ON DELETE SET NULL,
+            selected INTEGER NOT NULL DEFAULT 0,
+            awarded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT,
+            source_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(client_id, title_definition_id, temporary_period_id)
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_member_titles_selected_permanent
+        ON member_titles(client_id) WHERE selected=1 AND temporary_period_id IS NULL
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS referral_qualification_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+            invited_client_id INTEGER NOT NULL UNIQUE REFERENCES clients(id) ON DELETE CASCADE,
+            referral_code_id INTEGER REFERENCES quiz_referral_codes(id) ON DELETE SET NULL,
+            source_campaign_code TEXT,
+            distinct_completed_days INTEGER NOT NULL DEFAULT 0,
+            first_completed_date TEXT,
+            second_completed_date TEXT,
+            qualified_date TEXT,
+            qualified_at TEXT,
+            referrer_reward_id INTEGER REFERENCES quiz_reward_codes(id) ON DELETE SET NULL,
+            invited_reward_id INTEGER REFERENCES quiz_reward_codes(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CHECK(referrer_client_id <> invited_client_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS jackside_referral_settings (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            referrer_preference_code TEXT,
+            referrer_amount INTEGER NOT NULL DEFAULT 0,
+            referrer_delivery_mode TEXT NOT NULL DEFAULT 'automatic' CHECK(referrer_delivery_mode IN ('automatic','code')),
+            invited_preference_code TEXT,
+            invited_amount INTEGER NOT NULL DEFAULT 0,
+            invited_delivery_mode TEXT NOT NULL DEFAULT 'automatic' CHECK(invited_delivery_mode IN ('automatic','code')),
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        "INSERT OR IGNORE INTO jackside_referral_settings(id) VALUES (1)",
+        """
+        CREATE TABLE IF NOT EXISTS jackside_referral_clicks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referral_code_id INTEGER NOT NULL REFERENCES quiz_referral_codes(id) ON DELETE CASCADE,
+            referrer_client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+            campaign_code TEXT,
+            clicked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            ip_hash TEXT NOT NULL DEFAULT ''
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS engagement_reward_grants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+            member_achievement_id INTEGER REFERENCES member_achievements(id) ON DELETE CASCADE,
+            member_title_id INTEGER REFERENCES member_titles(id) ON DELETE CASCADE,
+            reward_id INTEGER REFERENCES quiz_reward_codes(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CHECK((member_achievement_id IS NOT NULL) <> (member_title_id IS NOT NULL))
+        )
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_engagement_reward_achievement ON engagement_reward_grants(member_achievement_id) WHERE member_achievement_id IS NOT NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_engagement_reward_title ON engagement_reward_grants(member_title_id) WHERE member_title_id IS NOT NULL",
+        """
+        CREATE TABLE IF NOT EXISTS member_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+            notification_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL DEFAULT '',
+            entity_type TEXT,
+            entity_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            read_at TEXT,
+            UNIQUE(client_id, notification_type, entity_type, entity_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_referral_progress_referrer ON referral_qualification_progress(referrer_client_id, qualified_at, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_referral_clicks_referrer ON jackside_referral_clicks(referrer_client_id, clicked_at)",
+        "CREATE INDEX IF NOT EXISTS ix_member_achievements_client ON member_achievements(client_id, awarded_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_member_titles_client ON member_titles(client_id, awarded_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_member_notifications_unread ON member_notifications(client_id, read_at, created_at DESC)",
+    )
+    for statement in statements:
+        conn.execute(statement)
+
+    achievements = (
+        ('first_table', 'Сел за стол', 'Заверши первый выпуск JACKSIDE.', '♠', 'stability', 'completed_games', 1, 10),
+        ('regular_jackside', 'Регуляр JACKSIDE', 'Заверши 10 выпусков JACKSIDE.', '♦', 'stability', 'completed_games', 10, 20),
+        ('strong_preflop', 'Крепкий префлоп', 'Дай 50 правильных ответов в завершённых играх.', '♣', 'knowledge', 'correct_answers', 50, 30),
+        ('finalist', 'Финалист', 'Попади за финальный стол.', '★', 'finals', 'finals', 1, 40),
+        ('brought_player', 'Привёл игрока', 'Получи первого квалифицированного реферала.', '↗', 'referrals', 'qualified_referrals', 1, 50),
+        ('perfect_game', 'Натсовый разум', 'Заверши игру со счётом 10/10.', '10', 'knowledge', 'perfect_games', 1, 60),
+    )
+    for row in achievements:
+        conn.execute(
+            """INSERT OR IGNORE INTO achievement_definitions
+               (code,name,description,icon,category,condition_code,threshold,position)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            row,
+        )
+
+    titles = (
+        ('sat_table','Сел за стол','Первый завершённый выпуск.','♠','stability','permanent','completed_games',1,'all_time',10),
+        ('jackside_regular','Регуляр JACKSIDE','10 завершённых выпусков.','♦','stability','permanent','completed_games',10,'all_time',20),
+        ('iron_streak','Железная серия','Серия минимум 7 игровых дней.','⛓','stability','permanent','best_streak',7,'all_time',30),
+        ('never_misses','Не пропускает раздачу','30 завершённых выпусков.','✓','stability','permanent','completed_games',30,'all_time',40),
+        ('strong_preflop','Крепкий префлоп','50 правильных ответов.','♣','knowledge','permanent','correct_answers',50,'all_time',50),
+        ('turn_master','Тёрн-мастер','150 правильных ответов.','T','knowledge','permanent','correct_answers',150,'all_time',60),
+        ('river_predator','Риверный хищник','300 правильных ответов.','R','knowledge','permanent','correct_answers',300,'all_time',70),
+        ('nuts_mind','Натсовый разум','5 результатов 10/10.','10','knowledge','permanent','perfect_games',5,'all_time',80),
+        ('finalist','Финалист','Первое участие в финальном столе.','★','finals','permanent','finals',1,'all_time',90),
+        ('heads_up_master','Хедз-ап мастер','3 победы в финале.','HU','finals','permanent','wins',3,'all_time',100),
+        ('final_table_owner','Хозяин финального стола','10 побед в финале.','♛','finals','permanent','wins',10,'all_time',110),
+        ('jackside_legend','Легенда JACKSIDE','25 побед в финале.','L','finals','permanent','wins',25,'all_time',120),
+        ('brought_player','Привёл игрока','Первый квалифицированный реферал.','↗','referrals','permanent','qualified_referrals',1,'all_time',130),
+        ('built_table','Собрал стол','5 квалифицированных рефералов.','5','referrals','permanent','qualified_referrals',5,'all_time',140),
+        ('table_owner','Хозяин стола','10 квалифицированных рефералов.','10','referrals','permanent','qualified_referrals',10,'all_time',150),
+        ('honored_referrer','Почётный рефовод Hi, Jack!','25 квалифицированных рефералов.','HJ','referrals','permanent','qualified_referrals',25,'all_time',160),
+        ('weekly_inviter','Зазывала недели','Хотя бы 1 квалифицированный реферал за текущую неделю.','W','referrals','temporary','qualified_referrals',1,'week',500),
+        ('monthly_inviter','Зазывала месяца','Квалифицированные рефералы текущего месяца.','M','referrals','temporary','qualified_referrals',3,'month',510),
+        ('monthly_shark','Шарк месяца','Победы в финале текущего месяца.','S','finals','temporary','wins',2,'month',520),
+        ('monthly_nuts','Натс месяца','Результаты 10/10 текущего месяца.','N','knowledge','temporary','perfect_games',2,'month',530),
+        ('monthly_iron_streak','Железная серия месяца','Серия 7 дней внутри месяца.','⛓','stability','temporary','best_streak',7,'month',540),
+    )
+    for row in titles:
+        conn.execute(
+            """INSERT OR IGNORE INTO title_definitions
+               (code,name,description,icon,category,title_type,condition_code,threshold,period_code,priority)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            row,
+        )
+
+    # Preserve legacy daily_414 referral ownership. The earliest recorded
+    # JACKSIDE referral fixes the owner; later campaign-level rows cannot replace it.
+    legacy_rows = conn.execute(
+        """
+        SELECT qr.referrer_client_id, qr.invited_client_id, qr.referral_code_id,
+               qr.campaign_code, qr.created_at
+        FROM quiz_referrals qr
+        JOIN quiz_campaigns qc ON qc.code=qr.campaign_code
+        WHERE qc.campaign_type='daily_414'
+        ORDER BY qr.created_at, qr.id
+        """
+    ).fetchall()
+    for legacy in legacy_rows:
+        if int(legacy["referrer_client_id"]) == int(legacy["invited_client_id"]):
+            continue
+        conn.execute(
+            """INSERT OR IGNORE INTO referral_qualification_progress(
+                   referrer_client_id, invited_client_id, referral_code_id, source_campaign_code, created_at
+               ) VALUES (?,?,?,?,?)""",
+            (legacy["referrer_client_id"], legacy["invited_client_id"],
+             legacy["referral_code_id"], legacy["campaign_code"], legacy["created_at"]),
+        )
 
 def _ensure_column(conn: sqlite3.Connection, table: str, definition: str) -> bool:
     column = definition.split()[0]

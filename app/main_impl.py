@@ -103,11 +103,20 @@ from app.services.jackside_analytics import (
     refresh_jackside_analytics,
 )
 from app.services.jackside_copy import result_copy_for_score
+from app.services.jackside_engagement import (
+    ensure_jackside_referral_code,
+    fix_jackside_referral,
+    process_referral_qualification,
+    record_referral_click,
+    refresh_member_engagement,
+    select_permanent_title,
+)
 from app.services.jackside_issues import (
     accept_rules as accept_jackside_rules,
     active_rules as active_jackside_rules,
     campaign_audience_counts,
     copy_issue,
+    current_featured_issue,
     create_issue,
     effective_campaign_schedule,
     list_issues,
@@ -1741,6 +1750,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jackside_analytics_generated_at = ""
         rating_leaderboard = []
         rating_snapshot = None
+        with transaction(settings.db_path) as conn:
+            engagement = refresh_member_engagement(
+                conn,
+                client_id=int(member["client_id"]),
+                timezone_name=settings.timezone_name,
+            )
+            referral_link = (
+                f"{settings.public_base_url.rstrip('/')}/jackside/ref/"
+                f"{engagement['referrals']['code']}"
+            )
         with connect(settings.db_path) as conn:
             analytics_snapshot = get_or_refresh_snapshot(
                 conn, timezone_name=settings.timezone_name
@@ -2021,10 +2040,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 vault_reward_history=vault_reward_history,
                 vault_purchase_tokens=vault_purchase_tokens,
                 vault_activation_minutes=settings.vault_activation_minutes,
+                engagement=engagement,
+                referral_link=referral_link,
                 ok=ok,
                 error=error,
             ),
         )
+
+    @app.post("/account/titles/{member_title_id:int}/select")
+    async def member_select_title(
+        request: Request, member_title_id: int, csrf_token: str = Form(...)
+    ):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                select_permanent_title(
+                    conn,
+                    client_id=int(member["client_id"]),
+                    member_title_id=member_title_id,
+                )
+        except ValueError:
+            return member_redirect(
+                "/account?tab=rating&section=all",
+                "Это звание нельзя выбрать",
+                error=True,
+            )
+        return member_redirect(
+            "/account?tab=rating&section=all", "Активное звание обновлено"
+        )
+
+    @app.post("/account/notifications/read")
+    async def member_notifications_read(request: Request, csrf_token: str = Form(...)):
+        member_portal_or_404()
+        member = current_member(request, required=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                "UPDATE member_notifications SET read_at=CURRENT_TIMESTAMP WHERE client_id=? AND read_at IS NULL",
+                (int(member["client_id"]),),
+            )
+        return member_redirect("/account?tab=rating&section=all", "Уведомления прочитаны")
 
     def vault_member_redirect(message: str, *, error: bool = False) -> RedirectResponse:
         parameter = "error" if error else "ok"
@@ -2203,6 +2260,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             member_continue_path(request, consume=True), status_code=303
         )
 
+    @app.get("/jackside/ref/{code}")
+    async def jackside_referral_entry(request: Request, code: str):
+        client_ip = request.client.host if request.client else "unknown"
+        ip_hash = ip_fingerprint(settings.secret_key, client_ip)
+        with transaction(settings.db_path) as conn:
+            featured = current_featured_issue(
+                conn,
+                now=datetime.now(timezone.utc),
+                timezone_name=settings.timezone_name,
+            )
+            campaign_code = str(featured.get("campaign_code") or "") if featured else ""
+            owner = record_referral_click(
+                conn,
+                code=code,
+                campaign_code=campaign_code or None,
+                ip_hash=ip_hash,
+            )
+        if not owner:
+            raise HTTPException(status_code=404, detail="Реферальная ссылка не найдена")
+        if not campaign_code:
+            return RedirectResponse("/account", status_code=303)
+        return RedirectResponse(
+            f"/quiz?{urlencode({'campaign': campaign_code, 'ref': code, 'source': 'jackside_referral'})}",
+            status_code=303,
+        )
+
     @app.get("/quiz", response_class=HTMLResponse)
     async def quiz_page(
         request: Request,
@@ -2228,7 +2311,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if missing_member_documents(int(member["id"])):
                 remember_member_next(request, current_path)
                 return RedirectResponse("/account/consents", status_code=303)
-            with connect(settings.db_path) as conn:
+            with transaction(settings.db_path) as conn:
+                if ref or referrer_id:
+                    fix_jackside_referral(
+                        conn,
+                        invited_client_id=int(member["client_id"]),
+                        referral_code=(ref or referrer_id).strip()[:80],
+                        campaign_code=campaign,
+                    )
                 issue_row = get_issue_by_campaign(conn, campaign)
                 missing_rules = (
                     missing_jackside_rules(conn, account_id=int(member["id"]))
@@ -2995,6 +3085,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         email=email, telegram_user_id=telegram_user_id, source=source, referrer_id=referrer_id,
                     )
                 if campaign_row["campaign_type"] == "daily_414":
+                    if referrer_id:
+                        fix_jackside_referral(
+                            conn,
+                            invited_client_id=client_id,
+                            referral_code=referrer_id,
+                            campaign_code=campaign,
+                        )
                     from app.services.jackside_issues import get_issue_by_campaign
 
                     issue_row = get_issue_by_campaign(conn, campaign)
@@ -3429,7 +3526,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             referral_count = 0
             referral_code = str(attempt["quiz_referrer_id"] or "")
             referral_allowed = (not is_daily_414) or main_completed
-            if campaign_row["referral_enabled"] and referral_code and referral_allowed:
+            if (not is_daily_414) and campaign_row["referral_enabled"] and referral_code and referral_allowed:
                 referral_owner = conn.execute(
                     "SELECT * FROM quiz_referral_codes WHERE code=? AND campaign_code=?",
                     (referral_code, attempt["campaign_code"]),
@@ -3466,7 +3563,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 (referral_reward["id"], attempt["campaign_code"], attempt["client_id"]),
                             )
             own_referral = None
-            if campaign_row["referral_enabled"]:
+            if is_daily_414:
+                own_referral = ensure_jackside_referral_code(
+                    conn, int(attempt["client_id"])
+                )
+                if main_completed:
+                    process_referral_qualification(
+                        conn,
+                        invited_client_id=int(attempt["client_id"]),
+                        submission_id=submission_id,
+                        timezone_name=settings.timezone_name,
+                    )
+                    refresh_member_engagement(
+                        conn,
+                        client_id=int(attempt["client_id"]),
+                        timezone_name=settings.timezone_name,
+                    )
+            elif campaign_row["referral_enabled"]:
                 own_referral = conn.execute(
                     "SELECT * FROM quiz_referral_codes WHERE client_id=? AND campaign_code=?",
                     (attempt["client_id"], attempt["campaign_code"]),
@@ -3635,8 +3748,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ),
             "participant_count": participant_count,
             "share_url": (
-                f"{(settings.public_base_url if is_daily_414 else settings.quiz_public_base_url).rstrip('/')}/quiz?campaign={quote(attempt['campaign_code'])}&ref={quote(own_referral['code'])}"
-                if own_referral else None
+                (
+                    f"{settings.public_base_url.rstrip('/')}/jackside/ref/{quote(own_referral['code'])}"
+                    if is_daily_414
+                    else f"{settings.quiz_public_base_url.rstrip('/')}/quiz?campaign={quote(attempt['campaign_code'])}&ref={quote(own_referral['code'])}"
+                ) if own_referral else None
             ),
             "referral_count": referral_count,
             "referral_reward_issued": bool(referral_reward),
@@ -3773,6 +3889,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             "SELECT * FROM daily_414_final_tables WHERE id=?",
                             (table["id"],),
                         ).fetchone()
+                    if table["status"] == "completed":
+                        for finalist_row in conn.execute(
+                            "SELECT client_id FROM daily_414_finalists WHERE final_table_id=?",
+                            (table["id"],),
+                        ).fetchall():
+                            refresh_member_engagement(
+                                conn,
+                                client_id=int(finalist_row["client_id"]),
+                                timezone_name=settings.timezone_name,
+                            )
             elif table is None:
                 raise HTTPException(
                     status_code=409, detail="Финальный стол ещё не сформирован"
@@ -5002,7 +5128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/master", response_class=HTMLResponse)
     async def master_page(request: Request, ok: str = "", error: str = "", tab: str = "preferences"):
         require_master(request)
-        if tab not in {"preferences", "admins", "campaigns", "analytics", "audit"}:
+        if tab not in {"preferences", "admins", "campaigns", "analytics", "engagement", "audit"}:
             tab = "preferences"
         with connect(settings.db_path) as conn:
             preference_types = conn.execute(
@@ -5070,6 +5196,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             jackside_analytics_generated_at = str(
                 analytics_snapshot.get("generated_at") or ""
             )
+            title_definitions = conn.execute(
+                "SELECT * FROM title_definitions ORDER BY title_type, priority, id"
+            ).fetchall()
+            referral_settings = conn.execute(
+                "SELECT * FROM jackside_referral_settings WHERE id=1"
+            ).fetchone()
         return templates.TemplateResponse(
             request,
             "master.html",
@@ -5085,6 +5217,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 admin_audit=admin_audit,
                 jackside_admin_analytics=jackside_admin_analytics,
                 jackside_analytics_generated_at=jackside_analytics_generated_at,
+                title_definitions=title_definitions,
+                referral_settings=referral_settings,
                 current_tab=tab,
                 quiz_public_base_url=settings.quiz_public_base_url.rstrip("/"),
                 club_public_base_url=settings.public_base_url.rstrip("/"),
@@ -5097,6 +5231,118 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def master_redirect(message: str, *, error: bool = False, tab: str = "preferences") -> RedirectResponse:
         parameter = "error" if error else "ok"
         return RedirectResponse(f"/master?tab={tab}&{parameter}={message}", status_code=303)
+
+    @app.post("/api/master/jackside-titles/create")
+    async def master_create_jackside_title(
+        request: Request,
+        name: str = Form(...),
+        description: str = Form(""),
+        icon: str = Form(""),
+        title_type: str = Form("permanent"),
+        condition_code: str = Form(...),
+        threshold: int = Form(1),
+        period_code: str = Form("all_time"),
+        priority: int = Form(100),
+        material_reward_enabled: bool = Form(False),
+        material_preference_code: str = Form(""),
+        material_reward_amount: int = Form(0),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        allowed_conditions = {"completed_games","correct_answers","perfect_games","finals","wins","qualified_referrals","best_streak","current_streak"}
+        if title_type not in {"permanent","temporary"} or condition_code not in allowed_conditions:
+            return master_redirect("Некорректное правило звания", error=True, tab="engagement")
+        if period_code not in {"all_time","week","month"}:
+            return master_redirect("Некорректный период", error=True, tab="engagement")
+        if title_type == "permanent":
+            period_code = "all_time"
+        clean_name = name.strip()[:100]
+        if not clean_name or threshold < 1:
+            return master_redirect("Укажи название и порог", error=True, tab="engagement")
+        code = f"custom_{uuid.uuid4().hex[:12]}"
+        with transaction(settings.db_path) as conn:
+            cursor = conn.execute(
+                """INSERT INTO title_definitions(
+                       code,name,description,icon,title_type,condition_code,threshold,period_code,priority,
+                       material_reward_enabled,material_preference_code,material_reward_amount
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (code, clean_name, description.strip()[:500], icon.strip()[:100], title_type,
+                 condition_code, min(100000, threshold), period_code, max(0,min(priority,10000)),
+                 int(material_reward_enabled), material_preference_code.strip() or None,
+                 max(0,min(material_reward_amount,1000))),
+            )
+            audit(conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                  action="create", entity_type="title_definition", entity_id=int(cursor.lastrowid),
+                  details={"name": clean_name, "condition": condition_code, "threshold": threshold})
+        return master_redirect("Звание создано", tab="engagement")
+
+    @app.post("/api/master/jackside-titles/{title_id:int}/update")
+    async def master_update_jackside_title(
+        request: Request, title_id: int,
+        name: str = Form(...), description: str = Form(""), icon: str = Form(""),
+        condition_code: str = Form(...), threshold: int = Form(1),
+        period_code: str = Form("all_time"), priority: int = Form(100),
+        material_reward_enabled: bool = Form(False), material_preference_code: str = Form(""),
+        material_reward_amount: int = Form(0), csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        allowed_conditions = {"completed_games","correct_answers","perfect_games","finals","wins","qualified_referrals","best_streak","current_streak"}
+        if condition_code not in allowed_conditions or period_code not in {"all_time","week","month"}:
+            return master_redirect("Некорректное правило", error=True, tab="engagement")
+        with transaction(settings.db_path) as conn:
+            row = conn.execute("SELECT * FROM title_definitions WHERE id=?", (title_id,)).fetchone()
+            if not row:
+                return master_redirect("Звание не найдено", error=True, tab="engagement")
+            if row["title_type"] == "permanent":
+                period_code = "all_time"
+            conn.execute(
+                """UPDATE title_definitions SET name=?,description=?,icon=?,condition_code=?,threshold=?,period_code=?,priority=?,
+                       material_reward_enabled=?,material_preference_code=?,material_reward_amount=?,updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                (name.strip()[:100], description.strip()[:500], icon.strip()[:100], condition_code,
+                 max(1,min(threshold,100000)), period_code, max(0,min(priority,10000)), int(material_reward_enabled),
+                 material_preference_code.strip() or None, max(0,min(material_reward_amount,1000)), title_id),
+            )
+            audit(conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                  action="update", entity_type="title_definition", entity_id=title_id,
+                  details={"name": name.strip(), "threshold": threshold})
+        return master_redirect("Звание обновлено", tab="engagement")
+
+    @app.post("/api/master/jackside-titles/{title_id:int}/toggle")
+    async def master_toggle_jackside_title(request: Request, title_id: int, csrf_token: str = Form(...)):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        with transaction(settings.db_path) as conn:
+            row = conn.execute("SELECT is_enabled FROM title_definitions WHERE id=?", (title_id,)).fetchone()
+            if not row:
+                return master_redirect("Звание не найдено", error=True, tab="engagement")
+            conn.execute("UPDATE title_definitions SET is_enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (0 if row["is_enabled"] else 1,title_id))
+        return master_redirect("Статус звания обновлён", tab="engagement")
+
+    @app.post("/api/master/jackside-referrals/settings")
+    async def master_update_jackside_referrals(
+        request: Request,
+        referrer_preference_code: str = Form(""), referrer_amount: int = Form(0),
+        referrer_delivery_mode: str = Form("automatic"), invited_preference_code: str = Form(""),
+        invited_amount: int = Form(0), invited_delivery_mode: str = Form("automatic"),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        if referrer_delivery_mode not in {"automatic","code"} or invited_delivery_mode not in {"automatic","code"}:
+            return master_redirect("Некорректный способ выдачи", error=True, tab="engagement")
+        with transaction(settings.db_path) as conn:
+            conn.execute(
+                """UPDATE jackside_referral_settings SET referrer_preference_code=?,referrer_amount=?,referrer_delivery_mode=?,
+                       invited_preference_code=?,invited_amount=?,invited_delivery_mode=?,updated_at=CURRENT_TIMESTAMP WHERE id=1""",
+                (referrer_preference_code.strip() or None,max(0,min(referrer_amount,1000)),referrer_delivery_mode,
+                 invited_preference_code.strip() or None,max(0,min(invited_amount,1000)),invited_delivery_mode),
+            )
+            audit(conn, admin_id=request.session["admin_id"], admin_name=request.session["admin_name"],
+                  action="update", entity_type="jackside_referral_settings", entity_id=1,
+                  details={"referrer_amount":referrer_amount,"invited_amount":invited_amount})
+        return master_redirect("Реферальные награды обновлены", tab="engagement")
 
     @app.post("/api/master/jackside-analytics/refresh")
     async def refresh_master_jackside_analytics(
