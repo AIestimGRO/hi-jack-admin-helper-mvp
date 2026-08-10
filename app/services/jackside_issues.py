@@ -57,6 +57,74 @@ def _parse_dt(value: str | None) -> datetime | None:
     return _as_utc(parsed)
 
 
+def _ensure_shared_main_clock(conn: sqlite3.Connection) -> None:
+    """Install additive runtime guards for the one shared JACKSIDE 4:14 clock.
+
+    The issue table stores the authoritative UTC start. Attempts created after
+    the issue starts therefore inherit the same absolute deadline instead of a
+    fresh personal 4:14. Submission time is also converted from personal
+    elapsed time to elapsed time since the issue start before ranking queries
+    can read the row.
+    """
+    conn.execute(
+        f"""
+        CREATE TRIGGER IF NOT EXISTS trg_jackside_shared_attempt_deadline
+        AFTER INSERT ON quiz_attempts
+        WHEN EXISTS (
+            SELECT 1 FROM jackside_issues ji
+            WHERE ji.campaign_code=NEW.campaign_code
+        )
+        BEGIN
+          UPDATE quiz_attempts
+          SET attempt_deadline_at=(
+                SELECT strftime(
+                    '%Y-%m-%dT%H:%M:%f+00:00', ji.starts_at,
+                    '+{DAILY_414_TIME_LIMIT_SECONDS} seconds'
+                )
+                FROM jackside_issues ji
+                WHERE ji.campaign_code=NEW.campaign_code
+                LIMIT 1
+              )
+          WHERE id=NEW.id;
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_jackside_global_completion_time
+        AFTER INSERT ON quiz_submissions
+        WHEN NEW.attempt_id IS NOT NULL
+          AND NEW.completion_time_ms IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM jackside_issues ji
+              WHERE ji.campaign_code=NEW.campaign_code
+          )
+        BEGIN
+          UPDATE quiz_submissions
+          SET completion_time_ms=MAX(
+                0,
+                CAST(ROUND(
+                    NEW.completion_time_ms +
+                    (
+                      julianday((
+                          SELECT qa.question_started_at
+                          FROM quiz_attempts qa WHERE qa.id=NEW.attempt_id
+                      )) -
+                      julianday((
+                          SELECT ji.starts_at
+                          FROM jackside_issues ji
+                          WHERE ji.campaign_code=NEW.campaign_code
+                          LIMIT 1
+                      ))
+                    ) * 86400000.0
+                ) AS INTEGER)
+              )
+          WHERE id=NEW.id;
+        END
+        """
+    )
+
+
 def ensure_default_rules(conn: sqlite3.Connection) -> sqlite3.Row:
     row = conn.execute(
         """
@@ -650,6 +718,7 @@ def ensure_issue_campaign(
     issue: sqlite3.Row,
     timezone_name: str = "Europe/Moscow",
 ) -> sqlite3.Row:
+    _ensure_shared_main_clock(conn)
     code = str(issue["campaign_code"])
     campaign = conn.execute(
         "SELECT * FROM quiz_campaigns WHERE code=?", (code,)
@@ -676,7 +745,7 @@ def ensure_issue_campaign(
         ) VALUES (
             ?, ?, 'daily_414', 0, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?,
             'JACKSIDE 4:14',
-            'Один стол на весь клуб. 10 вопросов. 4:14. Одна попытка.',
+            'Один стол на весь клуб. 10 вопросов. Общий таймер 4:14 идёт от старта выпуска.',
             'ЗАНЯТЬ МЕСТО', 1
         )
         """,
@@ -814,8 +883,7 @@ def compute_issue_status(
             return "closed"
         return "final_live"
     if now_utc >= starts:
-        # Main window still open until final start for late diagnostics;
-        # product keeps per-player timer, not a global main deadline.
+        # There is one shared main-round deadline for every player.
         if now_utc >= starts + timedelta(seconds=DAILY_414_ENTRY_WINDOW_SECONDS):
             return "waiting_final"
         return "main_live"
@@ -871,6 +939,25 @@ def register_issue_participant(
     account_id: int | None,
 ) -> bool:
     """Return True if this is the first unique join for the account/client."""
+    _ensure_shared_main_clock(conn)
+    issue = get_issue(conn, issue_id)
+    if issue and issue["starts_at"] and issue["campaign_code"]:
+        starts = _parse_dt(str(issue["starts_at"]))
+        if starts:
+            deadline = starts + timedelta(seconds=DAILY_414_TIME_LIMIT_SECONDS)
+            # Also tighten an already-created in-progress attempt after a hot
+            # deploy; this update is idempotent because the deadline is absolute.
+            conn.execute(
+                """
+                UPDATE quiz_attempts
+                SET attempt_deadline_at=?
+                WHERE campaign_code=? AND status='in_progress'
+                """,
+                (
+                    deadline.isoformat(timespec="milliseconds"),
+                    issue["campaign_code"],
+                ),
+            )
     existing = conn.execute(
         """
         SELECT id FROM jackside_issue_participants
@@ -1002,6 +1089,7 @@ def resolve_issue_for_campaign(
         return legacy_issue_from_campaign(
             conn, campaign, now=now, timezone_name=timezone_name
         )
+    _ensure_shared_main_clock(conn)
     issue = dict(row)
     final_table = None
     campaign_version = int(campaign["current_version"] or 1)
