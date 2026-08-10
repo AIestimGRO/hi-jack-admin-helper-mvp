@@ -15,7 +15,7 @@
   ];
 
   function renameVaultCopy() {
-    document.querySelectorAll('.admin-primary-nav a, .admin-menu-panel strong, .admin-bottom-nav small').forEach((node) => {
+    document.querySelectorAll('.admin-menu-panel strong, .admin-bottom-nav small').forEach((node) => {
       const text = node.textContent.trim();
       if (text === 'THE VAULT' || text === 'Хранилище' || text === 'Vault') {
         node.textContent = text === 'Vault' ? 'Store' : 'Hi, Store';
@@ -27,24 +27,6 @@
         if (text === 'THE VAULT' || text === 'Хранилище') node.textContent = 'Hi, Store';
       });
     }
-  }
-
-  function addEngagementTools() {
-    const panel = document.querySelector('[data-master-panel="engagement"]');
-    if (!panel || panel.querySelector('[data-engagement-tools]')) return;
-    const tools = document.createElement('div');
-    tools.dataset.engagementTools = '1';
-    tools.style.display = 'flex';
-    tools.style.flexWrap = 'wrap';
-    tools.style.gap = '8px';
-    tools.style.margin = '0 0 18px';
-    tools.innerHTML = `
-      <a class="button" href="/master/engagement-icons">Иконки званий и достижений</a>
-      <a class="button" href="/master/hijack-rating">HI, JACK! рейтинг</a>
-    `;
-    const head = panel.querySelector('.section-head');
-    if (head) head.insertAdjacentElement('afterend', tools);
-    else panel.prepend(tools);
   }
 
   function configureConditionSelect(select) {
@@ -104,26 +86,7 @@
     document.body.append(script);
   }
 
-  function loadAdminOrganization() {
-    if (!window.location.pathname.startsWith('/master')) return;
-    if (!document.querySelector('link[data-master-admin-organized]')) {
-      const stylesheet = document.createElement('link');
-      stylesheet.dataset.masterAdminOrganized = '1';
-      stylesheet.rel = 'stylesheet';
-      stylesheet.href = '/static/css/master-admin-organized.css?v=1';
-      document.head.append(stylesheet);
-    }
-    if (window.location.pathname !== '/master') return;
-    if (document.querySelector('script[data-master-admin-organized]')) return;
-    const script = document.createElement('script');
-    script.dataset.masterAdminOrganized = '1';
-    script.src = '/static/js/master-admin-organized.js?v=1';
-    document.body.append(script);
-  }
-
   renameVaultCopy();
-  addEngagementTools();
   extendTitleConditions();
   loadRatingManager();
-  loadAdminOrganization();
 })();
