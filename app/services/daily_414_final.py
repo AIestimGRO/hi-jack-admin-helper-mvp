@@ -254,12 +254,27 @@ def final_cancelled_message(*, jackcoin_awarded: int = 0) -> str:
     jc = max(0, int(jackcoin_awarded or 0))
     return (
         f"Поздравляю, вы получаете {jc} JC за основной этап. "
-        "К сожалению, финальный стол не состоится из-за недостаточного "
-        "количества участников."
+        "К сожалению, финальный стол не состоится из-за отсутствия "
+        "участников финального отбора."
     )
 
 
-MIN_FINAL_TABLE_PLAYERS = 2
+# New issue-backed JACKSIDE finals can run heads-up or solo. The value remains
+# public because the final-status API exposes it to the client.
+MIN_FINAL_TABLE_PLAYERS = 1
+LEGACY_MIN_FINAL_TABLE_PLAYERS = 2
+
+
+def _minimum_finalists(final_table: sqlite3.Row | dict[str, Any]) -> int:
+    try:
+        code = str(final_table["campaign_code"] or "")
+    except (KeyError, IndexError, TypeError):
+        code = ""
+    return (
+        MIN_FINAL_TABLE_PLAYERS
+        if code.startswith("jackside_")
+        else LEGACY_MIN_FINAL_TABLE_PLAYERS
+    )
 
 
 def list_final_winners(
@@ -382,7 +397,9 @@ def _promote_winners(
         now_utc=now_utc,
         outcome=outcome,
         winner_submission_id=(
-            int(ordered[0]["submission_id"]) if ordered else int(winners[0]["submission_id"])
+            int(ordered[0]["submission_id"])
+            if ordered
+            else int(winners[0]["submission_id"])
         ),
     )
 
@@ -484,9 +501,9 @@ def reconcile_final_table(
         """,
         (table["id"],),
     ).fetchall()
-    # The two-player minimum applies only when the final first opens. A player
-    # who becomes the lone survivor later still has to play the last question.
-    if table["status"] == "waiting" and len(finalists) < MIN_FINAL_TABLE_PLAYERS:
+    # New issue-backed JACKSIDE finals open even for one qualifier. Historic
+    # directly-created daily finals keep the old two-player minimum.
+    if table["status"] == "waiting" and len(finalists) < _minimum_finalists(table):
         _mark_completed(
             conn,
             table_id=table["id"],
