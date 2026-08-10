@@ -60,10 +60,10 @@
     if (item.state === 'locked') {
       return item.kind === 'achievement' ? 'Не открыто · достижение' : 'Не открыто · звание';
     }
-    if (item.kind === 'achievement') return 'Достижение';
+    if (item.kind === 'achievement') return 'Достижение получено';
     if (item.temporary) return 'Активное звание';
     if (item.selected) return 'Основное звание';
-    return 'Активное звание';
+    return 'Звание получено';
   }
 
   function collectionCard(item) {
@@ -75,6 +75,8 @@
       item.temporary ? 'is-temporary' : '',
       item.selected ? 'is-selected' : '',
     ].filter(Boolean).join(' ');
+    details.dataset.emblemState = item.state === 'locked' ? 'locked' : 'unlocked';
+    details.dataset.emblemKind = item.kind || 'title';
 
     const summary = document.createElement('summary');
     const copy = document.createElement('span');
@@ -139,6 +141,23 @@
     return details;
   }
 
+  function prioritizeCollection(items) {
+    return items
+      .map((item, index) => ({ item, index }))
+      .sort((left, right) => {
+        const leftLocked = left.item?.state === 'locked' ? 1 : 0;
+        const rightLocked = right.item?.state === 'locked' ? 1 : 0;
+        if (leftLocked !== rightLocked) return leftLocked - rightLocked;
+
+        const leftSelected = left.item?.selected ? 0 : 1;
+        const rightSelected = right.item?.selected ? 0 : 1;
+        if (leftLocked === 0 && leftSelected !== rightSelected) return leftSelected - rightSelected;
+
+        return left.index - right.index;
+      })
+      .map(({ item }) => item);
+  }
+
   function renderCollection(payload) {
     if (view !== 'main') return;
     const stage = page.querySelector('.profile-achievement-stage');
@@ -151,7 +170,8 @@
     stage.querySelector('.profile-title-crown')?.remove();
     grid.textContent = '';
 
-    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const rawItems = Array.isArray(payload?.items) ? payload.items : [];
+    const items = prioritizeCollection(rawItems);
     if (!items.length) {
       const empty = document.createElement('div');
       empty.className = 'profile-empty-emblems';
@@ -161,6 +181,7 @@
     }
     items.forEach((item) => grid.append(collectionCard(item)));
     grid.dataset.twoRowTitles = '1';
+    grid.dataset.unlockedCount = String(items.filter((item) => item.state !== 'locked').length);
     grid.setAttribute('aria-label', `Hi, Titles! · открыто ${Number(payload.active_count || 0)} из ${Number(payload.total_count || items.length)}`);
   }
 
