@@ -5,7 +5,7 @@ import json
 import re
 import sqlite3
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from openpyxl import load_workbook
