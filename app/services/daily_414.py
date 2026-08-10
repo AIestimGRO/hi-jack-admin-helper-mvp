@@ -11,8 +11,11 @@ DAILY_414_QUESTION_COUNT = 10
 # The main round is one shared club clock. This compatibility constant is kept
 # for API/status consumers that still call it the entry window.
 DAILY_414_ENTRY_WINDOW_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
+DAILY_414_FINAL_LOBBY_SECONDS = 60
 LEGACY_DAILY_414_ENTRY_WINDOW_SECONDS = 5 * 60
-DAILY_414_FINAL_TABLE_DELAY_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
+DAILY_414_FINAL_TABLE_DELAY_SECONDS = (
+    DAILY_414_TIME_LIMIT_SECONDS + DAILY_414_FINAL_LOBBY_SECONDS
+)
 LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS = (
     LEGACY_DAILY_414_ENTRY_WINDOW_SECONDS + DAILY_414_TIME_LIMIT_SECONDS
 )
@@ -150,10 +153,10 @@ def final_table_starts_at(
     )
     if not start:
         return None
-    # New issue-backed JACKSIDE releases use jackside_YYYYMMDD codes and start
-    # the final immediately after the shared 4:14 closes. Keep old directly
-    # created daily_414 campaigns on the historical 5:00 + 4:14 schedule so
-    # existing archived/test releases are not silently reinterpreted.
+    # New issue-backed JACKSIDE releases use jackside_YYYYMMDD codes. Their
+    # main round closes after the shared 4:14, then a one-minute lobby runs
+    # before the final table opens. Historic directly-created daily_414
+    # campaigns keep the old 5:00 + 4:14 schedule for compatibility.
     if _is_legacy_daily_campaign(campaign):
         return start + timedelta(seconds=LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS)
     return start + timedelta(seconds=DAILY_414_FINAL_TABLE_DELAY_SECONDS)
