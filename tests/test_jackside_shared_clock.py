@@ -1,6 +1,9 @@
+import subprocess
+import sys
 from datetime import date, datetime, timezone
+from pathlib import Path
 
-from app.db import init_db, transaction
+from app.db import connect, init_db, transaction
 from app.services.jackside_issues import create_issue, register_issue_participant
 
 
@@ -71,3 +74,45 @@ def test_shared_clock_sets_absolute_attempt_deadline_and_global_completion(tmp_p
     # Player joined one minute late and solved in two minutes: official time is
     # three minutes from the shared issue start.
     assert abs(int(submission["completion_time_ms"]) - 180000) <= 2
+
+
+def test_shared_clock_rules_migration_is_safe_and_idempotent(tmp_path) -> None:
+    db_path = tmp_path / "shared-clock-rules.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        issue = create_issue(
+            conn,
+            issue_date_value=date(2026, 8, 11),
+            starts_at=datetime(2026, 8, 11, 15, 14, tzinfo=timezone.utc),
+        )
+        assert issue["rules_version"] == "1.0"
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "migrate_jackside_rules_shared_clock.py"
+    first = subprocess.run(
+        [sys.executable, str(script), str(db_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert first.returncode == 0, first.stderr or first.stdout
+
+    with connect(db_path) as conn:
+        active = conn.execute(
+            "SELECT * FROM jackside_rules_versions WHERE is_active=1 ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        migrated_issue = conn.execute(
+            "SELECT * FROM jackside_issues WHERE id=?", (issue["id"],)
+        ).fetchone()
+        assert active["version"] == "1.1"
+        assert "общий таймер" in active["content"]
+        assert "первым правильно ответил" in active["content"]
+        assert migrated_issue["rules_version"] == "1.1"
+
+    second = subprocess.run(
+        [sys.executable, str(script), str(db_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert second.returncode == 0, second.stderr or second.stdout
+    assert "already active" in second.stdout
