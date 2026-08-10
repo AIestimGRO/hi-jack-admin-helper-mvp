@@ -3,7 +3,7 @@
   if (!page) return;
 
   const tab = page.dataset.accountTab || '';
-  const RATING_PAGE_SIZE = 50;
+  const RATING_PAGE_SIZE = 25;
 
   async function getJson(url) {
     try {
