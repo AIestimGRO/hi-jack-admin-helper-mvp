@@ -127,8 +127,8 @@
 
     // Profile-only UI must never affect the Home, Schedule, Rating or Store render path.
     if (tab === 'profile') {
-      loadStylesheetOnce('/static/css/member-achievement-carousel.css?v=3', 'data-engagement-carousel');
-      loadScriptOnce('/static/js/profile-experience-v2.js?v=2', 'data-profile-experience-v2');
+      loadStylesheetOnce('/static/css/member-achievement-carousel.css?v=4', 'data-engagement-carousel');
+      loadScriptOnce('/static/js/profile-experience-v2.js?v=3', 'data-profile-experience-v2');
     }
   }
 
