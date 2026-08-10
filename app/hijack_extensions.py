@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import secrets
 import threading
 import uuid
 from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
