@@ -52,6 +52,17 @@
     numberLeaderboard(page.querySelector('.club-leaderboard:not(.jackside-leaderboard)'));
   }
 
+  function centerOpenEmblem(details) {
+    if (!details.open || !window.matchMedia('(max-width: 680px)').matches) return;
+    window.requestAnimationFrame(() => {
+      details.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
+    });
+  }
+
   function mountProfileRichBlocks() {
     if (tab !== 'profile') return;
     const template = document.getElementById('profile-rich-blocks');
@@ -73,6 +84,7 @@
         mount.querySelectorAll('.profile-emblem-card[open]').forEach((other) => {
           if (other !== details) other.open = false;
         });
+        centerOpenEmblem(details);
       });
     });
   }
@@ -104,6 +116,13 @@
       stylesheet.rel = 'stylesheet';
       stylesheet.href = '/static/css/hijack-member.css?v=2';
       document.head.append(stylesheet);
+    }
+    if (!document.querySelector('link[data-engagement-carousel]')) {
+      const carousel = document.createElement('link');
+      carousel.dataset.engagementCarousel = '1';
+      carousel.rel = 'stylesheet';
+      carousel.href = '/static/css/member-achievement-carousel.css?v=1';
+      document.head.append(carousel);
     }
     if (document.querySelector('script[data-hijack-member-extension]')) return;
     const script = document.createElement('script');
