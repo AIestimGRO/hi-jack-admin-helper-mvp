@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.db import init_db, transaction
 from app.hijack_rating_baseline import ensure_baseline_schema
-from app.hijack_rating_paging import hijack_rating_page_payload
+from app.hijack_rating_paging import DEFAULT_PAGE_SIZE, hijack_rating_page_payload
 
 
 def test_global_rating_pages_large_leaderboard(tmp_path: Path) -> None:
@@ -46,24 +46,22 @@ def test_global_rating_pages_large_leaderboard(tmp_path: Path) -> None:
             conn,
             client_id=client_ids[-1],
             period="global",
-            offset=0,
-            limit=50,
         )
         second = hijack_rating_page_payload(
             conn,
             client_id=client_ids[-1],
             period="global",
-            offset=50,
-            limit=50,
+            offset=DEFAULT_PAGE_SIZE,
         )
 
+    assert DEFAULT_PAGE_SIZE == 25
     assert first["total"] == 450
-    assert len(first["rows"]) == 50
+    assert len(first["rows"]) == 25
     assert first["has_more"] is True
     assert first["rows"][0]["place"] == 1
     assert first["me"]["client_id"] == client_ids[-1]
     assert first["me"]["place"] == 450
 
-    assert second["offset"] == 50
-    assert len(second["rows"]) == 50
-    assert second["rows"][0]["place"] == 51
+    assert second["offset"] == 25
+    assert len(second["rows"]) == 25
+    assert second["rows"][0]["place"] == 26
