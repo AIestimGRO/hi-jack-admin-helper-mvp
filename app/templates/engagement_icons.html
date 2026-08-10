@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Иконки званий — Hi, Jack Club{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">JACKSIDE</p><h1>Иконки званий и достижений</h1><p class="muted">Загружай PNG, WEBP или обычное изображение. Сервер автоматически приводит иконку к прозрачному холсту 512×512.</p></div>
+  <a class="button" href="/master?tab=engagement">← Назад</a>
+</div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<section class="engagement-icon-admin-section">
+  <div class="section-head"><h2>Звания</h2><span class="muted">{{ titles|length }}</span></div>
+  <div class="engagement-icon-admin-grid">
+    {% for item in titles %}
+    <article class="card engagement-icon-admin-card">
+      <div class="engagement-icon-admin-preview">
+        {% if item.icon_path %}<img src="{{ item.icon_path }}" alt="">{% else %}<span>{{ item.icon or '★' }}</span>{% endif %}
+      </div>
+      <div class="engagement-icon-admin-copy">
+        <small>{{ 'Постоянное' if item.title_type == 'permanent' else 'Временное' }}</small>
+        <strong>{{ item.name }}</strong>
+        <p>{{ item.description or 'Без описания' }}</p>
+      </div>
+      <form class="engagement-icon-upload" action="/api/master/engagement-icons/title/{{ item.id }}" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Своя иконка<input type="file" name="icon" accept="image/png,image/webp,image/jpeg" required></label>
+        <button class="primary" type="submit">Загрузить</button>
+      </form>
+      {% if item.icon_path %}
+      <form action="/api/master/engagement-icons/title/{{ item.id }}/remove" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="danger-outline" type="submit">Вернуть стандартную</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="engagement-icon-admin-section">
+  <div class="section-head"><h2>Достижения</h2><span class="muted">{{ achievements|length }}</span></div>
+  <div class="engagement-icon-admin-grid">
+    {% for item in achievements %}
+    <article class="card engagement-icon-admin-card">
+      <div class="engagement-icon-admin-preview">
+        {% if item.icon_path %}<img src="{{ item.icon_path }}" alt="">{% else %}<span>{{ item.icon or '◆' }}</span>{% endif %}
+      </div>
+      <div class="engagement-icon-admin-copy">
+        <small>Достижение</small>
+        <strong>{{ item.name }}</strong>
+        <p>{{ item.description or 'Без описания' }}</p>
+      </div>
+      <form class="engagement-icon-upload" action="/api/master/engagement-icons/achievement/{{ item.id }}" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Своя иконка<input type="file" name="icon" accept="image/png,image/webp,image/jpeg" required></label>
+        <button class="primary" type="submit">Загрузить</button>
+      </form>
+      {% if item.icon_path %}
+      <form action="/api/master/engagement-icons/achievement/{{ item.id }}/remove" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="danger-outline" type="submit">Вернуть стандартную</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
