@@ -7,13 +7,15 @@ from app.main_impl import *  # noqa: F403
 from app.main_impl import app as _base_app
 from app.main_impl import create_app as _base_create_app
 from app.product_shell import install_product_shell
+from app.profile_experience import install_profile_experience
 
 
 def _install_extensions(application):
     application = install_product_shell(application)
     application = install_hijack_extensions(application)
     application = install_hijack_rating_relink(application)
-    return install_hijack_rating_baseline(application)
+    application = install_hijack_rating_baseline(application)
+    return install_profile_experience(application)
 
 
 def create_app(settings=None):
