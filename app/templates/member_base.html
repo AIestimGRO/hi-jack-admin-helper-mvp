@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-extra.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-dashboard.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member-profile-refresh.css') }}?v={{ asset_version }}">
 </head>
 <body class="{{ 'member-app-body' if member else 'member-auth-body' }}">
   <header class="member-topbar">
@@ -31,7 +32,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2.5 5.2h5M9.5 12h5M9.5 15.8h3"/></svg>
       <span>Квизы</span>
     </a>
-    <a class="member-hj-nav {{ 'active' if current_tab|default('') == 'rating' else '' }}" href="/account?tab=rating" aria-label="Рейтинг и статистика">
+    <a class="member-hj-nav {{ 'active' if current_tab|default('') == 'rating' else '' }}" href="/account?tab=rating&amp;section=month" aria-label="Открыть рейтинг">
       <span class="member-hj-shield" aria-hidden="true"><b>HJ</b></span>
       <span>Рейтинг</span>
     </a>
@@ -45,8 +46,165 @@
       <span>Профиль</span>
     </a>
   </nav>
+
+  {% if current_tab|default('') == 'profile' %}
+  <template id="profile-rich-blocks">
+    {% set permanent_titles = engagement.permanent_titles|default([]) %}
+    {% set temporary_titles = engagement.temporary_titles|default([]) %}
+    {% set achievements = engagement.achievements|default([]) %}
+    {% set emblem_total = permanent_titles|length + temporary_titles|length + achievements|length %}
+    {% set unread = engagement.notifications|default([])|selectattr('read_at', 'equalto', none)|list %}
+
+    <section class="profile-rich-section" aria-labelledby="profile-emblems-heading">
+      <div class="profile-achievement-stage">
+        <div class="profile-achievement-intro">
+          <div>
+            <p class="member-eyebrow">Твоя коллекция</p>
+            <h2 id="profile-emblems-heading">Звания и достижения</h2>
+            <p>{{ emblem_total }} открыто · нажми на иконку, чтобы посмотреть подробности</p>
+          </div>
+          <div class="profile-title-crown" aria-hidden="true">{{ engagement.current_title.icon if engagement.current_title and engagement.current_title.icon else '★' }}</div>
+        </div>
+
+        {% if engagement.current_title %}
+        <div class="profile-current-title">
+          <span aria-hidden="true">{{ engagement.current_title.icon or '★' }}</span>
+          <div>
+            <small>{{ 'Активное временное звание' if engagement.current_title.temporary else 'Активное звание' }}</small>
+            <strong>{{ engagement.current_title.name }}</strong>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if unread %}
+        <div class="profile-new-awards">
+          <span aria-hidden="true">✦</span>
+          <div><strong>{{ unread[0].title }}</strong><small>{{ unread[0].body }}{% if unread|length > 1 %} · ещё {{ unread|length - 1 }}{% endif %}</small></div>
+          <form action="/account/notifications/read" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Прочитано</button>
+          </form>
+        </div>
+        {% endif %}
+
+        <div class="profile-emblem-grid">
+          {% for item in permanent_titles %}
+          <details class="profile-emblem-card {{ 'is-selected' if item.selected else '' }}">
+            <summary>
+              <span class="profile-emblem-icon" aria-hidden="true">{{ item.icon or '★' }}</span>
+              <span class="profile-emblem-summary-copy"><strong>{{ item.name }}</strong><small>{{ 'Выбрано · ' if item.selected else '' }}Постоянное звание</small></span>
+            </summary>
+            <div class="profile-emblem-detail">
+              <p>{{ item.description or 'Личное звание игрока HI, JACK CLUB!' }}</p>
+              <span class="profile-emblem-meta">Получено {{ display_datetime(item.awarded_at) if item.awarded_at else '—' }}</span>
+              {% if item.selected %}
+              <span class="profile-emblem-meta">Сейчас отображается как твоё основное звание.</span>
+              {% else %}
+              <form action="/account/titles/{{ item.member_title_id }}/select" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="profile-title-select" type="submit">Сделать основным</button>
+              </form>
+              {% endif %}
+            </div>
+          </details>
+          {% endfor %}
+
+          {% for item in temporary_titles %}
+          <details class="profile-emblem-card is-temporary">
+            <summary>
+              <span class="profile-emblem-icon" aria-hidden="true">{{ item.icon or '✦' }}</span>
+              <span class="profile-emblem-summary-copy"><strong>{{ item.name }}</strong><small>Временное звание</small></span>
+            </summary>
+            <div class="profile-emblem-detail">
+              <p>{{ item.description or 'Временное звание за текущие результаты.' }}</p>
+              <span class="profile-emblem-meta">Получено {{ display_datetime(item.awarded_at) if item.awarded_at else '—' }}{% if item.expires_at %} · действует до {{ display_datetime(item.expires_at) }}{% endif %}</span>
+            </div>
+          </details>
+          {% endfor %}
+
+          {% for item in achievements %}
+          <details class="profile-emblem-card is-achievement">
+            <summary>
+              <span class="profile-emblem-icon" aria-hidden="true">{{ item.icon or '◆' }}</span>
+              <span class="profile-emblem-summary-copy"><strong>{{ item.name }}</strong><small>Достижение</small></span>
+            </summary>
+            <div class="profile-emblem-detail">
+              <p>{{ item.description or 'Достижение JACKSIDE.' }}</p>
+              <span class="profile-emblem-meta">Открыто {{ display_datetime(item.awarded_at) if item.awarded_at else '—' }}</span>
+            </div>
+          </details>
+          {% endfor %}
+
+          {% if emblem_total == 0 %}
+          <div class="profile-empty-emblems">Первое звание или достижение появится после твоих игровых результатов.</div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="profile-rich-section" aria-labelledby="profile-stats-heading">
+      <div class="app-section-head"><div><p class="member-eyebrow">Моя игра</p><h2 id="profile-stats-heading">Главное в цифрах</h2></div></div>
+      <div class="profile-stat-visuals">
+        <article class="profile-stat-visual">
+          <div class="profile-accuracy-ring" style="--accuracy: {{ quiz_stats.accuracy|default(0) }}"><strong>{{ quiz_stats.accuracy|default(0) }}%</strong></div>
+          <small>Точность ответов</small>
+        </article>
+        <article class="profile-stat-visual">
+          <div class="profile-streak-signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <strong>{{ quiz_stats.current_streak|default(0) }}</strong>
+          <small>Текущая серия · лучшая {{ quiz_stats.best_streak|default(0) }}</small>
+        </article>
+        <article class="profile-stat-visual">
+          <div class="profile-games-orbit"><strong>{{ quiz_stats.completed_count|default(0) }}</strong></div>
+          <small>Завершено JACKSIDE</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="profile-rich-section" aria-labelledby="profile-referrals-heading">
+      <div class="profile-referral-card">
+        <div class="profile-referral-top">
+          <div><p class="member-eyebrow">Твоя команда</p><h2 id="profile-referrals-heading">Рефералы</h2></div>
+          <div class="profile-referral-qualified"><strong>{{ engagement.referrals.qualified|default(0) }}</strong><small>квалифицировано</small></div>
+        </div>
+
+        <div class="profile-referral-flow" aria-label="Воронка реферальной программы">
+          <article><strong>{{ engagement.referrals.clicks|default(0) }}</strong><small>Переходы</small></article>
+          <span class="profile-referral-arrow" aria-hidden="true">›</span>
+          <article><strong>{{ engagement.referrals.registrations|default(0) }}</strong><small>Регистрации</small></article>
+          <span class="profile-referral-arrow" aria-hidden="true">›</span>
+          <article><strong>{{ engagement.referrals.qualified|default(0) }}</strong><small>Квалифицированы</small></article>
+        </div>
+
+        <div class="profile-referral-link">
+          <input id="profile-referral-link" value="{{ referral_link }}" readonly aria-label="Реферальная ссылка">
+          <button type="button" data-referral-copy="#profile-referral-link">Копировать</button>
+        </div>
+        <p class="member-muted" style="margin:10px 0 0;font-size:10px;">Квалификация — 3 завершённых выпуска JACKSIDE в 3 разные календарные даты.</p>
+
+        {% if engagement.active_referral_titles %}
+        <div class="profile-referral-titles" aria-label="Реферальные звания">
+          {% for item in engagement.active_referral_titles %}<span>{{ item.icon or '✦' }} {{ item.name }}</span>{% endfor %}
+        </div>
+        {% endif %}
+
+        <details class="profile-referral-history">
+          <summary>История приглашений · {{ engagement.referrals.history|default([])|length }}</summary>
+          <div class="engagement-history">
+            {% for row in engagement.referrals.history|default([]) %}
+            <p><strong>{{ row.display_name }}</strong><span>{{ row.distinct_completed_days }}/3 дней{% if row.qualified_at %} · готово{% endif %}</span></p>
+            {% else %}
+            <p><span>Приглашений пока нет.</span></p>
+            {% endfor %}
+          </div>
+        </details>
+      </div>
+    </section>
+  </template>
+  {% endif %}
   {% endif %}
   <script src="{{ url_for('static', path='/js/member.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/member-profile-refresh.js') }}?v={{ asset_version }}" defer></script>
   <script type="module" src="{{ url_for('static', path='/js/reward-animations.js') }}?v={{ asset_version }}"></script>
   <script src="{{ url_for('static', path='/js/reward-stickers.js') }}?v={{ asset_version }}" defer></script>
 </body>
