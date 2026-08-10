@@ -80,7 +80,9 @@
   display: none;
 }
 
-.profile-emblem-grid[data-two-row-titles="1"] > .profile-emblem-card {
+.profile-emblem-grid[data-two-row-titles="1"] > .profile-emblem-card,
+.profile-emblem-grid[data-two-row-titles="1"] > .profile-emblem-card[open] {
+  grid-column: auto !important;
   width: auto !important;
   min-width: 0;
   margin: 0 !important;
@@ -94,6 +96,7 @@
 
 .profile-emblem-grid[data-two-row-titles="1"] .profile-emblem-detail {
   width: 100%;
+  padding-left: 14px !important;
 }
 
 /* Locked cards are intentionally fully grey: no gold, teal or rank glow. */
@@ -109,6 +112,11 @@
 .profile-emblem-card.is-locked .profile-emblem-detail {
   background: transparent !important;
   color: #777e7d !important;
+}
+
+.profile-emblem-card.is-locked > summary::after,
+.profile-emblem-card.is-locked[open] > summary::after {
+  color: #666c6b !important;
 }
 
 .profile-emblem-card.is-locked .profile-emblem-icon {
