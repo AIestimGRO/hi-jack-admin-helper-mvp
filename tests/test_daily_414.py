@@ -34,12 +34,12 @@ def test_daily_414_entry_window_accepts_utc_active_from_as_local() -> None:
     )
     assert not main_prize_eligible(
         campaign,
-        started_at=datetime(2026, 8, 6, 18, 20),
+        started_at=datetime(2026, 8, 6, 18, 18, 14),
         timezone_name="Europe/Moscow",
     )
     assert final_table_starts_at(
         campaign, timezone_name="Europe/Moscow"
-    ) == datetime(2026, 8, 6, 18, 23, 14)
+    ) == datetime(2026, 8, 6, 18, 18, 14)
 
 
 def test_rank_final_candidates_orders_by_score_then_speed() -> None:
@@ -54,17 +54,17 @@ def test_rank_final_candidates_orders_by_score_then_speed() -> None:
     assert [item["place"] for item in ranked] == [1, 2, 3]
 
 
-def test_daily_414_final_table_entry_window_is_five_minutes() -> None:
+def test_daily_414_uses_one_shared_four_fourteen_window() -> None:
     start = datetime(2026, 7, 29, 18, 14)
     campaign = {"active_from": start.isoformat(timespec="minutes")}
 
     assert main_prize_eligible(
         campaign,
-        started_at=start + timedelta(minutes=5),
+        started_at=start + timedelta(minutes=4, seconds=13, milliseconds=999),
     )
     assert not main_prize_eligible(
         campaign,
-        started_at=start + timedelta(minutes=5, seconds=1),
+        started_at=start + timedelta(minutes=4, seconds=14),
     )
 
 
@@ -73,20 +73,20 @@ def test_daily_414_candidate_must_finish_before_shared_final_start() -> None:
     campaign = {"active_from": start.isoformat(timespec="minutes")}
     final_start = final_table_starts_at(campaign)
 
-    assert final_start == start + timedelta(minutes=9, seconds=14)
+    assert final_start == start + timedelta(minutes=4, seconds=14)
     assert final_table_candidate_eligible(
         campaign,
-        started_at=start + timedelta(minutes=4, seconds=59),
+        started_at=start + timedelta(minutes=2),
         finished_at=final_start,
     )
     assert not final_table_candidate_eligible(
         campaign,
-        started_at=start + timedelta(minutes=4, seconds=59),
+        started_at=start + timedelta(minutes=2),
         finished_at=final_start + timedelta(milliseconds=1),
     )
     assert not final_table_candidate_eligible(
         campaign,
-        started_at=start + timedelta(minutes=5, seconds=1),
+        started_at=final_start,
         finished_at=final_start,
     )
 
@@ -445,14 +445,14 @@ def test_daily_414_candidate_requires_completed_main_round() -> None:
     final_start = final_table_starts_at(campaign)
     assert not final_table_candidate_eligible(
         campaign,
-        started_at=start + timedelta(minutes=4, seconds=59),
+        started_at=start + timedelta(minutes=2),
         finished_at=final_start,
         main_round_completed=False,
     )
 
 
-def test_daily_414_final_co_winners_after_last_question(tmp_path) -> None:
-    db_path = tmp_path / "daily-final-co-winners.sqlite3"
+def test_daily_414_final_last_question_first_correct_wins(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-first-correct.sqlite3"
     init_db(db_path)
     start = datetime(2026, 7, 30, 18, 23, 14)
     with transaction(db_path) as conn:
@@ -483,27 +483,32 @@ def test_daily_414_final_co_winners_after_last_question(tmp_path) -> None:
             """,
             (table["id"],),
         ).fetchall()
-        for finalist in finalists[:2]:
-            conn.execute(
-                """
-                INSERT INTO daily_414_final_answers(
-                    final_table_id, finalist_id, question_index, question_code,
-                    answer_json, is_correct, response_time_ms, answered_at
-                ) VALUES (?, ?, 0, 'f1', '"yes"', 1, ?, ?)
-                """,
-                (
-                    table["id"],
-                    finalist["id"],
-                    1000 + int(finalist["seed"]),
-                    start.isoformat(),
-                ),
-            )
+        first_seed = finalists[0]
+        second_seed = finalists[1]
+        conn.execute(
+            """
+            INSERT INTO daily_414_final_answers(
+                final_table_id, finalist_id, question_index, question_code,
+                answer_json, is_correct, response_time_ms, answered_at
+            ) VALUES (?, ?, 0, 'f1', '"yes"', 1, 700, ?)
+            """,
+            (table["id"], first_seed["id"], (start + timedelta(seconds=2)).isoformat()),
+        )
+        conn.execute(
+            """
+            INSERT INTO daily_414_final_answers(
+                final_table_id, finalist_id, question_index, question_code,
+                answer_json, is_correct, response_time_ms, answered_at
+            ) VALUES (?, ?, 0, 'f1', '"yes"', 1, 900, ?)
+            """,
+            (table["id"], second_seed["id"], (start + timedelta(seconds=1)).isoformat()),
+        )
         completed = reconcile_final_table(
             conn,
             final_table_id=int(table["id"]),
             now=start + timedelta(seconds=30),
         )
-        winners = conn.execute(
+        finalists_after = conn.execute(
             """
             SELECT seed, status FROM daily_414_finalists
             WHERE final_table_id=? ORDER BY seed
@@ -512,8 +517,73 @@ def test_daily_414_final_co_winners_after_last_question(tmp_path) -> None:
         ).fetchall()
 
     assert completed["status"] == "completed"
-    assert completed["outcome"] == "co_winners"
-    assert [row["status"] for row in winners] == ["winner", "winner", "eliminated"]
+    assert completed["outcome"] == "single_winner"
+    assert [row["status"] for row in finalists_after] == [
+        "eliminated",
+        "winner",
+        "eliminated",
+    ]
+
+
+def test_daily_414_single_survivor_must_answer_last_question(tmp_path) -> None:
+    db_path = tmp_path / "daily-final-single-survivor.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 7, 30, 18, 23, 14)
+    with transaction(db_path) as conn:
+        for index in range(1, 4):
+            _seed_final_candidate(
+                conn,
+                campaign_code="daily_final",
+                client_number=index,
+                correct_count=10,
+                completion_time_ms=10_000 + index,
+            )
+        table = ensure_final_table(
+            conn,
+            campaign_code="daily_final",
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1"}, {"id": "f2"}],
+        )
+        reconcile_final_table(conn, final_table_id=int(table["id"]), now=start)
+        finalists = conn.execute(
+            """
+            SELECT id, seed FROM daily_414_finalists
+            WHERE final_table_id=? ORDER BY seed
+            """,
+            (table["id"],),
+        ).fetchall()
+        survivor = finalists[0]
+        conn.execute(
+            """
+            INSERT INTO daily_414_final_answers(
+                final_table_id, finalist_id, question_index, question_code,
+                answer_json, is_correct, response_time_ms, answered_at
+            ) VALUES (?, ?, 0, 'f1', '"yes"', 1, 500, ?)
+            """,
+            (table["id"], survivor["id"], start.isoformat()),
+        )
+        after_first = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=30),
+        )
+        survivor_state = conn.execute(
+            "SELECT status FROM daily_414_finalists WHERE id=?",
+            (survivor["id"],),
+        ).fetchone()[0]
+        completed = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start + timedelta(seconds=60),
+        )
+
+    assert after_first["status"] == "live"
+    assert after_first["current_question_index"] == 1
+    assert survivor_state == "active"
+    assert completed["status"] == "completed"
+    assert completed["outcome"] == "no_winner"
+    assert completed["winner_submission_id"] is None
 
 
 def test_split_jackcoin_amounts_with_and_without_remainder() -> None:
@@ -573,10 +643,9 @@ def test_daily_414_incomplete_submission_excluded_from_top_ten(tmp_path) -> None
     assert incomplete_client not in [row["client_id"] for row in finalists]
 
 
-
 def test_final_outcome_messages() -> None:
     assert final_eliminated_message() == (
-        "Вы не правильно ответили на последний вопрос и выбыли из игры."
+        "Ваш ответ не прошёл дальше — вы выбыли из финального стола."
     )
     assert final_cancelled_message(jackcoin_awarded=80) == (
         "Поздравляю, вы получаете 80 JC за основной этап. "
@@ -584,10 +653,10 @@ def test_final_outcome_messages() -> None:
         "количества участников."
     )
     assert final_winner_announcement(1) == (
-        "Вы единственный победитель и ответили на все вопросы правильно."
+        "Вы первым правильно ответили на последний вопрос финального стола."
     )
-    assert final_winner_announcement(2) == "2 победителя ответили на все вопросы правильно."
-    assert final_winner_announcement(5) == "5 победителей ответили на все вопросы правильно."
+    assert final_winner_announcement(2) == "Победителей финального стола: 2."
+    assert final_winner_announcement(0) == "Победитель финального стола не определён."
 
 
 def test_daily_414_final_cancelled_with_single_finalist(tmp_path) -> None:
