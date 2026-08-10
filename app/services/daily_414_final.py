@@ -484,8 +484,9 @@ def reconcile_final_table(
         """,
         (table["id"],),
     ).fetchall()
-    # A final table needs at least two players; a lone finalist is not a winner.
-    if len(finalists) < MIN_FINAL_TABLE_PLAYERS:
+    # The two-player minimum applies only when the final first opens. A player
+    # who becomes the lone survivor later still has to play the last question.
+    if table["status"] == "waiting" and len(finalists) < MIN_FINAL_TABLE_PLAYERS:
         _mark_completed(
             conn,
             table_id=table["id"],
