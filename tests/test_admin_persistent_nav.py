@@ -31,5 +31,5 @@ def test_profile_experience_is_loaded_only_on_profile_tab() -> None:
     script = (ROOT / "app/static/js/member-profile-refresh.js").read_text(encoding="utf-8")
 
     assert "if (tab === 'profile')" in script
-    assert "profile-experience-v2.js?v=2" in script
-    assert "member-achievement-carousel.css?v=3" in script
+    assert "profile-experience-v2.js?v=3" in script
+    assert "member-achievement-carousel.css?v=4" in script
