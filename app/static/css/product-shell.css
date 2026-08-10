@@ -51,6 +51,8 @@
 
 /* Profile media */
 .member-profile-button { overflow: hidden; position: relative; }
+.member-profile-button.has-product-avatar,
+.profile-avatar-large.has-product-avatar { color: transparent; }
 .member-profile-button img,
 .profile-avatar-large img {
   width: 100%;
@@ -106,6 +108,14 @@
 }
 .profile-emblem-icon.has-custom-art { padding: 7px; }
 .profile-title-crown.has-custom-art { padding: 8px; }
+.profile-referral-title-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  vertical-align: middle;
+  object-fit: contain;
+  margin-right: 3px;
+}
 
 /* Hi, Store */
 .store-tabs,
