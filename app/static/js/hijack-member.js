@@ -3,6 +3,7 @@
   if (!page) return;
 
   const tab = page.dataset.accountTab || '';
+  const RATING_PAGE_SIZE = 50;
 
   async function getJson(url) {
     try {
@@ -51,8 +52,8 @@
     return article;
   }
 
-  function renderHiJackRating(payload) {
-    if (tab !== 'rating' || !payload?.has_imports) return;
+  function renderHiJackRating() {
+    if (tab !== 'rating') return;
     const sectionParam = new URL(window.location.href).searchParams.get('section');
     if (sectionParam !== 'club') return;
 
@@ -68,12 +69,13 @@
         <div class="hijack-rating-me" data-hijack-me></div>
       </div>
       <nav class="hijack-rating-periods" aria-label="Период рейтинга HI, JACK!">
-        <button type="button" data-hijack-period="year">Глобальный</button>
+        <button type="button" data-hijack-period="global">Глобальный</button>
         <button type="button" data-hijack-period="month">Месяц</button>
         <button type="button" data-hijack-period="latest">Последний турнир</button>
       </nav>
       <div class="hijack-rating-caption" data-hijack-caption></div>
       <div class="club-leaderboard hijack-rating-list" data-hijack-list></div>
+      <button class="member-secondary hijack-rating-more" type="button" data-hijack-more hidden>Показать ещё</button>
     `;
 
     oldSummary.replaceWith(hub);
@@ -82,47 +84,101 @@
     const list = hub.querySelector('[data-hijack-list]');
     const caption = hub.querySelector('[data-hijack-caption]');
     const meBox = hub.querySelector('[data-hijack-me]');
+    const moreButton = hub.querySelector('[data-hijack-more]');
     const buttons = Array.from(hub.querySelectorAll('[data-hijack-period]'));
 
-    const activate = (mode) => {
-      const section = payload[mode] || payload.year;
-      const rows = Array.isArray(section.rows) ? section.rows : [];
-      buttons.forEach((button) => button.classList.toggle('active', button.dataset.hijackPeriod === mode));
-      list.textContent = '';
-      const meClientId = section.me?.client_id || null;
-      if (rows.length) rows.forEach((row) => list.append(ratingRow(row, meClientId, mode)));
-      else {
-        const empty = document.createElement('div');
-        empty.className = 'member-card smart-empty';
-        empty.innerHTML = '<span>HJ</span><div><h3>Нет данных за этот период</h3><p>После следующей загрузки рейтинга здесь появятся игроки.</p></div>';
-        list.append(empty);
-      }
+    let currentMode = 'global';
+    let loaded = 0;
+    let requestSerial = 0;
 
+    const setLoading = (loading) => {
+      buttons.forEach((button) => { button.disabled = loading; });
+      moreButton.disabled = loading;
+      if (loading && loaded === 0) {
+        caption.textContent = 'Загружаем рейтинг…';
+      }
+    };
+
+    const showEmpty = (message) => {
+      list.textContent = '';
+      const empty = document.createElement('div');
+      empty.className = 'member-card smart-empty';
+      empty.innerHTML = `<span>HJ</span><div><h3>${message}</h3><p>После следующей загрузки рейтинга здесь появятся игроки.</p></div>`;
+      list.append(empty);
+    };
+
+    const applyMeta = (payload, mode) => {
       if (mode === 'latest') {
-        caption.textContent = section.tournament_name
-          ? `${section.tournament_name}${section.tournament_date ? ` · ${section.tournament_date}` : ''}`
+        caption.textContent = payload.tournament_name
+          ? `${payload.tournament_name}${payload.tournament_date ? ` · ${payload.tournament_date}` : ''}`
           : 'Последний загруженный турнир';
       } else if (mode === 'month') {
-        caption.textContent = `Сумма рейтингов всех турниров месяца · ${section.label || ''}`;
+        caption.textContent = `Сумма рейтингов всех турниров месяца · ${payload.label || ''}`;
       } else {
-        caption.textContent = `Глобальный рейтинг за ${section.label || ''} год`;
+        caption.textContent = 'Глобальный рейтинг · весь накопленный период';
       }
 
       meBox.textContent = '';
       const small = document.createElement('small');
       small.textContent = 'Твоё место';
       const strong = document.createElement('strong');
-      strong.textContent = section.me?.place ? `#${section.me.place}` : '—';
+      strong.textContent = payload.me?.place ? `#${payload.me.place}` : '—';
       const span = document.createElement('span');
-      span.textContent = section.me ? `${section.me.points} очков · ${section.me.kills} киллов` : 'Нет данных';
+      span.textContent = payload.me
+        ? `${payload.me.points} очков · ${payload.me.kills} киллов`
+        : 'Нет данных';
       meBox.append(small, strong, span);
+    };
+
+    const loadPage = async (mode, append = false) => {
+      const serial = ++requestSerial;
+      if (!append) {
+        currentMode = mode;
+        loaded = 0;
+        list.textContent = '';
+        moreButton.hidden = true;
+      }
+      buttons.forEach((button) => button.classList.toggle('active', button.dataset.hijackPeriod === mode));
+      setLoading(true);
+
+      const url = `/api/account/hijack-rating-page?period=${encodeURIComponent(mode)}&offset=${loaded}&limit=${RATING_PAGE_SIZE}`;
+      const payload = await getJson(url);
+      if (serial !== requestSerial) return;
+      setLoading(false);
+
+      if (!payload) {
+        if (!append) showEmpty('Не удалось загрузить рейтинг');
+        caption.textContent = 'Не удалось получить данные. Попробуйте ещё раз.';
+        return;
+      }
+      if (!payload.has_data) {
+        showEmpty('Рейтинг пока не загружен');
+        meBox.textContent = '';
+        moreButton.hidden = true;
+        return;
+      }
+
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      if (!append && !rows.length) showEmpty('Нет данных за этот период');
+      else {
+        const meClientId = payload.me?.client_id || null;
+        rows.forEach((row) => list.append(ratingRow(row, meClientId, mode)));
+      }
+
+      loaded += rows.length;
+      moreButton.hidden = !payload.has_more;
+      moreButton.textContent = payload.has_more
+        ? `Показать ещё · ${loaded} из ${Number(payload.total || loaded)}`
+        : '';
+      applyMeta(payload, mode);
     };
 
     hub.addEventListener('click', (event) => {
       const button = event.target.closest('[data-hijack-period]');
-      if (button) activate(button.dataset.hijackPeriod);
+      if (button) loadPage(button.dataset.hijackPeriod, false);
     });
-    activate('year');
+    moreButton.addEventListener('click', () => loadPage(currentMode, true));
+    loadPage('global', false);
   }
 
   function referralNode(node, depth) {
@@ -207,7 +263,7 @@
   }
 
   if (tab === 'rating' && new URL(window.location.href).searchParams.get('section') === 'club') {
-    getJson('/api/account/hijack-rating').then(renderHiJackRating);
+    renderHiJackRating();
   }
   if (tab === 'profile') {
     getJson('/api/account/referral-tree').then(renderReferralTree);
