@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Chats — Hi, Jack Club</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member-extra.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}">
+</head>
+<body class="hj-chats-body">
+  <div class="hj-chats-app" data-chats-shell>
+    <header class="hj-chats-topbar">
+      <div class="hj-chats-brand">
+        <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}" alt="">
+        <div><strong>Chats</strong><small>Hi, Jack Club</small></div>
+      </div>
+      <button class="hj-chat-compose" type="button" disabled aria-label="Новый чат">＋</button>
+    </header>
+
+    <aside class="hj-chats-list" aria-label="Список чатов">
+      <label class="hj-chat-search">
+        <span aria-hidden="true">⌕</span>
+        <input type="search" placeholder="Поиск" disabled>
+      </label>
+      <div class="hj-chat-list-placeholder">
+        <span class="hj-chat-list-avatar">HJ</span>
+        <div><strong>Hi, Jack Club</strong><small>Системный чат появится здесь</small></div>
+      </div>
+    </aside>
+
+    <main class="hj-chat-conversation">
+      <div class="hj-chat-empty-state">
+        <span class="hj-chat-empty-mark" aria-hidden="true">✦</span>
+        <h1>Chats</h1>
+        <p>Каркас мессенджера уже внутри приложения. Диалоги, личные сообщения, вложения, реакции и остальные возможности подключим следующим этапом.</p>
+      </div>
+    </main>
+
+    <a class="hj-chat-back-to-app" href="{{ back_url }}">
+      <span aria-hidden="true">←</span>
+      <strong>Вернуться в Hi, Jack!</strong>
+    </a>
+  </div>
+</body>
+</html>
