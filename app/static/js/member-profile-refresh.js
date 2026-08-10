@@ -98,11 +98,17 @@
   }
 
   function loadHiJackExtension() {
+    if (!document.querySelector('link[data-hijack-member-extension]')) {
+      const stylesheet = document.createElement('link');
+      stylesheet.dataset.hijackMemberExtension = '1';
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = '/static/css/hijack-member.css?v=2';
+      document.head.append(stylesheet);
+    }
     if (document.querySelector('script[data-hijack-member-extension]')) return;
     const script = document.createElement('script');
     script.dataset.hijackMemberExtension = '1';
     script.src = '/static/js/hijack-member.js?v=2';
-    script.defer = true;
     document.body.append(script);
   }
 
