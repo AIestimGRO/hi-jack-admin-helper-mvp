@@ -277,6 +277,7 @@
   function placeChatLauncher() {
     if (!launcher) return;
     launcher.classList.toggle('is-hidden', chatShouldBeHidden());
+    launcher.classList.remove('is-obstructed');
     if (launcher.classList.contains('is-hidden')) return;
     const nav = document.querySelector('.member-bottom-nav');
     const navVisible = nav && getComputedStyle(nav).display !== 'none';
@@ -285,23 +286,41 @@
     launcher.style.setProperty('--chat-lift', '0px');
 
     let lift = 0;
-    const avoid = Array.from(document.querySelectorAll('.app-primary-action, .vault-buy-button, .reward-activate-button, [data-chat-avoid]'))
-      .filter((node) => {
-        const style = getComputedStyle(node);
-        const rect = node.getBoundingClientRect();
-        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
-      });
-    for (let pass = 0; pass < 5; pass += 1) {
+    const avoid = Array.from(document.querySelectorAll([
+      '.member-shell button',
+      '.member-shell input',
+      '.member-shell select',
+      '.member-shell textarea',
+      '.app-primary-action',
+      '.profile-settings-link',
+      '.vault-buy-button',
+      '.reward-activate-button',
+      '[data-chat-avoid]',
+    ].join(','))).filter((node) => {
+      const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && rect.width > 0
+        && rect.height > 0
+        && rect.bottom > 0
+        && rect.top < innerHeight;
+    });
+
+    for (let pass = 0; pass < 8; pass += 1) {
       launcher.style.setProperty('--chat-lift', `${lift}px`);
       const bubble = launcher.getBoundingClientRect();
       const hit = avoid.find((node) => {
         const rect = node.getBoundingClientRect();
         return !(bubble.right < rect.left || bubble.left > rect.right || bubble.bottom < rect.top || bubble.top > rect.bottom);
       });
-      if (!hit) break;
+      if (!hit) return;
       const rect = hit.getBoundingClientRect();
       lift += Math.max(0, bubble.bottom - rect.top) + 12;
+      if (bubble.top < 82) break;
     }
+
+    launcher.classList.add('is-obstructed');
   }
 
   function prepareChatLauncher() {
