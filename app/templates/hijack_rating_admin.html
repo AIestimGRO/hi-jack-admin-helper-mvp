@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}HI, JACK! рейтинг — Hi, Jack Club{% endblock %}
+{% block head %}
+<style>
+  .hj-rating-admin-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:18px;align-items:start}
+  .hj-rating-import-card{padding:20px;display:grid;gap:14px}
+  .hj-rating-import-card label{display:grid;gap:6px;font-size:12px;color:var(--muted,#99a4a2)}
+  .hj-rating-import-card input{min-height:44px}
+  .hj-rating-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .hj-rating-columns span{padding:10px;border-radius:12px;background:rgba(49,219,197,.07);border:1px solid rgba(49,219,197,.13);font-size:11px;text-align:center}
+  .hj-rating-import-list{display:grid;gap:10px}
+  .hj-rating-import-row{padding:14px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+  .hj-rating-import-row h3{margin:0 0 4px;font-size:15px}
+  .hj-rating-import-row p{margin:0;color:var(--muted,#99a4a2);font-size:11px}
+  .hj-rating-import-row small{display:block;margin-top:5px;color:rgba(255,255,255,.48)}
+  .hj-rating-conditions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .hj-rating-conditions span{padding:9px 10px;border-radius:11px;background:rgba(255,255,255,.035);font-size:11px}
+  @media(max-width:760px){.hj-rating-admin-grid{grid-template-columns:1fr}.hj-rating-columns,.hj-rating-conditions{grid-template-columns:1fr}.hj-rating-import-row{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">HI, JACK!</p>
+    <h1>Рейтинг турниров</h1>
+    <p class="muted">Каждая загрузка — отдельный турнир. Игроки связываются с личными кабинетами по номеру телефона.</p>
+  </div>
+  <div class="admin-actions">
+    <a class="button" href="/master?tab=engagement">Звания</a>
+    <a class="button" href="/master/engagement-icons">Иконки</a>
+  </div>
+</div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="hj-rating-admin-grid">
+  <section class="card hj-rating-import-card">
+    <div>
+      <p class="eyebrow">Новый турнир</p>
+      <h2>Загрузить рейтинг</h2>
+      <p class="muted">Формат Excel: XLSX. Заголовки могут находиться не на первой строке — сервис найдёт их автоматически.</p>
+    </div>
+    <div class="hj-rating-columns" aria-label="Обязательные столбцы">
+      <span><strong>Phone</strong><br>номер игрока</span>
+      <span><strong>ИГР Рейт</strong><br>рейтинг турнира</span>
+      <span><strong>ИГР Кил</strong><br>количество киллов</span>
+    </div>
+    <form action="/api/master/hijack-rating/import" method="post" enctype="multipart/form-data" class="hj-rating-import-card" style="padding:0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Название турнира<input name="tournament_name" maxlength="160" placeholder="Например: Hi, Jack Sunday Deepstack" required></label>
+      <label>Дата турнира<input name="tournament_date" type="date" required></label>
+      <label>Excel с рейтингом<input name="rating_file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+      <button class="primary" type="submit">Загрузить турнир</button>
+    </form>
+  </section>
+
+  <section class="card hj-rating-import-card">
+    <div>
+      <p class="eyebrow">Звания и достижения</p>
+      <h2>Новые условия HI, JACK!</h2>
+      <p class="muted">Эти причины автоматически появятся в редакторе званий. Порог — необходимое значение показателя.</p>
+    </div>
+    <div class="hj-rating-conditions">
+      {% for code,label in conditions.items() %}<span>{{ label }}</span>{% endfor %}
+    </div>
+  </section>
+</div>
+
+<section style="margin-top:24px">
+  <div class="section-head"><h2>История загрузок</h2><span class="muted">{{ imports|length }}</span></div>
+  <div class="hj-rating-import-list">
+    {% for item in imports %}
+    <article class="card hj-rating-import-row">
+      <div>
+        <h3>{{ item.tournament_name }}</h3>
+        <p>{{ item.tournament_date }} · {{ item.source_filename }}</p>
+        <small>{{ item.total_rows }} строк · найдено пользователей {{ item.matched_rows }} · не найдено {{ item.unmatched_rows }} · некорректных номеров {{ item.invalid_rows }}</small>
+      </div>
+      <form action="/api/master/hijack-rating/{{ item.id }}/delete" method="post" onsubmit="return confirm('Удалить эту загрузку рейтинга?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="danger-outline" type="submit">Удалить</button>
+      </form>
+    </article>
+    {% else %}
+    <div class="card" style="padding:24px"><p class="muted" style="margin:0">Турниры ещё не загружались.</p></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
