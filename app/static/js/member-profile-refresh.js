@@ -23,7 +23,7 @@
     if (heroTitle) heroTitle.textContent = 'Рейтинг';
 
     const heroCopy = page.querySelector('.rating-hub-hero .member-muted');
-    if (heroCopy) heroCopy.textContent = 'JACKSIDE и HI, JACK! — только позиции игроков и ключевые показатели.';
+    if (heroCopy) heroCopy.remove();
 
     const jacksideTab = page.querySelector('.rating-section-tabs a:first-child');
     if (jacksideTab) jacksideTab.href = '/account?tab=rating&section=month';
