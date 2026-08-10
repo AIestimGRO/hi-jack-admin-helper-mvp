@@ -11,8 +11,11 @@ DAILY_414_QUESTION_COUNT = 10
 # The main round is one shared club clock. This compatibility constant is kept
 # for API/status consumers that still call it the entry window.
 DAILY_414_ENTRY_WINDOW_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
+LEGACY_DAILY_414_ENTRY_WINDOW_SECONDS = 5 * 60
 DAILY_414_FINAL_TABLE_DELAY_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
-LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS = (5 * 60) + DAILY_414_TIME_LIMIT_SECONDS
+LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS = (
+    LEGACY_DAILY_414_ENTRY_WINDOW_SECONDS + DAILY_414_TIME_LIMIT_SECONDS
+)
 DAILY_414_FINAL_QUESTION_SECONDS = 30
 DAILY_414_FINAL_TABLE_SIZE = 10
 
@@ -83,6 +86,18 @@ def issue_date(
     return local_finished_at.date()
 
 
+def _campaign_code(campaign: sqlite3.Row | dict[str, Any]) -> str:
+    try:
+        return str(campaign["code"] or "")
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+def _is_legacy_daily_campaign(campaign: sqlite3.Row | dict[str, Any]) -> bool:
+    code = _campaign_code(campaign)
+    return bool(code and not code.startswith("jackside_"))
+
+
 def main_round_deadline(
     campaign: sqlite3.Row | dict[str, Any],
     *,
@@ -106,24 +121,23 @@ def main_prize_eligible(
     start = campaign_local_datetime(
         campaign["active_from"], timezone_name=timezone_name
     )
-    deadline = main_round_deadline(campaign, timezone_name=timezone_name)
-    if not start or not deadline:
+    if not start:
+        return False
+    deadline = (
+        start + timedelta(seconds=LEGACY_DAILY_414_ENTRY_WINDOW_SECONDS)
+        if _is_legacy_daily_campaign(campaign)
+        else main_round_deadline(campaign, timezone_name=timezone_name)
+    )
+    if not deadline:
         return False
     local_started = campaign_local_datetime(
         started_at, timezone_name=timezone_name
     )
     if local_started is None:
         return False
-    # A player may join after the start, but never receives a fresh personal
-    # 4:14. Joining at or after the shared deadline is too late to participate.
+    # New issue-backed JACKSIDE: a late join never receives a fresh personal
+    # 4:14. Historic non-issue campaigns retain their old 5-minute entry rule.
     return start <= local_started < deadline
-
-
-def _campaign_code(campaign: sqlite3.Row | dict[str, Any]) -> str:
-    try:
-        return str(campaign["code"] or "")
-    except (KeyError, IndexError, TypeError):
-        return ""
 
 
 def final_table_starts_at(
@@ -136,12 +150,11 @@ def final_table_starts_at(
     )
     if not start:
         return None
-    code = _campaign_code(campaign)
     # New issue-backed JACKSIDE releases use jackside_YYYYMMDD codes and start
     # the final immediately after the shared 4:14 closes. Keep old directly
     # created daily_414 campaigns on the historical 5:00 + 4:14 schedule so
     # existing archived/test releases are not silently reinterpreted.
-    if code and not code.startswith("jackside_"):
+    if _is_legacy_daily_campaign(campaign):
         return start + timedelta(seconds=LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS)
     return start + timedelta(seconds=DAILY_414_FINAL_TABLE_DELAY_SECONDS)
 
