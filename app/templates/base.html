@@ -9,10 +9,12 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/responsive.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-smart.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-persistent-nav.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 {% set current_path = request.url.path %}
+{% set master_tab = request.query_params.get('tab') or 'preferences' %}
 {% set admin_section = 'home' %}
 {% if current_path.startswith('/admin/vault') %}{% set admin_section = 'vault' %}
 {% elif current_path.startswith('/admin/quiz') or current_path.startswith('/master/quiz') %}{% set admin_section = 'quiz' %}
@@ -24,31 +26,53 @@
   {% if request.session.get('authenticated') %}
   <header class="topbar">
     <a class="brand" href="/"><img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt=""><span><strong>Hi, Jack!</strong><small>Club Helper</small></span></a>
-    <nav class="admin-primary-nav" aria-label="Основные разделы">
-      <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="/clients">Клиенты</a>
-      <a class="{{ 'active' if admin_section == 'quiz' else '' }}" href="/admin/quiz-results">Квизы</a>
-      <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault">Hi, Store</a>
-      {% if admin_role == 'master_admin' %}<a class="master-link {{ 'active' if admin_section == 'master' else '' }}" href="/master">Управление</a>{% endif %}
-    </nav>
     <span class="admin-current-user">{{ admin_name }}</span>
     <button class="admin-menu-toggle" type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span></span><span></span><span></span><b>Меню</b></button>
   </header>
-  <aside id="admin-menu" class="admin-menu-panel" data-admin-menu hidden>
-    <div class="admin-menu-head"><div><small>Рабочее меню</small><strong>{{ admin_name }}</strong></div><button type="button" data-admin-menu-close aria-label="Закрыть">×</button></div>
+
+  <aside id="admin-menu" class="admin-menu-panel admin-persistent-nav" data-admin-menu hidden>
+    <div class="admin-menu-head"><div><small>Навигация</small><strong>{{ admin_name }}</strong></div><button type="button" data-admin-menu-close aria-label="Закрыть">×</button></div>
     <nav>
+      <span class="admin-nav-group-label">Основное</span>
       <a class="{{ 'active' if current_path == '/' else '' }}" href="/"><span>⌂</span><div><strong>Главная</strong><small>Поиск и быстрые действия</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/clients') and not current_path.startswith('/clients/import') else '' }}" href="/clients"><span>◉</span><div><strong>Клиенты</strong><small>Поиск и преференции</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/clients/import') else '' }}" href="/clients/import"><span>⇧</span><div><strong>Импорт</strong><small>Обновить базу клуба</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/clients') and not current_path.startswith('/clients/import') else '' }}" href="/clients"><span>◉</span><div><strong>Клиенты</strong><small>Поиск и преференции игроков</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/clients/import') else '' }}" href="/clients/import"><span>⇧</span><div><strong>Импорт клиентов</strong><small>Обновить базу клуба</small></div></a>
+
+      <span class="admin-nav-group-label">Игра</span>
       <a class="{{ 'active' if current_path.startswith('/admin/quiz') else '' }}" href="/admin/quiz-results"><span>?</span><div><strong>Результаты квизов</strong><small>Ответы и статистика</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Выдать JACK CARD</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Старые награды кампаний</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/logs') else '' }}" href="/logs"><span>≡</span><div><strong>Журнал</strong><small>История операций</small></div></a>
-      {% if admin_role == 'master_admin' %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/master') else '' }}" href="/master"><span>★</span><div><strong>Управление</strong><small>Кампании, доступы и настройки</small></div></a>{% endif %}
+      {% if admin_role == 'master_admin' %}
+      <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'campaigns' else '' }}" href="/master?tab=campaigns"><span>4:14</span><div><strong>Квизы и JACKSIDE</strong><small>Кампании и настройки игры</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'analytics' else '' }}" href="/master?tab=analytics"><span>Σ</span><div><strong>Аналитика JACKSIDE</strong><small>Показатели игры</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/jackside-issues') else '' }}" href="/master/jackside-issues"><span>4:14</span><div><strong>Выпуски JACKSIDE</strong><small>Расписание и состояние игр</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/hijack-rating') else '' }}" href="/master/hijack-rating"><span>HJ</span><div><strong>Рейтинг HI, JACK!</strong><small>Турниры и Excel-загрузки</small></div></a>
+      {% endif %}
+
+      <span class="admin-nav-group-label">Игроки</span>
+      {% if admin_role == 'master_admin' %}
+      <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'engagement' else '' }}" href="/master?tab=engagement"><span>♛</span><div><strong>Звания и рефералы</strong><small>Titles, достижения и реферальная программа</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/engagement-icons') else '' }}" href="/master/engagement-icons"><span>◇</span><div><strong>Иконки коллекции</strong><small>Арт званий и достижений</small></div></a>
+      {% endif %}
+
+      <span class="admin-nav-group-label">Награды</span>
+      {% if admin_role == 'master_admin' %}
+      <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'preferences' else '' }}" href="/master?tab=preferences"><span>+</span><div><strong>Преференции</strong><small>Типы клубных бонусов</small></div></a>
+      {% endif %}
+      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Карты и награды</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Награды кампаний</small></div></a>
+
+      <span class="admin-nav-group-label">Система</span>
+      {% if admin_role == 'master_admin' %}
+      <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'admins' else '' }}" href="/master?tab=admins"><span>◎</span><div><strong>Администраторы</strong><small>Доступы и PIN</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'audit' else '' }}" href="/master?tab=audit"><span>≡</span><div><strong>Журнал действий</strong><small>Аудит мастер-админки</small></div></a>
+      {% endif %}
+      <a class="{{ 'active' if current_path.startswith('/logs') else '' }}" href="/logs"><span>≡</span><div><strong>Журнал операций</strong><small>История клиентских операций</small></div></a>
     </nav>
     <form action="/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Выйти из админки</button></form>
   </aside>
   {% endif %}
+
   <main class="container">{% block content %}{% endblock %}</main>
+
   {% if request.session.get('authenticated') %}
   <nav class="admin-bottom-nav" aria-label="Быстрые разделы">
     <a class="{{ 'active' if current_path == '/' else '' }}" href="/"><span>⌂</span><small>Главная</small></a>
