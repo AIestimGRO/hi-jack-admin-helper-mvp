@@ -129,12 +129,13 @@
       const carousel = document.createElement('link');
       carousel.dataset.engagementCarousel = '1';
       carousel.rel = 'stylesheet';
-      carousel.href = '/static/css/member-achievement-carousel.css?v=1';
+      carousel.href = '/static/css/member-achievement-carousel.css?v=2';
       document.head.append(carousel);
     }
     loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
     loadScriptOnce('/static/js/hijack-member.js?v=2', 'data-hijack-member-extension');
     loadScriptOnce('/static/js/hijack-rating-global-ui.js?v=1', 'data-hijack-rating-global-ui');
+    loadScriptOnce('/static/js/profile-experience-v2.js?v=1', 'data-profile-experience-v2');
   }
 
   if (openMonthlyRatingByDefault()) return;
