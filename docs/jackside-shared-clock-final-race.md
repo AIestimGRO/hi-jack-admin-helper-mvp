@@ -13,19 +13,23 @@ This document describes the gameplay invariants introduced for JACKSIDE issue-ba
 - Official completion time is elapsed time from the shared issue start, not from the player's join time. Example: join at +60 seconds and solve in 120 seconds => official completion time 180 seconds.
 - Final-table ranking remains: correct answers descending, official completion time ascending, submission id ascending as deterministic final tie-break.
 
-## Final-table start and qualification
+## Final-table lobby, start and qualification
 
 - Up to 10 best completed/eligible main-round submissions are seeded.
-- For new issue-backed releases the final table starts when the shared 4:14 main window closes.
-- Historic directly-created `daily_414` campaigns keep their historical final schedule for backward compatibility; this does not apply to new `jackside_...` issues.
-- A final table still requires at least two finalists to open. A single qualifier does not win automatically.
+- For new issue-backed releases the main round closes at `start + 4:14`.
+- A one-minute final lobby follows the main-round deadline.
+- The final table starts at `start + 5:14`.
+- A new issue-backed JACKSIDE final opens with one or more qualified finalists.
+- A single qualifier plays the final alone and is not an automatic winner.
+- If nobody qualifies, there is no playable final table and no main-prize winner.
+- Historic directly-created `daily_414` campaigns keep their historical final schedule and two-player minimum for backward compatibility; this does not apply to new `jackside_...` issues.
 
 ## Final questions before the last question
 
 - Questions are synchronous and use server-controlled windows.
 - A wrong answer or no answer eliminates the finalist.
 - If nobody remaining answers correctly, the final ends with `no_winner`.
-- If only one finalist survives an intermediate question, that player stays active but is not yet the winner. They must still play the last question.
+- If only one finalist is playing, or only one finalist survives an intermediate question, that player stays active but is not yet the winner. They must still play the last question.
 
 ## Last question: race rule
 
@@ -33,6 +37,7 @@ This document describes the gameplay invariants introduced for JACKSIDE issue-ba
 - The winner is the active finalist whose correct answer has the earliest server-recorded `answered_at` timestamp.
 - If timestamps are equal, `response_time_ms` and then the answer row id provide deterministic ordering.
 - This rule also applies when the entire final consists of one question.
+- For a solo final, the single finalist wins only if the last question is answered correctly within its server-controlled window.
 - If several players eventually answer the last question correctly, only the earliest correct answer wins.
 - If nobody answers the last question correctly, the outcome is `no_winner` and the main prize is not awarded.
 - New finals do not create `co_winners`. Historical co-winner rows and prize-split code remain readable for backward compatibility only.
@@ -46,7 +51,7 @@ This document describes the gameplay invariants introduced for JACKSIDE issue-ba
 
 ## Rules publication
 
-`DEFAULT_RULES_CONTENT` and rules version `1.1` describe the new mechanics. Existing installations already contain the original built-in `1.0` row, so deployment must explicitly activate the new version and force re-acceptance before public play.
+`DEFAULT_RULES_CONTENT` and rules version `1.1` describe the shared clock, one-minute final lobby, solo-final rule and last-question race. Existing installations already contain the original built-in `1.0` row, so deployment must explicitly activate the new version and force re-acceptance before public play.
 
 Use the idempotent migration after the normal SQLite backup and application update:
 
