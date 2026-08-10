@@ -205,15 +205,21 @@ def final_table_candidate_eligible(
     local_finished = campaign_local_datetime(
         finished_at, timezone_name=timezone_name
     )
+    completion_cutoff = (
+        final_start
+        if _is_legacy_daily_campaign(campaign)
+        else main_round_deadline(campaign, timezone_name=timezone_name)
+    )
     return bool(
         main_round_completed
         and not timed_out
         and final_start
+        and completion_cutoff
         and local_finished
         and main_prize_eligible(
             campaign, started_at=started_at, timezone_name=timezone_name
         )
-        and local_finished <= final_start
+        and local_finished <= completion_cutoff
     )
 
 
