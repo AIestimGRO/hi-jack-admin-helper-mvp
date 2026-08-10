@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/responsive.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-smart.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-persistent-nav.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
@@ -33,17 +34,24 @@
     <span class="admin-current-user">{{ admin_name }}</span>
     <button class="admin-menu-toggle" type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span></span><span></span><span></span><b>Меню</b></button>
   </header>
-  <aside id="admin-menu" class="admin-menu-panel" data-admin-menu hidden>
-    <div class="admin-menu-head"><div><small>Рабочее меню</small><strong>{{ admin_name }}</strong></div><button type="button" data-admin-menu-close aria-label="Закрыть">×</button></div>
+  <aside id="admin-menu" class="admin-menu-panel admin-persistent-nav" data-admin-menu hidden>
+    <div class="admin-menu-head"><div><small>Навигация</small><strong>{{ admin_name }}</strong></div><button type="button" data-admin-menu-close aria-label="Закрыть">×</button></div>
     <nav>
+      <span class="admin-nav-group-label">Основное</span>
       <a class="{{ 'active' if current_path == '/' else '' }}" href="/"><span>⌂</span><div><strong>Главная</strong><small>Поиск и быстрые действия</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/clients') and not current_path.startswith('/clients/import') else '' }}" href="/clients"><span>◉</span><div><strong>Клиенты</strong><small>Поиск и преференции</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/clients/import') else '' }}" href="/clients/import"><span>⇧</span><div><strong>Импорт</strong><small>Обновить базу клуба</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/admin/quiz') else '' }}" href="/admin/quiz-results"><span>?</span><div><strong>Результаты квизов</strong><small>Ответы и статистика</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Выдать JACK CARD</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Старые награды кампаний</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Карты и награды</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Награды кампаний</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/logs') else '' }}" href="/logs"><span>≡</span><div><strong>Журнал</strong><small>История операций</small></div></a>
-      {% if admin_role == 'master_admin' %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/master') else '' }}" href="/master"><span>★</span><div><strong>Управление</strong><small>Кампании, доступы и настройки</small></div></a>{% endif %}
+      {% if admin_role == 'master_admin' %}
+      <span class="admin-nav-group-label">Мастер</span>
+      <a class="admin-menu-master {{ 'active' if current_path == '/master' else '' }}" href="/master"><span>★</span><div><strong>Управление</strong><small>Настройки и кампании</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/jackside-issues') else '' }}" href="/master/jackside-issues"><span>4:14</span><div><strong>Выпуски JACKSIDE</strong><small>Расписание и состояние игр</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/hijack-rating') else '' }}" href="/master/hijack-rating"><span>HJ</span><div><strong>Рейтинг HI, JACK!</strong><small>Турниры и Excel-загрузки</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/engagement-icons') else '' }}" href="/master/engagement-icons"><span>♛</span><div><strong>Иконки званий</strong><small>Titles и достижения</small></div></a>
+      {% endif %}
     </nav>
     <form action="/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Выйти из админки</button></form>
   </aside>
