@@ -12,6 +12,7 @@ DAILY_414_QUESTION_COUNT = 10
 # for API/status consumers that still call it the entry window.
 DAILY_414_ENTRY_WINDOW_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
 DAILY_414_FINAL_TABLE_DELAY_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
+LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS = (5 * 60) + DAILY_414_TIME_LIMIT_SECONDS
 DAILY_414_FINAL_QUESTION_SECONDS = 30
 DAILY_414_FINAL_TABLE_SIZE = 10
 
@@ -118,13 +119,31 @@ def main_prize_eligible(
     return start <= local_started < deadline
 
 
+def _campaign_code(campaign: sqlite3.Row | dict[str, Any]) -> str:
+    try:
+        return str(campaign["code"] or "")
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
 def final_table_starts_at(
     campaign: sqlite3.Row | dict[str, Any],
     *,
     timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
 ) -> datetime | None:
-    # The top-10 can be fixed as soon as the one shared 4:14 main clock closes.
-    return main_round_deadline(campaign, timezone_name=timezone_name)
+    start = campaign_local_datetime(
+        campaign["active_from"], timezone_name=timezone_name
+    )
+    if not start:
+        return None
+    code = _campaign_code(campaign)
+    # New issue-backed JACKSIDE releases use jackside_YYYYMMDD codes and start
+    # the final immediately after the shared 4:14 closes. Keep old directly
+    # created daily_414 campaigns on the historical 5:00 + 4:14 schedule so
+    # existing archived/test releases are not silently reinterpreted.
+    if code and not code.startswith("jackside_"):
+        return start + timedelta(seconds=LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS)
+    return start + timedelta(seconds=DAILY_414_FINAL_TABLE_DELAY_SECONDS)
 
 
 def main_round_answers_complete(
