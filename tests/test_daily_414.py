@@ -39,7 +39,7 @@ def test_daily_414_entry_window_accepts_utc_active_from_as_local() -> None:
     )
     assert final_table_starts_at(
         campaign, timezone_name="Europe/Moscow"
-    ) == datetime(2026, 8, 6, 18, 18, 14)
+    ) == datetime(2026, 8, 6, 18, 19, 14)
 
 
 def test_rank_final_candidates_orders_by_score_then_speed() -> None:
@@ -68,21 +68,22 @@ def test_daily_414_uses_one_shared_four_fourteen_window() -> None:
     )
 
 
-def test_daily_414_candidate_must_finish_before_shared_final_start() -> None:
+def test_daily_414_candidate_must_finish_before_shared_main_deadline() -> None:
     start = datetime(2026, 7, 29, 18, 14)
     campaign = {"active_from": start.isoformat(timespec="minutes")}
     final_start = final_table_starts_at(campaign)
+    main_deadline = start + timedelta(minutes=4, seconds=14)
 
-    assert final_start == start + timedelta(minutes=4, seconds=14)
+    assert final_start == start + timedelta(minutes=5, seconds=14)
     assert final_table_candidate_eligible(
         campaign,
         started_at=start + timedelta(minutes=2),
-        finished_at=final_start,
+        finished_at=main_deadline,
     )
     assert not final_table_candidate_eligible(
         campaign,
         started_at=start + timedelta(minutes=2),
-        finished_at=final_start + timedelta(milliseconds=1),
+        finished_at=main_deadline + timedelta(milliseconds=1),
     )
     assert not final_table_candidate_eligible(
         campaign,
