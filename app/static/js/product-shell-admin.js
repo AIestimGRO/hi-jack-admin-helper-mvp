@@ -1,5 +1,7 @@
 (() => {
   const HIJACK_CONDITIONS = [
+    ['hijack_global_rating', 'HI, JACK! · глобальный рейтинг'],
+    ['hijack_global_kills', 'HI, JACK! · глобальные киллы'],
     ['hijack_year_rating', 'HI, JACK! · рейтинг за год'],
     ['hijack_month_rating', 'HI, JACK! · рейтинг за месяц'],
     ['hijack_latest_rating', 'HI, JACK! · рейтинг последнего турнира'],
@@ -93,7 +95,17 @@
     document.querySelectorAll('[data-master-panel="engagement"] select[name="condition_code"]').forEach(configureConditionSelect);
   }
 
+  function loadRatingManager() {
+    if (window.location.pathname !== '/master/hijack-rating') return;
+    if (document.querySelector('script[data-hijack-rating-manager]')) return;
+    const script = document.createElement('script');
+    script.dataset.hijackRatingManager = '1';
+    script.src = '/static/js/hijack-rating-admin-v2.js?v=1';
+    document.body.append(script);
+  }
+
   renameVaultCopy();
   addEngagementTools();
   extendTitleConditions();
+  loadRatingManager();
 })();
