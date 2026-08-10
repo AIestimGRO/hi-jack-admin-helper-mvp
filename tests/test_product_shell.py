@@ -113,4 +113,4 @@ def test_product_shell_registers_expected_routes(tmp_path: Path) -> None:
     assert "/account/profile/avatar" in paths
     assert "/account/chats" in paths
     assert "/master/engagement-icons" in paths
-    assert "/api/master/engagement-icons/{kind}/{definition_id}" in paths
+    assert "/api/master/engagement-icons/{kind}/{definition_id:int}" in paths
