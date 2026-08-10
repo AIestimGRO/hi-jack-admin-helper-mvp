@@ -65,7 +65,6 @@
       return item.kind === 'achievement' ? 'Не открыто · достижение' : 'Не открыто · звание';
     }
     if (item.kind === 'achievement') return 'Достижение';
-    if (item.temporary) return 'Активное временное звание';
     if (item.selected) return 'Основное звание';
     return 'Активное звание';
   }
