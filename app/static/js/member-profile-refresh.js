@@ -119,7 +119,11 @@
   function loadHiJackExtension() {
     loadStylesheetOnce('/static/css/hijack-member.css?v=3', 'data-hijack-member-extension');
     loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
-    loadScriptOnce('/static/js/hijack-member.js?v=3', 'data-hijack-member-extension');
+
+    // Rating/referral controller is needed only on its own tabs. Keep Home, Quizzes and Store isolated.
+    if (tab === 'rating' || tab === 'profile') {
+      loadScriptOnce('/static/js/hijack-member.js?v=3', 'data-hijack-member-extension');
+    }
 
     // Profile-only UI must never affect the Home, Schedule, Rating or Store render path.
     if (tab === 'profile') {
