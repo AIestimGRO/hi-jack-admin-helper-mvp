@@ -8,8 +8,10 @@ from zoneinfo import ZoneInfo
 
 DAILY_414_TIME_LIMIT_SECONDS = 254
 DAILY_414_QUESTION_COUNT = 10
-DAILY_414_ENTRY_WINDOW_SECONDS = 5 * 60
-DAILY_414_FINAL_TABLE_DELAY_SECONDS = DAILY_414_ENTRY_WINDOW_SECONDS + DAILY_414_TIME_LIMIT_SECONDS
+# The main round is one shared club clock. This compatibility constant is kept
+# for API/status consumers that still call it the entry window.
+DAILY_414_ENTRY_WINDOW_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
+DAILY_414_FINAL_TABLE_DELAY_SECONDS = DAILY_414_TIME_LIMIT_SECONDS
 DAILY_414_FINAL_QUESTION_SECONDS = 30
 DAILY_414_FINAL_TABLE_SIZE = 10
 
@@ -80,6 +82,20 @@ def issue_date(
     return local_finished_at.date()
 
 
+def main_round_deadline(
+    campaign: sqlite3.Row | dict[str, Any],
+    *,
+    timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
+) -> datetime | None:
+    """Return the shared main-round deadline in club-local wall time."""
+    start = campaign_local_datetime(
+        campaign["active_from"], timezone_name=timezone_name
+    )
+    if not start:
+        return None
+    return start + timedelta(seconds=DAILY_414_TIME_LIMIT_SECONDS)
+
+
 def main_prize_eligible(
     campaign: sqlite3.Row | dict[str, Any],
     *,
@@ -89,15 +105,17 @@ def main_prize_eligible(
     start = campaign_local_datetime(
         campaign["active_from"], timezone_name=timezone_name
     )
-    if not start:
+    deadline = main_round_deadline(campaign, timezone_name=timezone_name)
+    if not start or not deadline:
         return False
     local_started = campaign_local_datetime(
         started_at, timezone_name=timezone_name
     )
     if local_started is None:
         return False
-    cutoff = start + timedelta(seconds=DAILY_414_ENTRY_WINDOW_SECONDS)
-    return start <= local_started <= cutoff
+    # A player may join after the start, but never receives a fresh personal
+    # 4:14. Joining at or after the shared deadline is too late to participate.
+    return start <= local_started < deadline
 
 
 def final_table_starts_at(
@@ -105,12 +123,8 @@ def final_table_starts_at(
     *,
     timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
 ) -> datetime | None:
-    start = campaign_local_datetime(
-        campaign["active_from"], timezone_name=timezone_name
-    )
-    if not start:
-        return None
-    return start + timedelta(seconds=DAILY_414_FINAL_TABLE_DELAY_SECONDS)
+    # The top-10 can be fixed as soon as the one shared 4:14 main clock closes.
+    return main_round_deadline(campaign, timezone_name=timezone_name)
 
 
 def main_round_answers_complete(
