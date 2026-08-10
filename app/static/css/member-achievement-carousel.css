@@ -1,44 +1,151 @@
-/* Mobile horizontal carousel for title and achievement collection. */
+/* HI, Titles! two-row horizontal collection and profile settings depth. */
+
+.profile-account-settings-button {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  gap: 6px;
+  margin: 0 0 5px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  background: rgba(255,255,255,.035);
+  color: var(--app-muted, #8a9996);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-decoration: none;
+}
+
+.profile-account-settings-button:hover,
+.profile-account-settings-button:focus-visible {
+  border-color: rgba(49,219,197,.24);
+  color: var(--app-accent, #31dbc5);
+}
+
+.member-app-page[data-profile-view="main"] .product-profile-editor,
+.member-app-page[data-profile-view="main"] .profile-panel {
+  display: none !important;
+}
+
+.member-app-page[data-profile-view="settings"] .profile-rich-stack,
+.member-app-page[data-profile-view="settings"] .account-details {
+  display: none !important;
+}
+
+.member-app-page[data-profile-view="settings"] .profile-heading {
+  margin-bottom: 18px;
+}
+
+.profile-achievement-stage .profile-achievement-intro {
+  min-height: 0;
+  margin-bottom: 12px;
+}
+
+.profile-achievement-stage .profile-achievement-intro > div {
+  width: 100%;
+}
+
+.profile-achievement-stage .profile-achievement-intro h2 {
+  margin: 0;
+}
+
+.profile-achievement-stage .profile-achievement-intro p,
+.profile-achievement-stage > .profile-current-title,
+.profile-achievement-stage .profile-title-crown {
+  display: none !important;
+}
+
+.profile-emblem-grid[data-two-row-titles="1"] {
+  display: grid !important;
+  grid-template-rows: repeat(2, minmax(0, auto)) !important;
+  grid-template-columns: none !important;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(270px, 310px);
+  align-items: stretch;
+  gap: 10px 12px !important;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 18px 14px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 2px;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.profile-emblem-grid[data-two-row-titles="1"]::-webkit-scrollbar {
+  display: none;
+}
+
+.profile-emblem-grid[data-two-row-titles="1"] > .profile-emblem-card {
+  width: auto !important;
+  min-width: 0;
+  margin: 0 !important;
+  scroll-snap-align: start;
+}
+
+.profile-emblem-grid[data-two-row-titles="1"] .profile-emblem-card > summary {
+  width: 100%;
+  height: 100%;
+}
+
+.profile-emblem-grid[data-two-row-titles="1"] .profile-emblem-detail {
+  width: 100%;
+}
+
+.profile-emblem-card.is-locked,
+.profile-emblem-card.is-locked[open] {
+  border-color: #303535 !important;
+  background: linear-gradient(145deg, #202323, #151818) !important;
+  box-shadow: none !important;
+  color: #777e7d !important;
+}
+
+.profile-emblem-card.is-locked > summary,
+.profile-emblem-card.is-locked .profile-emblem-detail {
+  background: transparent !important;
+  color: #777e7d !important;
+}
+
+.profile-emblem-card.is-locked .profile-emblem-icon {
+  border-color: #343a39 !important;
+  background: #272b2a !important;
+  box-shadow: none !important;
+  color: #686e6d !important;
+  filter: grayscale(1);
+  opacity: .72;
+}
+
+.profile-emblem-card.is-locked .profile-emblem-icon img {
+  filter: grayscale(1) brightness(.62) contrast(.9) !important;
+  opacity: .72;
+}
+
+.profile-emblem-card.is-locked .profile-emblem-summary-copy strong,
+.profile-emblem-card.is-locked .profile-emblem-summary-copy small,
+.profile-emblem-card.is-locked .profile-emblem-detail p,
+.profile-emblem-card.is-locked .profile-emblem-meta {
+  color: #707675 !important;
+}
 
 @media (max-width: 680px) {
-  .profile-emblem-grid {
-    display: flex !important;
-    grid-template-columns: none !important;
-    gap: 12px !important;
-    max-width: 100%;
-    margin: 0;
-    padding: 4px 14px 14px 2px;
-    overflow-x: auto;
-    overflow-y: visible;
+  .profile-emblem-grid[data-two-row-titles="1"] {
+    grid-auto-columns: min(78vw, 320px);
+    gap: 9px 10px !important;
+    padding-right: 18px;
     scroll-snap-type: x mandatory;
-    scroll-padding-inline: 2px;
-    overscroll-behavior-inline: contain;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
   }
+}
 
-  .profile-emblem-grid::-webkit-scrollbar {
-    display: none;
-  }
-
-  .profile-emblem-grid > .profile-emblem-card {
-    flex: 0 0 min(82vw, 340px);
-    width: min(82vw, 340px);
-    min-width: 0;
-    scroll-snap-align: start;
-    scroll-snap-stop: always;
-  }
-
-  .profile-emblem-grid > .profile-emblem-card:last-child {
-    margin-right: 10px;
-  }
-
-  .profile-emblem-grid .profile-emblem-card > summary {
-    width: 100%;
-  }
-
-  .profile-emblem-grid .profile-emblem-detail {
-    width: 100%;
+@media (max-width: 430px) {
+  .profile-emblem-grid[data-two-row-titles="1"] {
+    display: grid !important;
+    grid-template-columns: none !important;
+    grid-template-rows: repeat(2, minmax(0, auto)) !important;
+    grid-auto-columns: min(82vw, 310px);
   }
 }
 
