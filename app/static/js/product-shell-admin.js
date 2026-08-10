@@ -104,8 +104,26 @@
     document.body.append(script);
   }
 
+  function loadAdminOrganization() {
+    if (!window.location.pathname.startsWith('/master')) return;
+    if (!document.querySelector('link[data-master-admin-organized]')) {
+      const stylesheet = document.createElement('link');
+      stylesheet.dataset.masterAdminOrganized = '1';
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = '/static/css/master-admin-organized.css?v=1';
+      document.head.append(stylesheet);
+    }
+    if (window.location.pathname !== '/master') return;
+    if (document.querySelector('script[data-master-admin-organized]')) return;
+    const script = document.createElement('script');
+    script.dataset.masterAdminOrganized = '1';
+    script.src = '/static/js/master-admin-organized.js?v=1';
+    document.body.append(script);
+  }
+
   renameVaultCopy();
   addEngagementTools();
   extendTitleConditions();
   loadRatingManager();
+  loadAdminOrganization();
 })();
