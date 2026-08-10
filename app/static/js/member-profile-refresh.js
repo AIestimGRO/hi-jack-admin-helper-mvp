@@ -117,10 +117,9 @@
   }
 
   function loadHiJackExtension() {
-    loadStylesheetOnce('/static/css/hijack-member.css?v=2', 'data-hijack-member-extension');
+    loadStylesheetOnce('/static/css/hijack-member.css?v=3', 'data-hijack-member-extension');
     loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
-    loadScriptOnce('/static/js/hijack-member.js?v=2', 'data-hijack-member-extension');
-    loadScriptOnce('/static/js/hijack-rating-global-ui.js?v=1', 'data-hijack-rating-global-ui');
+    loadScriptOnce('/static/js/hijack-member.js?v=3', 'data-hijack-member-extension');
 
     // Profile-only UI must never affect the Home, Schedule, Rating or Store render path.
     if (tab === 'profile') {
