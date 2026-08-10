@@ -47,7 +47,8 @@
   border: 2px solid #0a1517;
 }
 .member-chat-launcher.has-unread .member-chat-unread { display: grid; }
-.member-chat-launcher.is-hidden { opacity: 0; pointer-events: none; transform: translateY(14px) scale(.9); }
+.member-chat-launcher.is-hidden,
+.member-chat-launcher.is-obstructed { opacity: 0; pointer-events: none; transform: translateY(14px) scale(.9); }
 
 /* Profile media */
 .member-profile-button { overflow: hidden; position: relative; }
