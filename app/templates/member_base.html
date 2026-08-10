@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-extra.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-dashboard.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-profile-refresh.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
 </head>
 <body class="{{ 'member-app-body' if member else 'member-auth-body' }}">
   <header class="member-topbar">
@@ -17,7 +18,7 @@
       <span><strong>{{ 'JACKSIDE' if member else 'HI, JACK CLUB!' }}</strong><small>{{ 'HI, JACK CLUB!' if member else 'Личный кабинет' }}</small></span>
     </a>
     {% if member %}
-    {% set header_name = member.first_name or member.nickname or member.username or 'HJ' %}
+    {% set header_name = member.nickname or member.first_name or member.username or 'HJ' %}
     <a class="member-profile-button" href="/account?tab=profile" aria-label="Открыть профиль">{{ header_name[:1]|upper }}</a>
     {% endif %}
   </header>
@@ -30,7 +31,7 @@
     </a>
     <a class="{{ 'active' if current_tab|default('') == 'quizzes' else '' }}" href="/account?tab=quizzes">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2.5 5.2h5M9.5 12h5M9.5 15.8h3"/></svg>
-      <span>Квизы</span>
+      <span>Расписание</span>
     </a>
     <a class="member-hj-nav {{ 'active' if current_tab|default('') == 'rating' else '' }}" href="/account?tab=rating&amp;section=month" aria-label="Открыть рейтинг">
       <span class="member-hj-shield" aria-hidden="true"><b>HJ</b></span>
@@ -38,7 +39,7 @@
     </a>
     <a class="{{ 'active' if current_tab|default('') == 'vault' else '' }}" href="/account?tab=vault">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM6.5 4h11v3.5h-11zM9.3 12.2h5.4M12 9.5v5.4"/></svg>
-      <span>Хранилище</span>
+      <span>Hi, Store</span>
       {% if vault_active_rewards|default([])|length %}<i>{{ vault_active_rewards|length }}</i>{% endif %}
     </a>
     <a class="{{ 'active' if current_tab|default('') == 'profile' else '' }}" href="/account?tab=profile">
@@ -63,12 +64,18 @@
             <h2 id="profile-emblems-heading">Звания и достижения</h2>
             <p>{{ emblem_total }} открыто · нажми на иконку, чтобы посмотреть подробности</p>
           </div>
+          {% if engagement.current_title and engagement.current_title.icon_path %}
+          <div class="profile-title-crown has-custom-art" aria-hidden="true"><img src="{{ engagement.current_title.icon_path }}" alt="" loading="lazy"></div>
+          {% else %}
           <div class="profile-title-crown" aria-hidden="true">{{ engagement.current_title.icon if engagement.current_title and engagement.current_title.icon else '★' }}</div>
+          {% endif %}
         </div>
 
         {% if engagement.current_title %}
         <div class="profile-current-title">
-          <span aria-hidden="true">{{ engagement.current_title.icon or '★' }}</span>
+          <span class="{{ 'has-custom-art' if engagement.current_title.icon_path else '' }}" aria-hidden="true">
+            {% if engagement.current_title.icon_path %}<img src="{{ engagement.current_title.icon_path }}" alt="" loading="lazy">{% else %}{{ engagement.current_title.icon or '★' }}{% endif %}
+          </span>
           <div>
             <small>{{ 'Активное временное звание' if engagement.current_title.temporary else 'Активное звание' }}</small>
             <strong>{{ engagement.current_title.name }}</strong>
@@ -91,7 +98,9 @@
           {% for item in permanent_titles %}
           <details class="profile-emblem-card {{ 'is-selected' if item.selected else '' }}">
             <summary>
-              <span class="profile-emblem-icon" aria-hidden="true">{{ item.icon or '★' }}</span>
+              <span class="profile-emblem-icon {{ 'has-custom-art' if item.icon_path else '' }}" aria-hidden="true">
+                {% if item.icon_path %}<img src="{{ item.icon_path }}" alt="" loading="lazy">{% else %}{{ item.icon or '★' }}{% endif %}
+              </span>
               <span class="profile-emblem-summary-copy"><strong>{{ item.name }}</strong><small>{{ 'Выбрано · ' if item.selected else '' }}Постоянное звание</small></span>
             </summary>
             <div class="profile-emblem-detail">
@@ -112,7 +121,9 @@
           {% for item in temporary_titles %}
           <details class="profile-emblem-card is-temporary">
             <summary>
-              <span class="profile-emblem-icon" aria-hidden="true">{{ item.icon or '✦' }}</span>
+              <span class="profile-emblem-icon {{ 'has-custom-art' if item.icon_path else '' }}" aria-hidden="true">
+                {% if item.icon_path %}<img src="{{ item.icon_path }}" alt="" loading="lazy">{% else %}{{ item.icon or '✦' }}{% endif %}
+              </span>
               <span class="profile-emblem-summary-copy"><strong>{{ item.name }}</strong><small>Временное звание</small></span>
             </summary>
             <div class="profile-emblem-detail">
@@ -125,7 +136,9 @@
           {% for item in achievements %}
           <details class="profile-emblem-card is-achievement">
             <summary>
-              <span class="profile-emblem-icon" aria-hidden="true">{{ item.icon or '◆' }}</span>
+              <span class="profile-emblem-icon {{ 'has-custom-art' if item.icon_path else '' }}" aria-hidden="true">
+                {% if item.icon_path %}<img src="{{ item.icon_path }}" alt="" loading="lazy">{% else %}{{ item.icon or '◆' }}{% endif %}
+              </span>
               <span class="profile-emblem-summary-copy"><strong>{{ item.name }}</strong><small>Достижение</small></span>
             </summary>
             <div class="profile-emblem-detail">
@@ -184,7 +197,9 @@
 
         {% if engagement.active_referral_titles %}
         <div class="profile-referral-titles" aria-label="Реферальные звания">
-          {% for item in engagement.active_referral_titles %}<span>{{ item.icon or '✦' }} {{ item.name }}</span>{% endfor %}
+          {% for item in engagement.active_referral_titles %}
+          <span>{% if item.icon_path %}<img class="profile-referral-title-icon" src="{{ item.icon_path }}" alt="" loading="lazy">{% else %}{{ item.icon or '✦' }}{% endif %} {{ item.name }}</span>
+          {% endfor %}
         </div>
         {% endif %}
 
@@ -202,9 +217,15 @@
     </section>
   </template>
   {% endif %}
+
+  <a class="member-chat-launcher" data-chat-launcher href="/account/chats" aria-label="Открыть Chats">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 5.4h13.6a2.2 2.2 0 0 1 2.2 2.2v7.2a2.2 2.2 0 0 1-2.2 2.2h-7.3l-4.9 3.3.9-3.3H5.2A2.2 2.2 0 0 1 3 14.8V7.6a2.2 2.2 0 0 1 2.2-2.2Z"/></svg>
+    <span class="member-chat-unread" aria-live="polite">0</span>
+  </a>
   {% endif %}
   <script src="{{ url_for('static', path='/js/member.js') }}?v={{ asset_version }}" defer></script>
   <script src="{{ url_for('static', path='/js/member-profile-refresh.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/product-shell.js') }}?v={{ asset_version }}" defer></script>
   <script type="module" src="{{ url_for('static', path='/js/reward-animations.js') }}?v={{ asset_version }}"></script>
   <script src="{{ url_for('static', path='/js/reward-stickers.js') }}?v={{ asset_version }}" defer></script>
 </body>
