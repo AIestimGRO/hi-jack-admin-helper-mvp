@@ -1,0 +1,415 @@
+/* HI, JACK! rating / referral extension and member polish. */
+
+/* My Cards: keep reward artwork on the dark club surface and add a restrained gold tint. */
+.member-app-page .jack-card {
+  border-color: rgba(222, 183, 86, .25) !important;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(222, 183, 86, .17), transparent 42%),
+    radial-gradient(circle at 12% 100%, rgba(137, 96, 25, .09), transparent 46%),
+    linear-gradient(138deg, #1b1c16 0%, #10120f 58%, #0a0e0d 100%) !important;
+  box-shadow: inset 0 0 0 1px rgba(246, 213, 124, .025), 0 18px 40px rgba(0, 0, 0, .2);
+}
+
+.member-app-page .jack-card-media,
+.member-app-page .jack-card-animation,
+.member-app-page .jack-card-media .reward-animation,
+.member-app-page .jack-card-media .reward-animation-fallback,
+.member-app-page .jack-card-media img:not(.jack-card-qr) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.member-app-page .jack-card-media {
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 40% 32%, rgba(255, 235, 171, .08), transparent 44%),
+    rgba(199, 151, 45, .035) !important;
+}
+
+.member-app-page .jack-card-top small,
+.member-app-page .jack-card .member-eyebrow {
+  color: #e4c46e;
+}
+
+/* Uploaded collection artwork should occupy almost the whole emblem. */
+.profile-emblem-icon.has-custom-art,
+.profile-title-crown.has-custom-art,
+.profile-current-title > span.has-custom-art {
+  padding: 2px !important;
+}
+
+.profile-emblem-icon.has-custom-art img,
+.profile-title-crown.has-custom-art img,
+.profile-current-title > span.has-custom-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* HI, JACK! rating with three periods. */
+.hijack-rating-hub {
+  display: grid;
+  gap: 14px;
+}
+
+.hijack-rating-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(224, 184, 82, .2);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(224, 184, 82, .12), transparent 42%),
+    linear-gradient(145deg, #141713, #0b100e 72%);
+}
+
+.hijack-rating-head h2 {
+  margin: 2px 0 0;
+  font-size: clamp(24px, 5vw, 32px);
+}
+
+.hijack-rating-me {
+  display: grid;
+  min-width: 122px;
+  padding: 11px 13px;
+  border: 1px solid rgba(224, 184, 82, .18);
+  border-radius: 17px;
+  background: rgba(224, 184, 82, .055);
+  text-align: center;
+}
+
+.hijack-rating-me small,
+.hijack-rating-me span {
+  color: var(--app-muted);
+  font-size: 9px;
+}
+
+.hijack-rating-me strong {
+  margin: 3px 0;
+  color: #f0cf73;
+  font-size: 27px;
+}
+
+.hijack-rating-periods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--app-line);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, .035);
+}
+
+.hijack-rating-periods button {
+  min-height: 42px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #7e8c89;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.hijack-rating-periods button.active {
+  background: linear-gradient(145deg, rgba(224, 184, 82, .16), rgba(49, 219, 197, .04));
+  color: #f4d987;
+  box-shadow: inset 0 0 0 1px rgba(224, 184, 82, .12);
+}
+
+.hijack-rating-caption {
+  min-height: 16px;
+  color: var(--app-muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.hijack-rating-list article {
+  border-color: rgba(224, 184, 82, .11);
+}
+
+/* Multi-level referral tree. */
+.referral-tree-shell {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, .065);
+}
+
+.referral-tree-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.referral-tree-head > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.referral-tree-head small {
+  color: #6f8589;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.referral-tree-head strong {
+  font-size: 17px;
+}
+
+.referral-tree-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.referral-tree-stats span {
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: rgba(83, 167, 221, .07);
+  color: #8fb7c2;
+  font-size: 8px;
+}
+
+.referral-tree-stats b {
+  color: #b8f5ed;
+}
+
+.referral-tree-scroll {
+  max-width: 100%;
+  padding: 4px 2px 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.referral-tree-root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: max-content;
+  min-width: 150px;
+  gap: 8px;
+  margin: 0 auto 18px;
+  padding: 9px 12px;
+  border: 1px solid rgba(49, 219, 197, .24);
+  border-radius: 15px;
+  background: rgba(49, 219, 197, .08);
+}
+
+.referral-tree-root::after {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 1px;
+  height: 18px;
+  background: rgba(83, 167, 221, .25);
+  content: "";
+}
+
+.referral-tree-root-badge {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(49, 219, 197, .12);
+  color: var(--app-accent);
+  font-size: 8px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.referral-tree-root strong {
+  font-size: 11px;
+}
+
+.referral-tree-first-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  min-width: max-content;
+}
+
+.referral-tree-node {
+  position: relative;
+  min-width: 150px;
+  max-width: 230px;
+}
+
+.referral-tree-node > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.referral-tree-node > summary::-webkit-details-marker {
+  display: none;
+}
+
+.referral-tree-person {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(83, 167, 221, .15);
+  border-radius: 14px;
+  background: rgba(9, 22, 24, .88);
+}
+
+.referral-tree-node[open] > .referral-tree-person {
+  border-color: rgba(49, 219, 197, .22);
+}
+
+.referral-tree-avatar {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(49, 219, 197, .14), rgba(83, 167, 221, .08));
+  color: #aef4eb;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.referral-tree-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.referral-tree-copy strong {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.referral-tree-copy small {
+  overflow: hidden;
+  color: #718380;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.referral-tree-children {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0 17px;
+  padding-left: 16px;
+  border-left: 1px solid rgba(83, 167, 221, .2);
+}
+
+.referral-tree-children > .referral-tree-node::before {
+  position: absolute;
+  top: 22px;
+  right: 100%;
+  width: 16px;
+  height: 1px;
+  background: rgba(83, 167, 221, .2);
+  content: "";
+}
+
+.referral-tree-note {
+  margin: 10px 0 0;
+  font-size: 9px;
+  text-align: center;
+}
+
+@media (max-width: 680px) {
+  /* Approximately double the old phone emblem size (40-45px -> 80px). */
+  .profile-emblem-card > summary {
+    grid-template-columns: 82px minmax(0, 1fr) auto !important;
+    min-height: 104px !important;
+    gap: 8px !important;
+    padding: 9px !important;
+  }
+
+  .profile-emblem-icon {
+    width: 82px !important;
+    height: 82px !important;
+    border-radius: 20px !important;
+    font-size: 34px !important;
+  }
+
+  .profile-emblem-icon.has-custom-art {
+    padding: 2px !important;
+  }
+
+  .profile-emblem-detail {
+    padding-left: 102px !important;
+  }
+
+  .hijack-rating-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hijack-rating-me {
+    grid-template-columns: auto auto 1fr;
+    align-items: center;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .hijack-rating-me strong {
+    margin: 0 8px;
+  }
+
+  .referral-tree-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .referral-tree-stats {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 430px) {
+  .profile-emblem-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .profile-emblem-card > summary {
+    grid-template-columns: 88px minmax(0, 1fr) auto !important;
+    min-height: 110px !important;
+  }
+
+  .profile-emblem-icon {
+    width: 88px !important;
+    height: 88px !important;
+    border-radius: 22px !important;
+  }
+
+  .profile-emblem-summary-copy strong {
+    font-size: 13px !important;
+  }
+
+  .profile-emblem-summary-copy small {
+    font-size: 9px !important;
+  }
+
+  .profile-emblem-detail {
+    padding: 0 12px 14px !important;
+  }
+
+  .hijack-rating-periods {
+    grid-template-columns: 1fr;
+  }
+
+  .hijack-rating-periods button {
+    min-height: 38px;
+  }
+}
