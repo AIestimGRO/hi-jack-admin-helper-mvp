@@ -2,6 +2,7 @@
 
 from app.hijack_extensions import install_hijack_extensions
 from app.hijack_rating_baseline import install_hijack_rating_baseline
+from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.main_impl import *  # noqa: F403
 from app.main_impl import app as _base_app
@@ -15,6 +16,7 @@ def _install_extensions(application):
     application = install_hijack_extensions(application)
     application = install_hijack_rating_relink(application)
     application = install_hijack_rating_baseline(application)
+    application = install_hijack_rating_paging(application)
     return install_profile_experience(application)
 
 
