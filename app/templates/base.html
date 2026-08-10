@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/theme.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/responsive.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-smart.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 {% set current_path = request.url.path %}
@@ -26,7 +27,7 @@
     <nav class="admin-primary-nav" aria-label="Основные разделы">
       <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="/clients">Клиенты</a>
       <a class="{{ 'active' if admin_section == 'quiz' else '' }}" href="/admin/quiz-results">Квизы</a>
-      <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault">Хранилище</a>
+      <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault">Hi, Store</a>
       {% if admin_role == 'master_admin' %}<a class="master-link {{ 'active' if admin_section == 'master' else '' }}" href="/master">Управление</a>{% endif %}
     </nav>
     <span class="admin-current-user">{{ admin_name }}</span>
@@ -39,7 +40,7 @@
       <a class="{{ 'active' if current_path.startswith('/clients') and not current_path.startswith('/clients/import') else '' }}" href="/clients"><span>◉</span><div><strong>Клиенты</strong><small>Поиск и преференции</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/clients/import') else '' }}" href="/clients/import"><span>⇧</span><div><strong>Импорт</strong><small>Обновить базу клуба</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/admin/quiz') else '' }}" href="/admin/quiz-results"><span>?</span><div><strong>Результаты квизов</strong><small>Ответы и статистика</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>THE VAULT</strong><small>Выдать JACK CARD</small></div></a>
+      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Выдать JACK CARD</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Старые награды кампаний</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/logs') else '' }}" href="/logs"><span>≡</span><div><strong>Журнал</strong><small>История операций</small></div></a>
       {% if admin_role == 'master_admin' %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/master') else '' }}" href="/master"><span>★</span><div><strong>Управление</strong><small>Кампании, доступы и настройки</small></div></a>{% endif %}
@@ -53,12 +54,13 @@
     <a class="{{ 'active' if current_path == '/' else '' }}" href="/"><span>⌂</span><small>Главная</small></a>
     <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="/clients"><span>◉</span><small>Клиенты</small></a>
     <a class="{{ 'active' if admin_section == 'quiz' else '' }}" href="/admin/quiz-results"><span>?</span><small>Квизы</small></a>
-    <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault"><span>♦</span><small>Vault</small></a>
+    <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault"><span>♦</span><small>Store</small></a>
     <button type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span>•••</span><small>Ещё</small></button>
   </nav>
   {% endif %}
   <script src="{{ url_for('static', path='/js/app.js') }}?v={{ asset_version }}" defer></script>
   <script type="module" src="{{ url_for('static', path='/js/reward-animations.js') }}?v={{ asset_version }}"></script>
   <script src="{{ url_for('static', path='/js/reward-stickers.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/product-shell-admin.js') }}?v={{ asset_version }}" defer></script>
 </body>
 </html>
