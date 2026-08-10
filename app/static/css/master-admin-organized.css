@@ -1,0 +1,218 @@
+/* Structured master-admin workspace without changing existing forms or routes. */
+
+.master-organized-shell {
+  display: grid;
+  grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.master-organized-shell > .master-tabs {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 20px;
+  background: rgba(8, 17, 18, .88);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .18);
+  backdrop-filter: blur(16px);
+}
+
+.master-nav-intro {
+  display: grid;
+  gap: 3px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+
+.master-nav-intro strong {
+  font-size: 14px;
+}
+
+.master-nav-intro small {
+  color: var(--muted, #8a9a98);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.master-nav-group {
+  display: grid;
+  gap: 5px;
+}
+
+.master-nav-group-title {
+  padding: 0 6px 3px;
+  color: rgba(255, 255, 255, .42);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.master-organized-shell .master-tabs button,
+.master-nav-link {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #9aaba8;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.master-organized-shell .master-tabs button:hover,
+.master-nav-link:hover {
+  border-color: rgba(49, 219, 197, .12);
+  background: rgba(49, 219, 197, .045);
+  color: #d5efeb;
+}
+
+.master-organized-shell .master-tabs button.active {
+  border-color: rgba(49, 219, 197, .2);
+  background: linear-gradient(135deg, rgba(49, 219, 197, .12), rgba(224, 184, 82, .045));
+  color: #c8fff6;
+  box-shadow: inset 3px 0 0 rgba(49, 219, 197, .72);
+}
+
+.master-nav-link::after {
+  margin-left: auto;
+  color: rgba(255, 255, 255, .25);
+  content: "›";
+  font-size: 16px;
+}
+
+.master-nav-link.is-gold {
+  color: #e2c36e;
+}
+
+.master-organized-content {
+  min-width: 0;
+}
+
+.master-organized-content > [data-master-panel] {
+  min-width: 0;
+}
+
+.master-organized-content > [data-master-panel] > .section-head:first-child {
+  margin-top: 0;
+}
+
+/* Make long master forms easier to scan. */
+.master-organized-content .master-create,
+.master-organized-content .campaign-create {
+  border-color: rgba(255, 255, 255, .075);
+}
+
+.master-organized-content fieldset {
+  border-radius: 16px;
+}
+
+.master-organized-content .section-head {
+  margin-top: 26px;
+}
+
+.master-organized-content .section-head h2 {
+  font-size: 18px;
+}
+
+/* Related tools inside engagement are a secondary toolbar, not loose buttons. */
+[data-engagement-tools] {
+  padding: 10px !important;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .025);
+}
+
+/* Rating sub-page: keep the same visual hierarchy as the master workspace. */
+body:has(.hj-rating-admin-grid) .page-head {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+
+body:has(.hj-rating-admin-grid) .hj-rating-import-card {
+  border-radius: 18px;
+}
+
+@media (max-width: 900px) {
+  .master-organized-shell {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .master-organized-shell > .master-tabs {
+    position: sticky;
+    z-index: 20;
+    top: 0;
+    display: flex;
+    gap: 8px;
+    max-width: 100%;
+    padding: 9px 8px;
+    overflow-x: auto;
+    border-radius: 0 0 16px 16px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .master-organized-shell > .master-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .master-nav-intro {
+    display: none;
+  }
+
+  .master-nav-group {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 5px;
+    padding-right: 8px;
+    border-right: 1px solid rgba(255, 255, 255, .07);
+  }
+
+  .master-nav-group:last-child {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .master-nav-group-title {
+    display: none;
+  }
+
+  .master-organized-shell .master-tabs button,
+  .master-nav-link {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 36px;
+    padding: 8px 10px;
+    white-space: nowrap;
+    scroll-snap-align: start;
+  }
+
+  .master-nav-link::after {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .master-organized-content .master-create,
+  .master-organized-content .inline-edit,
+  .master-organized-content .pin-reset {
+    grid-template-columns: 1fr !important;
+  }
+
+  .master-organized-content .section-head {
+    align-items: flex-start;
+  }
+}
