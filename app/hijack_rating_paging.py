@@ -12,7 +12,7 @@ from app.product_shell import _current_member
 from app.services import hijack_rating as legacy_rating
 
 
-DEFAULT_PAGE_SIZE = 50
+DEFAULT_PAGE_SIZE = 25
 MAX_PAGE_SIZE = 100
 
 
