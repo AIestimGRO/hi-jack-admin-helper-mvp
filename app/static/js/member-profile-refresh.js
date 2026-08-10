@@ -109,6 +109,14 @@
     });
   }
 
+  function loadScriptOnce(src, marker) {
+    if (document.querySelector(`script[${marker}]`)) return;
+    const script = document.createElement('script');
+    script.setAttribute(marker, '1');
+    script.src = src;
+    document.body.append(script);
+  }
+
   function loadHiJackExtension() {
     if (!document.querySelector('link[data-hijack-member-extension]')) {
       const stylesheet = document.createElement('link');
@@ -124,11 +132,9 @@
       carousel.href = '/static/css/member-achievement-carousel.css?v=1';
       document.head.append(carousel);
     }
-    if (document.querySelector('script[data-hijack-member-extension]')) return;
-    const script = document.createElement('script');
-    script.dataset.hijackMemberExtension = '1';
-    script.src = '/static/js/hijack-member.js?v=2';
-    document.body.append(script);
+    loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
+    loadScriptOnce('/static/js/hijack-member.js?v=2', 'data-hijack-member-extension');
+    loadScriptOnce('/static/js/hijack-rating-global-ui.js?v=1', 'data-hijack-rating-global-ui');
   }
 
   if (openMonthlyRatingByDefault()) return;
