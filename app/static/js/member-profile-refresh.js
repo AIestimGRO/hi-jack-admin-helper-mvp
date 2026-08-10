@@ -16,15 +16,11 @@
 
   function focusRatingPage() {
     if (tab !== 'rating') return;
-
     page.querySelectorAll('.personal-stat-groups, .engagement-panel').forEach((node) => node.remove());
-
     const heroTitle = page.querySelector('.rating-hub-hero h1');
     if (heroTitle) heroTitle.textContent = 'Рейтинг';
-
     const heroCopy = page.querySelector('.rating-hub-hero .member-muted');
     if (heroCopy) heroCopy.remove();
-
     const jacksideTab = page.querySelector('.rating-section-tabs a:first-child');
     if (jacksideTab) jacksideTab.href = '/account?tab=rating&section=month';
   }
@@ -40,9 +36,7 @@
         place.setAttribute('aria-label', `Место ${position}`);
       }
       row.classList.remove('podium-1', 'podium-2', 'podium-3');
-      if (position <= 3) {
-        row.classList.add('podium', `podium-${position}`);
-      }
+      if (position <= 3) row.classList.add('podium', `podium-${position}`);
     });
   }
 
@@ -68,16 +62,12 @@
     const template = document.getElementById('profile-rich-blocks');
     const header = page.querySelector('.profile-heading');
     if (!template || !header) return;
-
     const fragment = template.content.cloneNode(true);
     header.insertAdjacentElement('afterend', document.createElement('div'));
     const mount = header.nextElementSibling;
     mount.className = 'profile-rich-stack';
     mount.append(fragment);
-
-    const oldStats = page.querySelector('#activity');
-    if (oldStats) oldStats.remove();
-
+    page.querySelector('#activity')?.remove();
     mount.querySelectorAll('.profile-emblem-card').forEach((details) => {
       details.addEventListener('toggle', () => {
         if (!details.open) return;
@@ -117,24 +107,26 @@
     document.body.append(script);
   }
 
+  function loadStylesheetOnce(href, marker) {
+    if (document.querySelector(`link[${marker}]`)) return;
+    const stylesheet = document.createElement('link');
+    stylesheet.setAttribute(marker, '1');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = href;
+    document.head.append(stylesheet);
+  }
+
   function loadHiJackExtension() {
-    if (!document.querySelector('link[data-hijack-member-extension]')) {
-      const stylesheet = document.createElement('link');
-      stylesheet.dataset.hijackMemberExtension = '1';
-      stylesheet.rel = 'stylesheet';
-      stylesheet.href = '/static/css/hijack-member.css?v=2';
-      document.head.append(stylesheet);
-    }
-    if (!document.querySelector('link[data-engagement-carousel]')) {
-      const carousel = document.createElement('link');
-      carousel.dataset.engagementCarousel = '1';
-      carousel.rel = 'stylesheet';
-      carousel.href = '/static/css/member-achievement-carousel.css?v=1';
-      document.head.append(carousel);
-    }
+    loadStylesheetOnce('/static/css/hijack-member.css?v=2', 'data-hijack-member-extension');
     loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
     loadScriptOnce('/static/js/hijack-member.js?v=2', 'data-hijack-member-extension');
     loadScriptOnce('/static/js/hijack-rating-global-ui.js?v=1', 'data-hijack-rating-global-ui');
+
+    // Profile-only UI must never affect the Home, Schedule, Rating or Store render path.
+    if (tab === 'profile') {
+      loadStylesheetOnce('/static/css/member-achievement-carousel.css?v=3', 'data-engagement-carousel');
+      loadScriptOnce('/static/js/profile-experience-v2.js?v=2', 'data-profile-experience-v2');
+    }
   }
 
   if (openMonthlyRatingByDefault()) return;
