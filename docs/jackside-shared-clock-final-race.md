@@ -46,4 +46,12 @@ This document describes the gameplay invariants introduced for JACKSIDE issue-ba
 
 ## Rules publication
 
-`DEFAULT_RULES_CONTENT` reflects the new mechanics. Existing installations may already have an active versioned rules row in `jackside_rules_versions`; deployment must activate/publish the new rules version before public launch so users see and accept the changed mechanics.
+`DEFAULT_RULES_CONTENT` and rules version `1.1` describe the new mechanics. Existing installations already contain the original built-in `1.0` row, so deployment must explicitly activate the new version and force re-acceptance before public play.
+
+Use the idempotent migration after the normal SQLite backup and application update:
+
+```bash
+python scripts/migrate_jackside_rules_shared_clock.py /path/to/current.sqlite3
+```
+
+The migration only replaces the original built-in `1.0` text. If an administrator has already published a custom active rules version, the script refuses to overwrite it and exits with code 2. Draft/scheduled/lobby issues still pointing at built-in `1.0` are moved to `1.1`; live/closed historical issues are untouched.
