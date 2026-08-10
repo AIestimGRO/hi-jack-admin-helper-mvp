@@ -1,6 +1,7 @@
 """Stable application entry point for ``uvicorn app.main:app``."""
 
 from app.hijack_extensions import install_hijack_extensions
+from app.hijack_rating_baseline import install_hijack_rating_baseline
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.main_impl import *  # noqa: F403
 from app.main_impl import app as _base_app
@@ -11,7 +12,8 @@ from app.product_shell import install_product_shell
 def _install_extensions(application):
     application = install_product_shell(application)
     application = install_hijack_extensions(application)
-    return install_hijack_rating_relink(application)
+    application = install_hijack_rating_relink(application)
+    return install_hijack_rating_baseline(application)
 
 
 def create_app(settings=None):
