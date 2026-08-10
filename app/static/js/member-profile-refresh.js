@@ -1,0 +1,105 @@
+(() => {
+  const page = document.querySelector('.member-app-page');
+  if (!page) return;
+
+  const tab = page.dataset.accountTab || '';
+
+  function openMonthlyRatingByDefault() {
+    if (tab !== 'rating') return false;
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('section')) return false;
+    url.searchParams.set('tab', 'rating');
+    url.searchParams.set('section', 'month');
+    window.location.replace(url.toString());
+    return true;
+  }
+
+  function focusRatingPage() {
+    if (tab !== 'rating') return;
+
+    page.querySelectorAll('.personal-stat-groups, .engagement-panel').forEach((node) => node.remove());
+
+    const heroTitle = page.querySelector('.rating-hub-hero h1');
+    if (heroTitle) heroTitle.textContent = 'Рейтинг';
+
+    const heroCopy = page.querySelector('.rating-hub-hero .member-muted');
+    if (heroCopy) heroCopy.textContent = 'JACKSIDE и HI, JACK! — только позиции игроков и ключевые показатели.';
+
+    const jacksideTab = page.querySelector('.rating-section-tabs a:first-child');
+    if (jacksideTab) jacksideTab.href = '/account?tab=rating&section=month';
+  }
+
+  function numberLeaderboard(container) {
+    if (!container) return;
+    const rows = Array.from(container.children).filter((node) => node.matches('article'));
+    rows.forEach((row, index) => {
+      const position = index + 1;
+      const place = row.querySelector('.leaderboard-place');
+      if (place) {
+        place.textContent = String(position);
+        place.setAttribute('aria-label', `Место ${position}`);
+      }
+      row.classList.remove('podium-1', 'podium-2', 'podium-3');
+      if (position <= 3) {
+        row.classList.add('podium', `podium-${position}`);
+      }
+    });
+  }
+
+  function numberAllLeaderboards() {
+    if (tab !== 'rating') return;
+    numberLeaderboard(page.querySelector('.jackside-leaderboard'));
+    numberLeaderboard(page.querySelector('.club-leaderboard:not(.jackside-leaderboard)'));
+  }
+
+  function mountProfileRichBlocks() {
+    if (tab !== 'profile') return;
+    const template = document.getElementById('profile-rich-blocks');
+    const header = page.querySelector('.profile-heading');
+    if (!template || !header) return;
+
+    const fragment = template.content.cloneNode(true);
+    header.insertAdjacentElement('afterend', document.createElement('div'));
+    const mount = header.nextElementSibling;
+    mount.className = 'profile-rich-stack';
+    mount.append(fragment);
+
+    const oldStats = page.querySelector('#activity');
+    if (oldStats) oldStats.remove();
+
+    mount.querySelectorAll('.profile-emblem-card').forEach((details) => {
+      details.addEventListener('toggle', () => {
+        if (!details.open) return;
+        mount.querySelectorAll('.profile-emblem-card[open]').forEach((other) => {
+          if (other !== details) other.open = false;
+        });
+      });
+    });
+  }
+
+  function enhanceReferralCopy() {
+    document.querySelectorAll('[data-referral-copy]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const selector = button.getAttribute('data-referral-copy');
+        const input = selector ? document.querySelector(selector) : null;
+        if (!input) return;
+        try {
+          await navigator.clipboard.writeText(input.value);
+          const oldText = button.textContent;
+          button.textContent = 'Скопировано';
+          window.setTimeout(() => { button.textContent = oldText; }, 1400);
+        } catch (_) {
+          input.focus();
+          input.select();
+          document.execCommand('copy');
+        }
+      });
+    });
+  }
+
+  if (openMonthlyRatingByDefault()) return;
+  focusRatingPage();
+  mountProfileRichBlocks();
+  numberAllLeaderboards();
+  enhanceReferralCopy();
+})();
