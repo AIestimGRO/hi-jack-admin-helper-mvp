@@ -97,9 +97,19 @@
     });
   }
 
+  function loadHiJackExtension() {
+    if (document.querySelector('script[data-hijack-member-extension]')) return;
+    const script = document.createElement('script');
+    script.dataset.hijackMemberExtension = '1';
+    script.src = '/static/js/hijack-member.js?v=2';
+    script.defer = true;
+    document.body.append(script);
+  }
+
   if (openMonthlyRatingByDefault()) return;
   focusRatingPage();
   mountProfileRichBlocks();
   numberAllLeaderboards();
   enhanceReferralCopy();
+  loadHiJackExtension();
 })();
