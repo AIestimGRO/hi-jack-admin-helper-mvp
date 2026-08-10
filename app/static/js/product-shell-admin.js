@@ -1,4 +1,17 @@
 (() => {
+  const HIJACK_CONDITIONS = [
+    ['hijack_year_rating', 'HI, JACK! · рейтинг за год'],
+    ['hijack_month_rating', 'HI, JACK! · рейтинг за месяц'],
+    ['hijack_latest_rating', 'HI, JACK! · рейтинг последнего турнира'],
+    ['hijack_year_kills', 'HI, JACK! · киллы за год'],
+    ['hijack_month_kills', 'HI, JACK! · киллы за месяц'],
+    ['hijack_latest_kills', 'HI, JACK! · киллы последнего турнира'],
+    ['hijack_tournaments_played', 'HI, JACK! · сыграно турниров'],
+    ['hijack_top3_finishes', 'HI, JACK! · финиши в топ-3'],
+    ['hijack_wins', 'HI, JACK! · победы в турнирах'],
+    ['hijack_best_rating', 'HI, JACK! · лучший рейтинг за один турнир'],
+  ];
+
   function renameVaultCopy() {
     document.querySelectorAll('.admin-primary-nav a, .admin-menu-panel strong, .admin-bottom-nav small').forEach((node) => {
       const text = node.textContent.trim();
@@ -14,19 +27,73 @@
     }
   }
 
-  function addEngagementIconManagerLink() {
+  function addEngagementTools() {
     const panel = document.querySelector('[data-master-panel="engagement"]');
-    if (!panel || panel.querySelector('[data-engagement-icons-link]')) return;
-    const link = document.createElement('a');
-    link.className = 'button';
-    link.dataset.engagementIconsLink = '1';
-    link.href = '/master/engagement-icons';
-    link.textContent = 'Иконки званий и достижений';
+    if (!panel || panel.querySelector('[data-engagement-tools]')) return;
+    const tools = document.createElement('div');
+    tools.dataset.engagementTools = '1';
+    tools.style.display = 'flex';
+    tools.style.flexWrap = 'wrap';
+    tools.style.gap = '8px';
+    tools.style.margin = '0 0 18px';
+    tools.innerHTML = `
+      <a class="button" href="/master/engagement-icons">Иконки званий и достижений</a>
+      <a class="button" href="/master/hijack-rating">HI, JACK! рейтинг</a>
+    `;
     const head = panel.querySelector('.section-head');
-    if (head) head.insertAdjacentElement('afterend', link);
-    else panel.prepend(link);
+    if (head) head.insertAdjacentElement('afterend', tools);
+    else panel.prepend(tools);
+  }
+
+  function configureConditionSelect(select) {
+    if (select.dataset.hijackExtended === '1') return;
+    select.dataset.hijackExtended = '1';
+    const group = document.createElement('optgroup');
+    group.label = 'HI, JACK!';
+    HIJACK_CONDITIONS.forEach(([value, label]) => {
+      if (select.querySelector(`option[value="${value}"]`)) return;
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      group.append(option);
+    });
+    select.append(group);
+
+    const form = select.closest('form');
+    if (!form) return;
+    const period = form.querySelector('select[name="period_code"]');
+    const updatePeriod = () => {
+      const isHiJack = select.value.startsWith('hijack_');
+      if (!period) return;
+      period.disabled = isHiJack;
+      if (isHiJack) period.value = 'all_time';
+      period.closest('label')?.classList.toggle('is-hijack-period-disabled', isHiJack);
+      if (isHiJack) {
+        period.title = 'Период уже определён выбранным показателем HI, JACK!';
+      } else {
+        period.removeAttribute('title');
+      }
+    };
+    select.addEventListener('change', updatePeriod);
+    updatePeriod();
+
+    form.addEventListener('submit', () => {
+      if (!select.value.startsWith('hijack_')) return;
+      if (period) period.disabled = false;
+      if (form.action.includes('/api/master/jackside-titles/create')) {
+        form.action = '/api/master/hijack-titles/create';
+        return;
+      }
+      const match = form.action.match(/\/api\/master\/jackside-titles\/(\d+)\/update/);
+      if (match) form.action = `/api/master/hijack-titles/${match[1]}/update`;
+    });
+  }
+
+  function extendTitleConditions() {
+    document.querySelectorAll('[data-master-panel="engagement"] select[name="condition_code"]').forEach(configureConditionSelect);
   }
 
   renameVaultCopy();
-  addEngagementIconManagerLink();
+  addEngagementTools();
+  extendTitleConditions();
 })();
