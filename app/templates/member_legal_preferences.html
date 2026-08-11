@@ -1,0 +1,66 @@
+{% extends "member_base.html" %}
+{% block title %}Документы и согласия — Hi, Jack Club{% endblock %}
+{% block content %}
+<style>
+.legal-settings{max-width:900px;margin:0 auto;display:grid;gap:18px}.legal-settings-card{display:grid;gap:12px;padding:18px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.025)}.legal-settings-card h2,.legal-settings-card p{margin:0}.legal-settings-links{display:grid;gap:8px}.legal-settings-links a{color:#71e1d0;text-decoration:none}.legal-setting-form{display:grid;gap:12px}.legal-setting-check{display:flex;gap:10px;align-items:flex-start}.legal-setting-check input{margin-top:4px}.legal-rating-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.legal-settings-actions{display:flex;gap:10px;flex-wrap:wrap}@media(max-width:650px){.legal-rating-grid{grid-template-columns:1fr}}
+</style>
+<section class="member-card legal-settings">
+  <div>
+    <p class="member-eyebrow">Профиль · документы</p>
+    <h1>Документы и согласия</h1>
+    <p class="member-muted">Обязательные документы доступны для просмотра в любое время. Добровольные согласия можно включать и отзывать отдельно.</p>
+  </div>
+
+  {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+
+  <section class="legal-settings-card">
+    <h2>Основные документы</h2>
+    <div class="legal-settings-links">
+      <a href="/legal/user-agreement">Пользовательское соглашение и Правила Hi, Jack! Club</a>
+      <a href="/legal/privacy-policy">Политика обработки и защиты персональных данных</a>
+      <a href="/legal/personal-data-consent">Согласие на обработку персональных данных</a>
+    </div>
+  </section>
+
+  <section class="legal-settings-card">
+    <h2>Новости, акции и предложения</h2>
+    <p class="member-muted">Необязательное согласие. Отказ не влияет на доступ к приложению.</p>
+    <form class="legal-setting-form" method="post" action="/account/legal/optional/marketing-consent">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="legal-setting-check"><input type="checkbox" name="granted" value="true" {{ 'checked' if states.get('marketing-consent') else '' }}><span>Хочу получать новости, акции и специальные предложения Hi, Jack! Club</span></label>
+      <div class="legal-settings-actions"><a class="member-text-action" href="/legal/marketing-consent">Открыть полный текст</a><button class="member-primary" type="submit">Сохранить</button></div>
+    </form>
+  </section>
+
+  <section class="legal-settings-card">
+    <h2>Фото и видео</h2>
+    <p class="member-muted">Отдельное добровольное согласие на использование изображения.</p>
+    <form class="legal-setting-form" method="post" action="/account/legal/optional/image-consent">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="legal-setting-check"><input type="checkbox" name="granted" value="true" {{ 'checked' if states.get('image-consent') else '' }}><span>Я согласен на использование моего изображения в фото- и видеоматериалах Hi, Jack! Club</span></label>
+      <div class="legal-settings-actions"><a class="member-text-action" href="/legal/image-consent">Открыть полный текст</a><button class="member-primary" type="submit">Сохранить</button></div>
+    </form>
+  </section>
+
+  <section class="legal-settings-card">
+    <h2>Публичный рейтинг</h2>
+    <p class="member-muted">Разреши только те категории, которые можно показывать неопределённому кругу лиц. Телефон, email, дата рождения и технические ID сюда не входят.</p>
+    <form class="legal-setting-form" method="post" action="/account/legal/public-rating">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="legal-rating-grid">
+        <label class="legal-setting-check"><input type="checkbox" name="nickname" value="true" {{ 'checked' if rating.nickname else '' }}><span>Никнейм</span></label>
+        <label class="legal-setting-check"><input type="checkbox" name="avatar" value="true" {{ 'checked' if rating.avatar else '' }}><span>Аватар</span></label>
+        <label class="legal-setting-check"><input type="checkbox" name="result" value="true" {{ 'checked' if rating.result else '' }}><span>Результат</span></label>
+        <label class="legal-setting-check"><input type="checkbox" name="place" value="true" {{ 'checked' if rating.place else '' }}><span>Место в рейтинге</span></label>
+        <label class="legal-setting-check"><input type="checkbox" name="achievements" value="true" {{ 'checked' if rating.achievements else '' }}><span>Достижения</span></label>
+        <label class="legal-setting-check"><input type="checkbox" name="titles" value="true" {{ 'checked' if rating.titles else '' }}><span>Звания</span></label>
+        <label class="legal-setting-check"><input type="checkbox" name="participation_stats" value="true" {{ 'checked' if rating.participation_stats else '' }}><span>Статистика участия</span></label>
+      </div>
+      <div class="legal-settings-actions"><a class="member-text-action" href="/legal/public-rating-consent">Открыть полный текст согласия</a><button class="member-primary" type="submit">Сохранить выбор</button></div>
+    </form>
+  </section>
+
+  <a class="member-secondary" href="/account?tab=profile">Вернуться в профиль</a>
+</section>
+{% endblock %}
