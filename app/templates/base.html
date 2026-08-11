@@ -65,6 +65,7 @@
       <span class="admin-nav-group-label">Система</span>
       {% if admin_role == 'master_admin' %}
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'admins' else '' }}" href="/master?tab=admins"><span>◎</span><div><strong>Администраторы</strong><small>Доступы и PIN</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/legal-documents') else '' }}" href="/master/legal-documents"><span>§</span><div><strong>Юридические документы</strong><small>Редакции и согласия</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'audit' else '' }}" href="/master?tab=audit"><span>≡</span><div><strong>Журнал действий</strong><small>Аудит мастер-админки</small></div></a>
       {% endif %}
       <a class="{{ 'active' if current_path.startswith('/logs') else '' }}" href="/logs"><span>≡</span><div><strong>Журнал операций</strong><small>История клиентских операций</small></div></a>
