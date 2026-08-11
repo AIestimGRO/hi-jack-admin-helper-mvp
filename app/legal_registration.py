@@ -5,7 +5,6 @@ import hmac
 import json
 import secrets
 import sqlite3
-import threading
 from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -24,11 +23,10 @@ from app.services.phone import display_phone
 
 LEGAL_VERSION = "2026-08-11"
 LEGAL_DIR = BASE_DIR / "data" / "legal"
-_SCHEMA_LOCK = threading.Lock()
 
 MANDATORY_DOCUMENTS = {
     # Keep the historic internal codes because the existing registration engine and
-    # consent migration use them. The user-facing titles are the legal meaning.
+    # consent migration use them. User-facing titles carry the actual legal meaning.
     "privacy": {
         "title": "Пользовательское соглашение и Правила Hi, Jack! Club",
         "path": "01_user_agreement.txt",
@@ -58,29 +56,14 @@ REFERENCE_DOCUMENTS = {
         "kind": "optional_consent",
     },
     "public-rating-consent": {
-        "title": "Согласие на распространение персональных данных для публичного рейтинга",
+        "title": (
+            "Согласие на распространение персональных данных "
+            "для публичного рейтинга"
+        ),
         "path": "06_public_rating_consent.txt",
         "kind": "optional_consent",
     },
 }
-
-QUIZ_MEMBER_API_PATHS = frozenset(
-    {
-        "/api/quiz/questions",
-        "/api/quiz/start",
-        "/api/quiz/answer",
-        "/api/quiz/finish",
-        "/api/quiz/final-table/status",
-        "/api/quiz/final-table/answer",
-        "/api/quiz/identity",
-        "/api/quiz/identity/confirm",
-        "/api/quiz/identity/forget",
-        "/api/quiz/email/request",
-        "/api/quiz/email/verify",
-        "/quiz/telegram/start",
-        "/quiz/telegram/callback",
-    }
-)
 
 RATING_CATEGORY_KEYS = (
     "nickname",
@@ -120,8 +103,16 @@ def _is_adult(value: str) -> bool:
     except ValueError:
         return False
     today = date.today()
-    years = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+    years = today.year - born.year
+    if (today.month, today.day) < (born.month, born.day):
+        years -= 1
     return years >= 18
+
+
+def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(
+        str(row[1]) == column for row in conn.execute(f"PRAGMA table_info({table})")
+    )
 
 
 def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
@@ -143,7 +134,8 @@ def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
             ON legal_reference_documents(code) WHERE is_active=1;
 
         CREATE TABLE IF NOT EXISTS member_optional_consent_state (
-            account_id INTEGER NOT NULL REFERENCES member_accounts(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES member_accounts(id)
+                ON DELETE CASCADE,
             code TEXT NOT NULL,
             document_version TEXT NOT NULL,
             granted INTEGER NOT NULL DEFAULT 0,
@@ -153,7 +145,8 @@ def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS member_optional_consent_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER NOT NULL REFERENCES member_accounts(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES member_accounts(id)
+                ON DELETE CASCADE,
             code TEXT NOT NULL,
             document_version TEXT NOT NULL,
             granted INTEGER NOT NULL,
@@ -165,26 +158,51 @@ def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
             ON member_optional_consent_events(account_id, created_at DESC);
 
         CREATE TABLE IF NOT EXISTS member_public_rating_consent_state (
-            account_id INTEGER PRIMARY KEY REFERENCES member_accounts(id) ON DELETE CASCADE,
+            account_id INTEGER PRIMARY KEY REFERENCES member_accounts(id)
+                ON DELETE CASCADE,
             document_version TEXT NOT NULL,
             categories_json TEXT NOT NULL DEFAULT '{}',
             granted INTEGER NOT NULL DEFAULT 0,
+            conditions_text TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS member_public_rating_consent_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER NOT NULL REFERENCES member_accounts(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES member_accounts(id)
+                ON DELETE CASCADE,
             document_version TEXT NOT NULL,
             categories_json TEXT NOT NULL,
             granted INTEGER NOT NULL,
+            conditions_text TEXT NOT NULL DEFAULT '',
             ip_hash TEXT NOT NULL,
             user_agent TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS ix_member_public_rating_consent_events_account
             ON member_public_rating_consent_events(account_id, created_at DESC);
-
+        """
+    )
+    if not _has_column(
+        conn, "member_public_rating_consent_state", "conditions_text"
+    ):
+        conn.execute(
+            """
+            ALTER TABLE member_public_rating_consent_state
+            ADD COLUMN conditions_text TEXT NOT NULL DEFAULT ''
+            """
+        )
+    if not _has_column(
+        conn, "member_public_rating_consent_events", "conditions_text"
+    ):
+        conn.execute(
+            """
+            ALTER TABLE member_public_rating_consent_events
+            ADD COLUMN conditions_text TEXT NOT NULL DEFAULT ''
+            """
+        )
+    conn.executescript(
+        """
         CREATE TRIGGER IF NOT EXISTS trg_legal_redact_on_client_delete
         AFTER UPDATE OF client_status ON clients
         WHEN NEW.client_status='deleted'
@@ -206,7 +224,7 @@ def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
 
 
 def _seed_documents(conn: sqlite3.Connection) -> None:
-    """Install the supplied 2026 legal package once without overwriting admin edits."""
+    """Install the supplied 2026 legal package without overwriting later edits."""
     for code, meta in MANDATORY_DOCUMENTS.items():
         current = conn.execute(
             "SELECT id,version FROM legal_documents WHERE code=? AND is_active=1",
@@ -214,54 +232,71 @@ def _seed_documents(conn: sqlite3.Connection) -> None:
         ).fetchone()
         if current and str(current["version"]) not in {"", "1.0"}:
             continue
-        content = _read_legal_file(meta["path"])
-        if current:
-            conn.execute("UPDATE legal_documents SET is_active=0 WHERE code=?", (code,))
-        conn.execute(
-            """
-            INSERT INTO legal_documents(code,version,title,content,is_active,published_at)
-            VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)
-            ON CONFLICT(code,version) DO UPDATE SET
-                title=excluded.title,
-                content=excluded.content,
-                is_active=1,
-                published_at=CURRENT_TIMESTAMP
-            """,
-            (code, LEGAL_VERSION, meta["title"], content),
-        )
+
+        target = conn.execute(
+            "SELECT id FROM legal_documents WHERE code=? AND version=?",
+            (code, LEGAL_VERSION),
+        ).fetchone()
+        conn.execute("UPDATE legal_documents SET is_active=0 WHERE code=?", (code,))
+        if target:
+            conn.execute(
+                "UPDATE legal_documents SET is_active=1 WHERE id=?", (target["id"],)
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO legal_documents(
+                    code,version,title,content,is_active,published_at
+                ) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)
+                """,
+                (code, LEGAL_VERSION, meta["title"], _read_legal_file(meta["path"])),
+            )
 
     for code, meta in REFERENCE_DOCUMENTS.items():
         current = conn.execute(
-            "SELECT id FROM legal_reference_documents WHERE code=? AND is_active=1",
+            """
+            SELECT id FROM legal_reference_documents
+            WHERE code=? AND is_active=1
+            """,
             (code,),
         ).fetchone()
         if current:
             continue
-        conn.execute(
+        target = conn.execute(
             """
-            INSERT INTO legal_reference_documents(
-                code,version,title,content,kind,is_active,published_at
-            ) VALUES (?,?,?,?,?,1,CURRENT_TIMESTAMP)
-            ON CONFLICT(code,version) DO UPDATE SET
-                title=excluded.title,
-                content=excluded.content,
-                kind=excluded.kind,
-                is_active=1,
-                published_at=CURRENT_TIMESTAMP
+            SELECT id FROM legal_reference_documents
+            WHERE code=? AND version=?
             """,
-            (
-                code,
-                LEGAL_VERSION,
-                meta["title"],
-                _read_legal_file(meta["path"]),
-                meta["kind"],
-            ),
-        )
+            (code, LEGAL_VERSION),
+        ).fetchone()
+        if target:
+            conn.execute(
+                "UPDATE legal_reference_documents SET is_active=1 WHERE id=?",
+                (target["id"],),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO legal_reference_documents(
+                    code,version,title,content,kind,is_active,published_at
+                ) VALUES (?,?,?,?,?,1,CURRENT_TIMESTAMP)
+                """,
+                (
+                    code,
+                    LEGAL_VERSION,
+                    meta["title"],
+                    _read_legal_file(meta["path"]),
+                    meta["kind"],
+                ),
+            )
 
 
 def _active_reference(conn: sqlite3.Connection, code: str) -> sqlite3.Row | None:
     return conn.execute(
-        "SELECT * FROM legal_reference_documents WHERE code=? AND is_active=1",
+        """
+        SELECT * FROM legal_reference_documents
+        WHERE code=? AND is_active=1
+        """,
         (code,),
     ).fetchone()
 
@@ -281,8 +316,9 @@ def _record_optional_consent(
     version = str(document["version"])
     conn.execute(
         """
-        INSERT INTO member_optional_consent_state(account_id,code,document_version,granted)
-        VALUES (?,?,?,?)
+        INSERT INTO member_optional_consent_state(
+            account_id,code,document_version,granted
+        ) VALUES (?,?,?,?)
         ON CONFLICT(account_id,code) DO UPDATE SET
             document_version=excluded.document_version,
             granted=excluded.granted,
@@ -314,6 +350,7 @@ def _record_rating_consent(
     request: Request,
     account_id: int,
     categories: dict[str, bool],
+    conditions_text: str = "",
 ) -> None:
     document = _active_reference(conn, "public-rating-consent")
     if not document:
@@ -322,30 +359,34 @@ def _record_rating_consent(
     granted = any(normalized.values())
     payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True)
     version = str(document["version"])
+    conditions = " ".join(str(conditions_text or "").split())[:1000]
     conn.execute(
         """
         INSERT INTO member_public_rating_consent_state(
-            account_id,document_version,categories_json,granted
-        ) VALUES (?,?,?,?)
+            account_id,document_version,categories_json,granted,conditions_text
+        ) VALUES (?,?,?,?,?)
         ON CONFLICT(account_id) DO UPDATE SET
             document_version=excluded.document_version,
             categories_json=excluded.categories_json,
             granted=excluded.granted,
+            conditions_text=excluded.conditions_text,
             updated_at=CURRENT_TIMESTAMP
         """,
-        (account_id, version, payload, 1 if granted else 0),
+        (account_id, version, payload, 1 if granted else 0, conditions),
     )
     conn.execute(
         """
         INSERT INTO member_public_rating_consent_events(
-            account_id,document_version,categories_json,granted,ip_hash,user_agent
-        ) VALUES (?,?,?,?,?,?)
+            account_id,document_version,categories_json,granted,conditions_text,
+            ip_hash,user_agent
+        ) VALUES (?,?,?,?,?,?,?)
         """,
         (
             account_id,
             version,
             payload,
             1 if granted else 0,
+            conditions,
             _ip_hash(settings, request),
             request.headers.get("user-agent", "")[:500],
         ),
@@ -369,15 +410,23 @@ def _move_latest_route_before_existing(app: FastAPI, path: str, method: str) -> 
     app.router.routes.insert(target, latest)
 
 
-def _legal_document_row(conn: sqlite3.Connection, public_code: str) -> sqlite3.Row | None:
+def _legal_document_row(
+    conn: sqlite3.Connection, public_code: str
+) -> sqlite3.Row | None:
     for internal_code, meta in MANDATORY_DOCUMENTS.items():
         if meta["public_code"] == public_code:
             return conn.execute(
-                "SELECT *, ? AS public_code FROM legal_documents WHERE code=? AND is_active=1",
+                """
+                SELECT *, ? AS public_code
+                FROM legal_documents WHERE code=? AND is_active=1
+                """,
                 (public_code, internal_code),
             ).fetchone()
     return conn.execute(
-        "SELECT *, code AS public_code FROM legal_reference_documents WHERE code=? AND is_active=1",
+        """
+        SELECT *, code AS public_code
+        FROM legal_reference_documents WHERE code=? AND is_active=1
+        """,
         (public_code,),
     ).fetchone()
 
@@ -385,65 +434,99 @@ def _legal_document_row(conn: sqlite3.Connection, public_code: str) -> sqlite3.R
 def _selected_matches_view(selected: sqlite3.Row | None, view: str) -> bool:
     if not selected:
         return False
-    archived = not selected["account_id"] or str(selected["client_status"] or "") == "deleted"
+    archived = (
+        not selected["account_id"]
+        or str(selected["client_status"] or "") == "deleted"
+    )
     return archived if view == "archive" else not archived
+
+
+def _is_quiz_path(path: str) -> bool:
+    return (
+        path == "/quiz"
+        or path.startswith("/quiz/")
+        or path.startswith("/api/quiz/")
+    )
+
+
+def _master_legal_redirect(message: str, *, error: bool = False) -> RedirectResponse:
+    key = "error" if error else "ok"
+    return RedirectResponse(
+        f"/master/legal-documents?{urlencode({key: message})}", status_code=303
+    )
 
 
 def install_legal_registration(app: FastAPI) -> FastAPI:
     if getattr(app.state, "legal_registration_installed", False):
         return app
     app.state.legal_registration_installed = True
-    app.state.legal_registration_schema_ready = False
     settings = app.state.settings
     templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
 
+    # Seed before the first request so all subsequent consent records use the same
+    # active document version. On production this also makes existing accounts see
+    # the new mandatory edition immediately after deployment.
+    with transaction(settings.db_path) as conn:
+        ensure_legal_registration_schema(conn)
+
     @app.middleware("http")
     async def legal_registration_middleware(request: Request, call_next):
-        if not request.app.state.legal_registration_schema_ready:
-            with _SCHEMA_LOCK:
-                if not request.app.state.legal_registration_schema_ready:
-                    with transaction(settings.db_path) as conn:
-                        ensure_legal_registration_schema(conn)
-                    request.app.state.legal_registration_schema_ready = True
-
         path = request.url.path
         method = request.method.upper()
 
         if method == "POST" and path == "/account/register/request-code":
-            birth_date = str(request.session.get("member_registration_birth_date") or "")
+            birth_date = str(
+                request.session.get("member_registration_birth_date") or ""
+            )
             if not birth_date or not _is_adult(birth_date):
                 values = urlencode(
-                    {"error": "Регистрация доступна только пользователям, достигшим 18 лет"}
+                    {
+                        "error": (
+                            "Регистрация доступна только пользователям, "
+                            "достигшим 18 лет"
+                        )
+                    }
                 )
                 return RedirectResponse(f"/account/register?{values}", status_code=303)
 
-        if path == "/quiz" or path.startswith("/quiz/") or path in QUIZ_MEMBER_API_PATHS:
-            member = _current_member(request, required=False)
-            if not member:
-                next_path = path
-                if request.url.query:
-                    next_path += f"?{request.url.query}"
-                login_url = f"/account/login?next={quote(next_path, safe='')}"
-                if path == "/quiz" or path.startswith("/quiz/"):
-                    return RedirectResponse(login_url, status_code=303)
-                return JSONResponse(
-                    {
-                        "error": "account_required",
-                        "detail": "Для участия в квизе нужен зарегистрированный личный кабинет",
-                        "login_url": login_url,
-                    },
-                    status_code=401,
-                )
+        if settings.member_portal_enabled and _is_quiz_path(path):
+            if not request.session.get("authenticated"):
+                member = _current_member(request, required=False)
+                if not member:
+                    next_path = path
+                    if request.url.query:
+                        next_path += f"?{request.url.query}"
+                    login_url = (
+                        f"/account/login?next={quote(next_path, safe='')}"
+                    )
+                    if path == "/quiz" or path.startswith("/quiz/"):
+                        return RedirectResponse(login_url, status_code=303)
+                    return JSONResponse(
+                        {
+                            "error": "account_required",
+                            "detail": (
+                                "Для участия в квизе нужен зарегистрированный "
+                                "личный кабинет"
+                            ),
+                            "login_url": login_url,
+                        },
+                        status_code=401,
+                    )
 
         pending_email = ""
         marketing_choice: bool | None = None
         if method == "POST" and path == "/account/register/verify":
             code_id = request.session.get("member_registration_code_id")
-            marketing_choice = bool(request.session.get("member_registration_marketing", False))
+            marketing_choice = bool(
+                request.session.get("member_registration_marketing", False)
+            )
             if code_id:
                 with connect(settings.db_path) as conn:
                     row = conn.execute(
-                        "SELECT email_normalized FROM member_email_codes WHERE id=? AND purpose='register'",
+                        """
+                        SELECT email_normalized FROM member_email_codes
+                        WHERE id=? AND purpose='register'
+                        """,
                         (int(code_id),),
                     ).fetchone()
                 if row:
@@ -458,9 +541,13 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
             and pending_email
             and marketing_choice is not None
         ):
+            recorded = False
             with transaction(settings.db_path) as conn:
                 account = conn.execute(
-                    "SELECT id FROM member_accounts WHERE email_normalized=? ORDER BY id DESC LIMIT 1",
+                    """
+                    SELECT id FROM member_accounts
+                    WHERE email_normalized=? ORDER BY id DESC LIMIT 1
+                    """,
                     (pending_email,),
                 ).fetchone()
                 if account:
@@ -472,7 +559,9 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                         code="marketing-consent",
                         granted=marketing_choice,
                     )
-            request.session.pop("member_registration_marketing", None)
+                    recorded = True
+            if recorded:
+                request.session.pop("member_registration_marketing", None)
         return response
 
     @app.get("/legal/{public_code}", response_class=HTMLResponse)
@@ -506,7 +595,10 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
             return JSONResponse(
                 {
                     "ok": False,
-                    "error": "Регистрация доступна только пользователям, достигшим 18 лет",
+                    "error": (
+                        "Регистрация доступна только пользователям, "
+                        "достигшим 18 лет"
+                    ),
                 },
                 status_code=409,
             )
@@ -514,13 +606,18 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
         return JSONResponse({"ok": True})
 
     @app.get("/account/legal", response_class=HTMLResponse)
-    async def member_legal_preferences(request: Request, ok: str = "", error: str = ""):
+    async def member_legal_preferences(
+        request: Request, ok: str = "", error: str = ""
+    ):
         member = _current_member(request, required=True)
         with connect(settings.db_path) as conn:
             references = {
                 row["code"]: row
                 for row in conn.execute(
-                    "SELECT * FROM legal_reference_documents WHERE is_active=1"
+                    """
+                    SELECT * FROM legal_reference_documents
+                    WHERE is_active=1
+                    """
                 ).fetchall()
             }
             raw_states = conn.execute(
@@ -539,10 +636,15 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                     and row["granted"]
                 )
             rating_row = conn.execute(
-                "SELECT * FROM member_public_rating_consent_state WHERE account_id=?",
+                """
+                SELECT * FROM member_public_rating_consent_state
+                WHERE account_id=?
+                """,
                 (int(member["id"]),),
             ).fetchone()
+
         rating = {key: False for key in RATING_CATEGORY_KEYS}
+        rating_conditions = ""
         rating_document = references.get("public-rating-consent")
         if (
             rating_row
@@ -553,8 +655,10 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 stored = json.loads(str(rating_row["categories_json"] or "{}"))
                 for key in RATING_CATEGORY_KEYS:
                     rating[key] = bool(stored.get(key))
+                rating_conditions = str(rating_row["conditions_text"] or "")
             except json.JSONDecodeError:
                 pass
+
         return templates.TemplateResponse(
             request,
             "member_legal_preferences.html",
@@ -565,6 +669,7 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 "references": references,
                 "states": states,
                 "rating": rating,
+                "rating_conditions": rating_conditions,
                 "csrf_token": _csrf_token(request),
                 "asset_version": "legal-registration-v1",
                 "ok": ok,
@@ -594,7 +699,9 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 code=code,
                 granted=granted,
             )
-        return RedirectResponse("/account/legal?ok=Настройки+сохранены", status_code=303)
+        return RedirectResponse(
+            "/account/legal?ok=Настройки+сохранены", status_code=303
+        )
 
     @app.post("/account/legal/public-rating")
     async def member_public_rating_consent_update(
@@ -606,6 +713,7 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
         achievements: bool = Form(False),
         titles: bool = Form(False),
         participation_stats: bool = Form(False),
+        conditions_text: str = Form(""),
         csrf_token: str = Form(...),
     ):
         member = _current_member(request, required=True)
@@ -626,8 +734,11 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 request=request,
                 account_id=int(member["id"]),
                 categories=categories,
+                conditions_text=conditions_text,
             )
-        return RedirectResponse("/account/legal?ok=Настройки+рейтинга+сохранены", status_code=303)
+        return RedirectResponse(
+            "/account/legal?ok=Настройки+рейтинга+сохранены", status_code=303
+        )
 
     @app.get("/master/member-accounts", response_class=HTMLResponse)
     async def master_member_accounts_filtered(
@@ -644,7 +755,10 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
         category_sql = (
             "(ma.id IS NULL OR COALESCE(c.client_status,'existing')='deleted')"
             if selected_view == "archive"
-            else "(ma.id IS NOT NULL AND COALESCE(c.client_status,'existing')<>'deleted')"
+            else (
+                "(ma.id IS NOT NULL AND "
+                "COALESCE(c.client_status,'existing')<>'deleted')"
+            )
         )
         where_parts = [category_sql]
         params: list[Any] = []
@@ -652,21 +766,27 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
             like = f"%{search}%"
             where_parts.append(
                 """(
-                    CAST(c.id AS TEXT) LIKE ? OR COALESCE(c.first_name,'') LIKE ?
-                    OR COALESCE(c.nickname,'') LIKE ? OR COALESCE(c.username,'') LIKE ?
-                    OR COALESCE(c.phone_full,'') LIKE ? OR COALESCE(c.phone_local,'') LIKE ?
-                    OR COALESCE(ma.email,'') LIKE ? OR COALESCE(c.app_user_id,'') LIKE ?
+                    CAST(c.id AS TEXT) LIKE ?
+                    OR COALESCE(c.first_name,'') LIKE ?
+                    OR COALESCE(c.nickname,'') LIKE ?
+                    OR COALESCE(c.username,'') LIKE ?
+                    OR COALESCE(c.phone_full,'') LIKE ?
+                    OR COALESCE(c.phone_local,'') LIKE ?
+                    OR COALESCE(ma.email,'') LIKE ?
+                    OR COALESCE(c.app_user_id,'') LIKE ?
                     OR COALESCE(c.referrer_app_user_id,'') LIKE ?
                 )"""
             )
             params.extend([like] * 9)
         where = " WHERE " + " AND ".join(where_parts)
+
         with connect(settings.db_path) as conn:
             rows = conn.execute(
                 f"""
-                SELECT c.id,c.first_name,c.nickname,c.username,c.phone_full,c.phone_local,
-                       c.birth_date,c.client_status,c.app_user_id,c.referrer_app_user_id,
-                       c.created_at,ma.id AS account_id,ma.email AS account_email,
+                SELECT c.id,c.first_name,c.nickname,c.username,c.phone_full,
+                       c.phone_local,c.birth_date,c.client_status,c.app_user_id,
+                       c.referrer_app_user_id,c.created_at,
+                       ma.id AS account_id,ma.email AS account_email,
                        ma.is_active AS account_active,ma.last_login_at
                 FROM clients c
                 LEFT JOIN member_accounts ma ON ma.client_id=c.id
@@ -682,11 +802,21 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
             counts = conn.execute(
                 """
                 SELECT
-                  SUM(CASE WHEN ma.id IS NOT NULL AND COALESCE(c.client_status,'existing')<>'deleted' THEN 1 ELSE 0 END) AS active_count,
-                  SUM(CASE WHEN ma.id IS NULL OR COALESCE(c.client_status,'existing')='deleted' THEN 1 ELSE 0 END) AS archive_count
-                FROM clients c LEFT JOIN member_accounts ma ON ma.client_id=c.id
+                  SUM(
+                    CASE WHEN ma.id IS NOT NULL
+                      AND COALESCE(c.client_status,'existing')<>'deleted'
+                    THEN 1 ELSE 0 END
+                  ) AS active_count,
+                  SUM(
+                    CASE WHEN ma.id IS NULL
+                      OR COALESCE(c.client_status,'existing')='deleted'
+                    THEN 1 ELSE 0 END
+                  ) AS archive_count
+                FROM clients c
+                LEFT JOIN member_accounts ma ON ma.client_id=c.id
                 """
             ).fetchone()
+
         return templates.TemplateResponse(
             request,
             "master_member_accounts.html",
@@ -711,14 +841,19 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
     _move_latest_route_before_existing(app, "/master/member-accounts", "GET")
 
     @app.get("/master/legal-documents", response_class=HTMLResponse)
-    async def master_legal_documents(request: Request, ok: str = "", error: str = ""):
+    async def master_legal_documents(
+        request: Request, ok: str = "", error: str = ""
+    ):
         _require_master(request)
         with connect(settings.db_path) as conn:
             mandatory = conn.execute(
                 "SELECT * FROM legal_documents WHERE is_active=1 ORDER BY code"
             ).fetchall()
             references = conn.execute(
-                "SELECT * FROM legal_reference_documents WHERE is_active=1 ORDER BY code"
+                """
+                SELECT * FROM legal_reference_documents
+                WHERE is_active=1 ORDER BY code
+                """
             ).fetchall()
         return templates.TemplateResponse(
             request,
@@ -752,63 +887,67 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
         title = " ".join(title.split())[:240]
         content = content.strip()
         if not version or not title or len(content) < 100:
-            return RedirectResponse(
-                "/master/legal-documents?error=Проверьте+версию,+название+и+текст",
-                status_code=303,
+            return _master_legal_redirect(
+                "Проверьте версию, название и текст", error=True
             )
+
         with transaction(settings.db_path) as conn:
             if store == "mandatory" and code in MANDATORY_DOCUMENTS:
-                current = conn.execute(
-                    "SELECT version FROM legal_documents WHERE code=? AND is_active=1",
-                    (code,),
+                used = conn.execute(
+                    """
+                    SELECT 1 FROM legal_documents
+                    WHERE code=? AND version=? LIMIT 1
+                    """,
+                    (code, version),
                 ).fetchone()
-                if current and str(current["version"]) == version:
-                    return RedirectResponse(
-                        "/master/legal-documents?error=Для+нового+текста+укажите+новую+версию",
-                        status_code=303,
+                if used:
+                    return _master_legal_redirect(
+                        "Эта версия уже использовалась. Укажите новую версию",
+                        error=True,
                     )
-                conn.execute("UPDATE legal_documents SET is_active=0 WHERE code=?", (code,))
+                conn.execute(
+                    "UPDATE legal_documents SET is_active=0 WHERE code=?", (code,)
+                )
                 conn.execute(
                     """
-                    INSERT INTO legal_documents(code,version,title,content,is_active,published_at)
-                    VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)
-                    ON CONFLICT(code,version) DO UPDATE SET
-                        title=excluded.title,content=excluded.content,is_active=1,published_at=CURRENT_TIMESTAMP
+                    INSERT INTO legal_documents(
+                        code,version,title,content,is_active,published_at
+                    ) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)
                     """,
                     (code, version, title, content),
                 )
             elif store == "reference" and code in REFERENCE_DOCUMENTS:
-                current = conn.execute(
+                used = conn.execute(
                     """
-                    SELECT version FROM legal_reference_documents
-                    WHERE code=? AND is_active=1
+                    SELECT 1 FROM legal_reference_documents
+                    WHERE code=? AND version=? LIMIT 1
                     """,
-                    (code,),
+                    (code, version),
                 ).fetchone()
-                if current and str(current["version"]) == version:
-                    return RedirectResponse(
-                        "/master/legal-documents?error=Для+нового+текста+укажите+новую+версию",
-                        status_code=303,
+                if used:
+                    return _master_legal_redirect(
+                        "Эта версия уже использовалась. Укажите новую версию",
+                        error=True,
                     )
                 kind = REFERENCE_DOCUMENTS[code]["kind"]
                 conn.execute(
-                    "UPDATE legal_reference_documents SET is_active=0 WHERE code=?", (code,)
+                    """
+                    UPDATE legal_reference_documents
+                    SET is_active=0 WHERE code=?
+                    """,
+                    (code,),
                 )
                 conn.execute(
                     """
                     INSERT INTO legal_reference_documents(
                         code,version,title,content,kind,is_active,published_at
                     ) VALUES (?,?,?,?,?,1,CURRENT_TIMESTAMP)
-                    ON CONFLICT(code,version) DO UPDATE SET
-                        title=excluded.title,content=excluded.content,kind=excluded.kind,
-                        is_active=1,published_at=CURRENT_TIMESTAMP
                     """,
                     (code, version, title, content, kind),
                 )
             else:
-                return RedirectResponse(
-                    "/master/legal-documents?error=Неизвестный+документ", status_code=303
-                )
+                return _master_legal_redirect("Неизвестный документ", error=True)
+
             audit(
                 conn,
                 admin_id=int(request.session.get("admin_id")),
@@ -818,11 +957,15 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 entity_id=None,
                 details={"code": code, "store": store, "version": version},
             )
-        return RedirectResponse(
-            "/master/legal-documents?ok=Новая+редакция+опубликована", status_code=303
-        )
+
+        return _master_legal_redirect("Новая редакция опубликована")
 
     return app
 
 
-__all__ = ["ensure_legal_registration_schema", "install_legal_registration"]
+__all__ = [
+    "LEGAL_VERSION",
+    "RATING_CATEGORY_KEYS",
+    "ensure_legal_registration_schema",
+    "install_legal_registration",
+]
