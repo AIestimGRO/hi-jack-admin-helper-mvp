@@ -7,13 +7,20 @@
   <p class="member-eyebrow">Условия обновлены</p>
   <h1>{{ document.title }}</h1>
   <p class="document-version">Новая редакция {{ document.version }}</p>
+  {% if document.code == 'rewards' %}<p class="member-muted">Политика обработки персональных данных доступна <a href="/legal/privacy-policy" target="_blank" rel="noopener">по этой ссылке</a>.</p>{% endif %}
   <div class="legal-copy">{{ document.content }}</div>
   <form class="member-form consent-form" action="/account/consents" method="post" data-consent-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="document_id" value="{{ document.id }}">
     <label class="member-check">
       <input name="accepted" type="checkbox" value="true" required data-consent-checkbox>
-      <span>Прочитано и принято</span>
+      {% if document.code == 'privacy' %}
+      <span>Я принимаю Пользовательское соглашение и Правила Hi, Jack! Club</span>
+      {% elif document.code == 'rewards' %}
+      <span>Я даю согласие на обработку моих персональных данных</span>
+      {% else %}
+      <span>Я ознакомился и подтверждаю документ</span>
+      {% endif %}
     </label>
     <button class="member-primary" type="submit" disabled data-consent-submit>Продолжить</button>
   </form>
