@@ -8,6 +8,7 @@ from app.hijack_rating_baseline import install_hijack_rating_baseline
 from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.legal_registration import install_legal_registration
+from app.legal_registration_hardening import install_legal_registration_hardening
 from app.main_impl import *  # noqa: F403
 from app.main_impl import app as _base_app
 from app.main_impl import create_app as _base_create_app
@@ -25,6 +26,7 @@ def _install_extensions(application):
     application = install_admin_telegram_unlink(application)
     application = install_security_journal(application)
     application = install_legal_registration(application)
+    application = install_legal_registration_hardening(application)
     application = install_hijack_extensions(application)
     application = install_hijack_rating_relink(application)
     application = install_hijack_rating_baseline(application)
