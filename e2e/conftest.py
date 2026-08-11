@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.db import transaction
+from app.services.member_accounts import MEMBER_COOKIE_NAME
 
 
 @pytest.fixture(scope="session")
@@ -18,7 +19,7 @@ def browser_context_args(browser_context_args):
 
 @pytest.fixture(autouse=True)
 def current_legal_consents_for_jackside_e2e(request):
-    """Keep the synthetic E2E member accepted on the currently active legal editions."""
+    """Keep the synthetic E2E member current and authenticated for quiz access."""
     if "jackside_server" not in request.fixturenames:
         yield
         return
@@ -58,4 +59,19 @@ def current_legal_consents_for_jackside_e2e(request):
                         document["version"],
                     ),
                 )
+
+    # The legal gate now protects every /quiz route, including classic quizzes.
+    # Make the synthetic member cookie part of the common E2E setup instead of
+    # relying on individual tests to add it selectively.
+    if "page" in request.fixturenames:
+        page = request.getfixturevalue("page")
+        page.context.add_cookies(
+            [
+                {
+                    "name": MEMBER_COOKIE_NAME,
+                    "value": server["member_token"],
+                    "url": server["base_url"],
+                }
+            ]
+        )
     yield
