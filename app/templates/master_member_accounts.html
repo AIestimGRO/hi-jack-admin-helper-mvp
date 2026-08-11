@@ -43,7 +43,7 @@
       {% if selected %}
       <div class="account-registry-editor-head">
         <div><small>Client ID {{ selected.id }}{% if selected.account_id %} · Account ID {{ selected.account_id }}{% endif %}</small><h2>{{ selected.nickname or selected.first_name or ('@' ~ selected.username if selected.username else 'Игрок') }}</h2></div>
-        <span>{{ 'Аккаунт активен' if selected.account_id and selected.account_active else ('Аккаунт отключён' if selected.account_id else 'ЛК не зарегистрирован') }}</span>
+        <span>{{ 'ЛК удалён' if selected.client_status == 'deleted' else ('Аккаунт активен' if selected.account_id and selected.account_active else ('Аккаунт отключён' if selected.account_id else 'ЛК не зарегистрирован')) }}</span>
       </div>
 
       <form class="account-registry-form" action="/master/member-accounts/{{ selected.id }}/update" method="post">
@@ -78,7 +78,7 @@
         <button class="primary" type="submit">Сохранить учётные данные</button>
       </form>
 
-      {% if selected.account_id %}
+      {% if selected.account_id and selected.client_status != 'deleted' %}
       <details class="account-registry-password">
         <summary>Сбросить пароль</summary>
         <p class="muted">Текущий пароль увидеть нельзя. Мастер может назначить новый. После сброса все пользовательские сессии закроются.</p>
@@ -89,7 +89,9 @@
           <button type="submit">Назначить новый пароль</button>
         </form>
       </details>
+      {% endif %}
 
+      {% if selected.account_id %}
       <details class="account-registry-security" open data-security-journal data-client-id="{{ selected.id }}">
         <summary>Журнал безопасности</summary>
         <p class="muted">Последние входы, неверные пароли, временные блокировки и изменения учётных данных.</p>
@@ -97,6 +99,33 @@
         <p class="muted account-registry-security-empty" data-security-journal-empty hidden>Событий пока нет.</p>
       </details>
       {% endif %}
+
+      <details class="account-registry-danger">
+        <summary>Управление ЛК и удаление</summary>
+        {% if selected.account_id and selected.client_status != 'deleted' %}
+        <div class="account-registry-danger-card">
+          <strong>Удалить и обезличить ЛК</strong>
+          <p>Доступ будет закрыт, персональные данные очищены, но история JACKSIDE, рейтинга, JACKCOIN и клубной статистики останется связанной с обезличенным игроком.</p>
+          <form action="/master/member-accounts/{{ selected.id }}/delete-account" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="confirmation" autocomplete="off" placeholder="Введите: УДАЛИТЬ ЛК" required>
+            <button class="danger" type="submit">Удалить и обезличить ЛК</button>
+          </form>
+        </div>
+        {% elif selected.account_id and selected.client_status == 'deleted' %}
+        <p class="muted">ЛК уже удалён и персональные данные обезличены. Исторические игровые записи сохранены.</p>
+        {% else %}
+        <div class="account-registry-danger-card">
+          <strong>Удалить пустую запись клиента полностью</strong>
+          <p>Полное удаление разрешено только если у клиента нет ЛК и нет связанной истории. При наличии результатов, операций, наград, рефералов или других связей сервер откажет в удалении.</p>
+          <form action="/master/member-accounts/{{ selected.id }}/delete-empty" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="confirmation" autocomplete="off" placeholder="Введите: УДАЛИТЬ ЗАПИСЬ" required>
+            <button class="danger" type="submit">Удалить пустую запись полностью</button>
+          </form>
+        </div>
+        {% endif %}
+      </details>
       {% else %}
       <div class="account-registry-placeholder"><strong>Выберите игрока</strong><p class="muted">Справа откроются регистрационные и учётные данные с возможностью редактирования мастер-администратором.</p></div>
       {% endif %}
