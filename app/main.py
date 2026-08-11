@@ -11,12 +11,14 @@ from app.main_impl import create_app as _base_create_app
 from app.member_account_management import install_member_account_management
 from app.product_shell import install_product_shell
 from app.profile_experience import install_profile_experience
+from app.security_journal import install_security_journal
 
 
 def _install_extensions(application):
     application = install_product_shell(application)
     application = install_account_security(application)
     application = install_member_account_management(application)
+    application = install_security_journal(application)
     application = install_hijack_extensions(application)
     application = install_hijack_rating_relink(application)
     application = install_hijack_rating_baseline(application)
