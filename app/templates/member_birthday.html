@@ -1,0 +1,16 @@
+{% extends "member_base.html" %}
+{% block title %}Дата рождения — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="member-card registration-card">
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+  <p class="member-eyebrow">Личные данные</p>
+  <h1>Дата рождения</h1>
+  <p class="member-muted">Укажи дату рождения один раз. Она нужна для будущих клубных поздравлений и бонусов. При использовании бонуса клуб сможет попросить подтверждение даты рождения.</p>
+  <form class="member-form" action="/account/birthday" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Дата рождения<input name="birth_date" type="date" autocomplete="bday" min="1900-01-01" required></label>
+    <button class="member-primary" type="submit">Сохранить</button>
+  </form>
+  <p class="member-muted">После сохранения изменить дату самостоятельно нельзя. Исправление — через мастер-администратора.</p>
+</section>
+{% endblock %}
