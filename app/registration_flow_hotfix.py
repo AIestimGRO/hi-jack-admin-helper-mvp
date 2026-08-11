@@ -93,7 +93,7 @@ def install_registration_flow_hotfix(app: FastAPI) -> FastAPI:
 
         if not normalized or not _is_adult(normalized):
             return JSONResponse(
-                {"ok": False, "error": "Registration is available from age 18"},
+                {"ok": False, "error": "Регистрация доступна с 18 лет"},
                 status_code=409,
             )
 
