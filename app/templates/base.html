@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-persistent-nav.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
   {% block head %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-usability-hotfix.css') }}?v={{ asset_version }}">
 </head>
 {% set current_path = request.url.path %}
 {% set master_tab = request.query_params.get('tab') or 'preferences' %}
