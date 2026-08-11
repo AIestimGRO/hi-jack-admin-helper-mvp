@@ -89,6 +89,13 @@
           <button type="submit">Назначить новый пароль</button>
         </form>
       </details>
+
+      <details class="account-registry-security" open data-security-journal data-client-id="{{ selected.id }}">
+        <summary>Журнал безопасности</summary>
+        <p class="muted">Последние входы, неверные пароли, временные блокировки и изменения учётных данных.</p>
+        <div class="account-registry-security-list" data-security-journal-list></div>
+        <p class="muted account-registry-security-empty" data-security-journal-empty hidden>Событий пока нет.</p>
+      </details>
       {% endif %}
       {% else %}
       <div class="account-registry-placeholder"><strong>Выберите игрока</strong><p class="muted">Справа откроются регистрационные и учётные данные с возможностью редактирования мастер-администратором.</p></div>
@@ -96,4 +103,5 @@
     </section>
   </div>
 </section>
+<script src="{{ url_for('static', path='/js/master-security-journal.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}
