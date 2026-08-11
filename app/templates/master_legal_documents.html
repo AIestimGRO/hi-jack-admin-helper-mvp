@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Юридические документы — Hi, Jack Club{% endblock %}
+{% block head %}
+<style>
+.legal-admin{display:grid;gap:18px}.legal-admin-intro{max-width:900px}.legal-admin-grid{display:grid;gap:16px}.legal-admin-card{display:grid;gap:12px;padding:18px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.025)}.legal-admin-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.legal-admin-card header h2,.legal-admin-card header p{margin:0}.legal-admin-badge{font-size:11px;padding:5px 8px;border-radius:999px;background:rgba(49,219,197,.09);color:#66dcc9;white-space:nowrap}.legal-admin-card form{display:grid;gap:10px}.legal-admin-card label{display:grid;gap:6px}.legal-admin-card input,.legal-admin-card textarea{width:100%;box-sizing:border-box}.legal-admin-card textarea{min-height:320px;resize:vertical;line-height:1.5}.legal-admin-warning{padding:10px 12px;border-radius:12px;background:rgba(223,171,70,.08);color:#e7c77f;font-size:12px;line-height:1.45}.legal-admin-actions{display:flex;justify-content:flex-end}.legal-admin-actions button{min-height:44px}@media(max-width:700px){.legal-admin-card header{flex-direction:column}.legal-admin-card textarea{min-height:240px}}
+</style>
+{% endblock %}
+{% block content %}
+<section class="legal-admin">
+  <header class="page-heading legal-admin-intro">
+    <div><p class="eyebrow">Система</p><h1>Юридические документы</h1><p class="muted">Здесь хранится действующая редакция документов. Публикация новой версии обязательного документа потребует нового подтверждения от пользователей.</p></div>
+  </header>
+
+  {% if ok %}<div class="notice success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+
+  <div class="legal-admin-grid">
+    {% for document in mandatory %}
+    <article class="legal-admin-card">
+      <header><div><p class="eyebrow">Обязательный документ</p><h2>{{ document.title }}</h2></div><span class="legal-admin-badge">{{ document.code }} · v{{ document.version }}</span></header>
+      <div class="legal-admin-warning">Новая версия этого документа станет обязательной. Пользователь не сможет продолжить работу с ЛК, пока не подтвердит актуальную редакцию.</div>
+      <form method="post" action="/master/legal-documents/mandatory/{{ document.code }}/publish">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Название<input name="title" value="{{ document.title }}" maxlength="240" required></label>
+        <label>Версия<input name="version" value="{{ document.version }}" maxlength="40" required></label>
+        <label>Полный текст<textarea name="content" required>{{ document.content }}</textarea></label>
+        <div class="legal-admin-actions"><button class="primary" type="submit" onclick="return confirm('Опубликовать эту редакцию? Для обязательного документа новая версия потребует повторного подтверждения пользователями.')">Опубликовать редакцию</button></div>
+      </form>
+    </article>
+    {% endfor %}
+
+    {% for document in references %}
+    <article class="legal-admin-card">
+      <header><div><p class="eyebrow">Политика / отдельное согласие</p><h2>{{ document.title }}</h2></div><span class="legal-admin-badge">{{ document.code }} · v{{ document.version }}</span></header>
+      <form method="post" action="/master/legal-documents/reference/{{ document.code }}/publish">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Название<input name="title" value="{{ document.title }}" maxlength="240" required></label>
+        <label>Версия<input name="version" value="{{ document.version }}" maxlength="40" required></label>
+        <label>Полный текст<textarea name="content" required>{{ document.content }}</textarea></label>
+        <div class="legal-admin-actions"><button class="primary" type="submit" onclick="return confirm('Опубликовать новую редакцию документа?')">Опубликовать редакцию</button></div>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
