@@ -114,80 +114,97 @@
   }
 
   function installStableChat() {
-    const launcher = document.querySelector('[data-chat-launcher]');
-    if (!launcher) return;
+    window.setTimeout(() => {
+      const legacyLauncher = document.querySelector('[data-chat-launcher]');
+      if (!legacyLauncher || legacyLauncher.dataset.stableChatReplacement === '1') return;
 
-    launcher.classList.add('is-stable-chat');
-    let pinnedOpen = false;
-    let frame = 0;
+      const launcher = legacyLauncher.cloneNode(true);
+      launcher.dataset.stableChatReplacement = '1';
+      launcher.classList.remove('is-obstructed');
+      launcher.classList.add('is-stable-chat');
+      legacyLauncher.replaceWith(launcher);
 
-    const importantSelectors = [
-      '.app-primary-action',
-      '.vault-buy-button',
-      '.reward-activate-button',
-      '.profile-settings-link',
-      '.store-tabs button',
-      '.schedule-tabs button',
-      '.rating-period-tabs a',
-      '.rating-section-tabs a',
-      '[data-chat-avoid]',
-    ];
-
-    const overlaps = (a, b) => !(
-      a.right <= b.left ||
-      a.left >= b.right ||
-      a.bottom <= b.top ||
-      a.top >= b.bottom
-    );
-
-    const expandedRect = () => {
-      const nav = document.querySelector('.member-bottom-nav');
-      const navRect = nav?.getBoundingClientRect();
-      const size = window.innerWidth <= 720 ? 48 : 52;
-      const rightGap = window.innerWidth <= 720 ? 12 : 14;
-      const bottom = navRect && navRect.height > 0 ? navRect.top - 14 : window.innerHeight - 18;
-      return {
-        left: window.innerWidth - rightGap - size,
-        right: window.innerWidth - rightGap,
-        top: bottom - size,
-        bottom,
+      const syncUnread = () => {
+        launcher.classList.toggle('has-unread', legacyLauncher.classList.contains('has-unread'));
+        const sourceBadge = legacyLauncher.querySelector('.member-chat-unread');
+        const targetBadge = launcher.querySelector('.member-chat-unread');
+        if (sourceBadge && targetBadge) targetBadge.textContent = sourceBadge.textContent;
       };
-    };
+      syncUnread();
+      const legacySync = new MutationObserver(syncUnread);
+      legacySync.observe(legacyLauncher, { attributes: true, childList: true, subtree: true, characterData: true });
+      window.setTimeout(() => legacySync.disconnect(), 5000);
 
-    const refresh = () => {
-      if (launcher.classList.contains('is-hidden') || pinnedOpen) {
+      let pinnedOpen = false;
+      let frame = 0;
+      const importantSelectors = [
+        '.app-primary-action',
+        '.vault-buy-button',
+        '.reward-activate-button',
+        '.profile-settings-link',
+        '.store-tabs button',
+        '.schedule-tabs button',
+        '.rating-period-tabs a',
+        '.rating-section-tabs a',
+        '[data-chat-avoid]',
+      ];
+
+      const overlaps = (a, b) => !(
+        a.right <= b.left ||
+        a.left >= b.right ||
+        a.bottom <= b.top ||
+        a.top >= b.bottom
+      );
+
+      const expandedRect = () => {
+        const nav = document.querySelector('.member-bottom-nav');
+        const navRect = nav?.getBoundingClientRect();
+        const size = window.innerWidth <= 720 ? 48 : 52;
+        const rightGap = window.innerWidth <= 720 ? 12 : 14;
+        const bottom = navRect && navRect.height > 0 ? navRect.top - 14 : window.innerHeight - 18;
+        return {
+          left: window.innerWidth - rightGap - size,
+          right: window.innerWidth - rightGap,
+          top: bottom - size,
+          bottom,
+        };
+      };
+
+      const refresh = () => {
+        if (launcher.classList.contains('is-hidden') || pinnedOpen) {
+          launcher.classList.remove('chat-collapsed');
+          return;
+        }
+        const bubble = expandedRect();
+        const important = Array.from(document.querySelectorAll(importantSelectors.join(','))).filter((node) => {
+          if (node.closest('.member-bottom-nav') || node === launcher || launcher.contains(node)) return false;
+          const style = getComputedStyle(node);
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+        });
+        launcher.classList.toggle('chat-collapsed', important.some((node) => overlaps(bubble, node.getBoundingClientRect())));
+      };
+
+      const schedule = () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(refresh);
+      };
+
+      launcher.addEventListener('click', (event) => {
+        if (!launcher.classList.contains('chat-collapsed')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        pinnedOpen = true;
         launcher.classList.remove('chat-collapsed');
-        return;
-      }
-      const bubble = expandedRect();
-      const important = Array.from(document.querySelectorAll(importantSelectors.join(','))).filter((node) => {
-        if (node.closest('.member-bottom-nav') || node === launcher || launcher.contains(node)) return false;
-        const style = getComputedStyle(node);
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
-        const rect = node.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
-      });
-      launcher.classList.toggle('chat-collapsed', important.some((node) => overlaps(bubble, node.getBoundingClientRect())));
-    };
+        launcher.focus({ preventScroll: true });
+      }, true);
 
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(refresh);
-    };
-
-    launcher.addEventListener('click', (event) => {
-      if (!launcher.classList.contains('chat-collapsed')) return;
-      event.preventDefault();
-      event.stopPropagation();
-      pinnedOpen = true;
-      launcher.classList.remove('chat-collapsed');
-      launcher.focus({ preventScroll: true });
-    }, true);
-
-    window.addEventListener('resize', schedule, { passive: true });
-    window.addEventListener('scroll', schedule, { passive: true });
-    window.setTimeout(schedule, 0);
-    window.setTimeout(schedule, 500);
+      window.addEventListener('resize', schedule, { passive: true });
+      window.addEventListener('scroll', schedule, { passive: true });
+      schedule();
+      window.setTimeout(schedule, 500);
+    }, 300);
   }
 
   cleanHome();
