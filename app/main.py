@@ -3,6 +3,7 @@
 from app.account_security import install_account_security
 from app.admin_account_lifecycle import install_admin_account_lifecycle
 from app.admin_telegram_unlink import install_admin_telegram_unlink
+from app.db import init_db
 from app.hijack_extensions import install_hijack_extensions
 from app.hijack_rating_baseline import install_hijack_rating_baseline
 from app.hijack_rating_paging import install_hijack_rating_paging
@@ -24,6 +25,10 @@ def _install_extensions(application):
     application = install_admin_account_lifecycle(application)
     application = install_admin_telegram_unlink(application)
     application = install_security_journal(application)
+    # The base lifespan initializes the DB at startup, while extensions are
+    # installed during app import. init_db is additive/idempotent, so expose the
+    # base tables before the legal extension adds its own foreign keys/triggers.
+    init_db(application.state.settings.db_path)
     application = install_legal_registration(application)
     application = install_hijack_extensions(application)
     application = install_hijack_rating_relink(application)
