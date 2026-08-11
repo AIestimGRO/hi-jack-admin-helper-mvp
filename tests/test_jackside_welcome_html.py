@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.db import init_db, transaction
+from app.main import create_app
 from app.services.daily_414 import DAILY_414_TIME_LIMIT_SECONDS
 from app.services.member_accounts import MEMBER_COOKIE_NAME, hash_password, issue_session
-from app.main import create_app
 
 
 def test_daily_414_welcome_points_hide_classic_meta(tmp_path: Path) -> None:
@@ -25,6 +25,7 @@ def test_daily_414_welcome_points_hide_classic_meta(tmp_path: Path) -> None:
         member_portal_enabled=True,
     )
     init_db(settings.db_path)
+    app = create_app(settings)
     local_now = datetime.now(ZoneInfo(settings.timezone_name)).replace(tzinfo=None)
     active_from = (local_now - timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%S")
     with transaction(settings.db_path) as conn:
@@ -102,7 +103,7 @@ def test_daily_414_welcome_points_hide_classic_meta(tmp_path: Path) -> None:
             user_agent="pytest",
         )
 
-    client = TestClient(create_app(settings))
+    client = TestClient(app)
     with client:
         client.cookies.set(MEMBER_COOKIE_NAME, token)
         page = client.get("/quiz?campaign=welcome_daily")
