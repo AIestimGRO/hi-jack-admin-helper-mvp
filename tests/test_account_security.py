@@ -78,7 +78,7 @@ def test_email_change_updates_account_and_client(tmp_path: Path) -> None:
         assert client["email_normalized"] == "new@example.com"
 
 
-def test_phone_change_keeps_old_phone_as_rating_alias(tmp_path: Path) -> None:
+def test_phone_change_releases_old_phone_for_future_identity(tmp_path: Path) -> None:
     db_path = tmp_path / "security-phone.sqlite3"
     init_db(db_path)
     with transaction(db_path) as conn:
@@ -93,12 +93,12 @@ def test_phone_change_keeps_old_phone_as_rating_alias(tmp_path: Path) -> None:
         client = conn.execute(
             "SELECT phone_local FROM clients WHERE id=?", (client_id,)
         ).fetchone()
-        alias = conn.execute(
-            "SELECT phone_local FROM client_phone_aliases WHERE client_id=?",
+        aliases = conn.execute(
+            "SELECT COUNT(*) FROM client_phone_aliases WHERE client_id=?",
             (client_id,),
-        ).fetchone()
+        ).fetchone()[0]
         assert client["phone_local"] == "9992223344"
-        assert alias["phone_local"] == "9991112233"
+        assert aliases == 0
 
         result = import_hijack_rating(
             conn,
@@ -117,12 +117,12 @@ def test_phone_change_keeps_old_phone_as_rating_alias(tmp_path: Path) -> None:
             admin_id=None,
         )
         assert result["unmatched_rows"] == 1
-        assert relink_hijack_history(conn, client_id=client_id) == 1
+        assert relink_hijack_history(conn, client_id=client_id) == 0
         linked = conn.execute(
             "SELECT client_id FROM hi_jack_rating_entries WHERE import_id=?",
             (result["import_id"],),
         ).fetchone()
-        assert linked["client_id"] == client_id
+        assert linked["client_id"] is None
 
 
 def test_security_code_is_single_use_and_limits_bad_attempts(tmp_path: Path) -> None:
@@ -250,9 +250,10 @@ def test_profile_loads_account_security_assets() -> None:
     root = Path(__file__).resolve().parents[1]
     loader = (root / "app/static/js/member-profile-refresh.js").read_text(encoding="utf-8")
     script = (root / "app/static/js/account-security.js").read_text(encoding="utf-8")
-    assert "account-security.css?v=1" in loader
-    assert "account-security.js?v=1" in loader
+    assert "account-security.css?v=2" in loader
+    assert "account-security.js?v=2" in loader
     assert "Настройки аккаунта" in script
     assert "/account/security/email/request" in script
     assert "/account/security/phone/request" in script
+    assert "/account/security/password/change" in script
     assert "/account/security/delete/confirm" in script
