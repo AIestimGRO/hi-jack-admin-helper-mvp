@@ -9,6 +9,12 @@ import re
 import sqlite3
 from typing import Any
 
+from app.services.login_security import (
+    login_is_locked,
+    record_login_failure,
+    record_login_success,
+)
+
 
 PBKDF2_ITERATIONS = 310_000
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,40}$")
@@ -60,10 +66,35 @@ def authenticate(conn: sqlite3.Connection, username: str, pin: str):
         normalized = validate_username(username)
     except ValueError:
         return None
-    row = conn.execute("SELECT * FROM admins WHERE username = ? AND is_active = 1", (normalized,)).fetchone()
-    if not row or not verify_pin(pin, row["pin_hash"]):
+    row = conn.execute(
+        "SELECT * FROM admins WHERE username = ? AND is_active = 1",
+        (normalized,),
+    ).fetchone()
+    if not row:
         return None
-    conn.execute("UPDATE admins SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
+    admin_id = int(row["id"])
+    if login_is_locked(
+        conn,
+        principal_type="admin",
+        principal_id=admin_id,
+    ):
+        return None
+    if not verify_pin(pin, row["pin_hash"]):
+        record_login_failure(
+            conn,
+            principal_type="admin",
+            principal_id=admin_id,
+        )
+        return None
+    record_login_success(
+        conn,
+        principal_type="admin",
+        principal_id=admin_id,
+    )
+    conn.execute(
+        "UPDATE admins SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (admin_id,),
+    )
     return row
 
 
@@ -81,4 +112,3 @@ def audit(
         "INSERT INTO admin_audit_log(admin_id, admin_name, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?, ?)",
         (admin_id, admin_name, action, entity_type, entity_id, json.dumps(details or {}, ensure_ascii=False, sort_keys=True)),
     )
-
