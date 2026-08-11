@@ -1,5 +1,11 @@
 /* Focused member UI cleanup: denser home, compact store balance, cleaner rating, stable chat launcher. */
 
+.member-app-body.member-tab-quizzes .member-topbar,
+.member-app-body.member-tab-rating .member-topbar,
+.member-app-body.member-tab-vault .member-topbar {
+  display: none !important;
+}
+
 .member-app-body.member-tab-quizzes .member-shell,
 .member-app-body.member-tab-rating .member-shell,
 .member-app-body.member-tab-vault .member-shell {
