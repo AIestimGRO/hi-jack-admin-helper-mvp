@@ -117,6 +117,8 @@
   }
 
   function loadHiJackExtension() {
+    loadStylesheetOnce('/static/css/member-ui-cleanup.css?v=1', 'data-member-ui-cleanup');
+    loadScriptOnce('/static/js/member-ui-cleanup.js?v=1', 'data-member-ui-cleanup');
     loadStylesheetOnce('/static/css/hijack-member.css?v=3', 'data-hijack-member-extension');
     loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
 
