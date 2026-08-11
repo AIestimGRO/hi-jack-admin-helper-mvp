@@ -71,10 +71,18 @@
       </div>
     </details>
 
+    <details class="account-security-item">
+      <summary><span><small>Правила и приватность</small><strong>Документы и согласия</strong></span><b>Открыть</b></summary>
+      <div class="account-security-body">
+        <p>Пользовательское соглашение, Политика персональных данных и отдельные добровольные согласия на рассылку, изображение и публичный рейтинг.</p>
+        <a class="account-security-link" href="/account/legal">Управлять документами и согласиями</a>
+      </div>
+    </details>
+
     <details class="account-security-item is-danger">
       <summary><span><small>Аккаунт</small><strong>Удаление аккаунта</strong></span><b>Удалить</b></summary>
       <div class="account-security-body">
-        <p>Личные данные, привязки, аватар и активные сессии будут удалены. Игровая история и рейтинговые результаты останутся только в обезличенном виде, чтобы не ломать общую статистику клуба.</p>
+        <p>Личные данные, привязки, аватар и активные сессии будут удалены. Телефон, почта и Telegram освободятся для новой регистрации. Игровая история и рейтинговые результаты останутся только в обезличенном виде, чтобы не ломать общую статистику клуба.</p>
         <form class="account-security-form" action="/account/security/delete/request" method="post">
           <input type="hidden" name="csrf_token" value="${csrf}">
           <button class="account-security-danger-button" type="submit">Получить код удаления</button>
