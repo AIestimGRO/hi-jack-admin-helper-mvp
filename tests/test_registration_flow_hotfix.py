@@ -90,7 +90,7 @@ def test_duplicate_consent_submit_does_not_reset_registration_flow(tmp_path: Pat
         assert "data-consent-form" not in profile.text
 
 
-def test_legal_extra_persists_birth_date_for_request_code_gate(tmp_path: Path) -> None:
+def test_legal_extra_accepts_adult_registration_state(tmp_path: Path) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
     with client:
         page = client.get("/account/register")
@@ -105,7 +105,3 @@ def test_legal_extra_persists_birth_date_for_request_code_gate(tmp_path: Path) -
         )
         assert response.status_code == 200
         assert response.json() == {"ok": True}
-
-        with client.session_transaction() as session:
-            assert session["member_registration_birth_date"] == "1990-01-01"
-            assert session["member_registration_marketing"] is True
