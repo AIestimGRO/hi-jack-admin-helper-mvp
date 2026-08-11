@@ -1,0 +1,242 @@
+/* Focused member UI cleanup: denser home, compact store balance, cleaner rating, stable chat launcher. */
+
+.member-app-body.member-tab-quizzes .member-shell,
+.member-app-body.member-tab-rating .member-shell,
+.member-app-body.member-tab-vault .member-shell {
+  padding-top: 18px;
+}
+
+/* Home: reduce the JACKCOIN card height without shrinking its typography. */
+.member-app-page[data-account-tab="home"] .jc-wallet-card {
+  min-height: 166px;
+  padding: 18px 24px;
+  border-radius: 24px;
+}
+
+.member-app-page[data-account-tab="home"] .jc-wallet-balance {
+  margin: 12px 0 14px;
+}
+
+.member-app-page[data-account-tab="home"] .jc-wallet-bottom {
+  gap: 12px;
+}
+
+.member-app-page[data-account-tab="home"] .jc-wallet-bottom a {
+  min-height: 42px;
+  padding: 10px 15px;
+}
+
+.member-app-page[data-account-tab="home"] .jc-wallet-card::after {
+  top: 24px;
+}
+
+.member-app-page[data-account-tab="home"] .home-nearest-clean .app-section-head,
+.member-app-page[data-account-tab="home"] .home-jack-cards-clean .app-section-head {
+  justify-content: flex-start;
+  margin-bottom: 10px;
+}
+
+.member-app-page[data-account-tab="home"] .home-nearest-clean .app-section-head > div,
+.member-app-page[data-account-tab="home"] .home-jack-cards-clean .app-section-head > div {
+  padding: 0;
+  text-align: left;
+}
+
+.member-app-page[data-account-tab="home"] .home-jack-cards-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 0;
+  color: var(--app-accent, #31dbc5);
+  font-weight: 900;
+  letter-spacing: 1.8px;
+  text-decoration: none;
+}
+
+.member-app-page[data-account-tab="home"] .home-jack-cards-link::after {
+  margin-left: 7px;
+  content: "›";
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Profile copy cleanup. */
+.member-app-page[data-account-tab="profile"] .profile-stat-clean-head .app-section-head,
+.member-app-page[data-account-tab="profile"] .profile-referral-clean-head {
+  margin-bottom: 10px;
+}
+
+.member-app-page[data-account-tab="profile"] .profile-stat-clean-head .app-section-head > div,
+.member-app-page[data-account-tab="profile"] .profile-referral-clean-head .profile-referral-top > div:first-child {
+  padding: 0;
+  text-align: left;
+}
+
+.member-app-page[data-account-tab="profile"] .referral-tree-stats.is-empty-referral-stats {
+  display: none !important;
+}
+
+/* Hi, Store: compact glowing JC balance instead of a full-width balance card. */
+.member-app-page[data-account-tab="vault"] .vault-page-heading {
+  position: relative;
+  align-items: center;
+  min-height: 72px;
+  padding-right: 118px;
+}
+
+.member-app-page[data-account-tab="vault"] .vault-page-heading > div:first-child {
+  min-width: 0;
+}
+
+.member-app-page[data-account-tab="vault"] .vault-page-heading h1 {
+  margin: 0;
+}
+
+.member-app-page[data-account-tab="vault"] .store-balance-chip {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  width: auto;
+  min-width: 96px;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 14px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(49, 219, 197, .34);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 25% 20%, rgba(49, 219, 197, .18), transparent 55%),
+    rgba(9, 28, 27, .9);
+  box-shadow: 0 0 24px rgba(49, 219, 197, .15), inset 0 0 0 1px rgba(255,255,255,.025);
+  color: var(--app-accent, #31dbc5);
+  white-space: nowrap;
+}
+
+.member-app-page[data-account-tab="vault"] .store-balance-chip strong {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: -.4px;
+}
+
+.member-app-page[data-account-tab="vault"] .store-balance-chip small {
+  color: #b9fff5;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+/* Rating: center hero copy relative to the viewport and remove the duplicate section intro. */
+.member-app-page[data-account-tab="rating"] .rating-hub-hero {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 74px;
+  align-items: center;
+  gap: 12px;
+}
+
+.member-app-page[data-account-tab="rating"] .rating-hub-hero::after {
+  width: 74px;
+  height: 1px;
+  content: "";
+}
+
+.member-app-page[data-account-tab="rating"] .rating-hub-hero > div:last-child {
+  min-width: 0;
+  text-align: center;
+}
+
+.member-app-page[data-account-tab="rating"] .jackside-rating-section.is-clean-rating-list {
+  margin-top: -4px;
+}
+
+/* Chat launcher: stable fixed position; overlap collapses horizontally instead of jumping. */
+.member-chat-launcher.is-stable-chat {
+  --stable-chat-right: max(12px, env(safe-area-inset-right));
+  position: fixed !important;
+  right: var(--stable-chat-right) !important;
+  bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+  z-index: 90 !important;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: transform .24s ease, opacity .18s ease, box-shadow .18s ease !important;
+  will-change: transform;
+}
+
+.member-chat-launcher.is-stable-chat.is-obstructed:not(.is-hidden) {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+.member-chat-launcher.is-stable-chat.is-hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateX(18px) scale(.94) !important;
+}
+
+.member-chat-launcher.is-stable-chat.chat-collapsed:not(.is-hidden) {
+  transform: translateX(calc(100% - 14px)) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .32), 0 0 18px rgba(93, 217, 207, .1);
+}
+
+.member-chat-launcher.is-stable-chat.chat-collapsed:not(.is-hidden) svg {
+  opacity: 0;
+}
+
+.member-chat-launcher.is-stable-chat.chat-collapsed:not(.is-hidden)::before {
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #eafffc;
+  content: "‹";
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+@media (max-width: 520px) {
+  .member-app-page[data-account-tab="home"] .jc-wallet-card {
+    min-height: 160px;
+    padding: 16px 18px;
+  }
+
+  .member-app-page[data-account-tab="home"] .jc-wallet-balance {
+    margin: 10px 0 12px;
+  }
+
+  .member-app-page[data-account-tab="vault"] .vault-page-heading {
+    min-height: 64px;
+    padding-right: 106px;
+  }
+
+  .member-app-page[data-account-tab="vault"] .store-balance-chip {
+    min-width: 88px;
+    min-height: 40px;
+    padding: 9px 12px;
+  }
+
+  .member-app-page[data-account-tab="vault"] .store-balance-chip strong {
+    font-size: 18px;
+  }
+
+  .member-app-page[data-account-tab="rating"] .rating-hub-hero {
+    grid-template-columns: 58px minmax(0, 1fr) 58px;
+    gap: 8px;
+  }
+
+  .member-app-page[data-account-tab="rating"] .rating-hub-hero::after {
+    width: 58px;
+  }
+
+  .member-chat-launcher.is-stable-chat {
+    bottom: calc(88px + env(safe-area-inset-bottom)) !important;
+  }
+}
