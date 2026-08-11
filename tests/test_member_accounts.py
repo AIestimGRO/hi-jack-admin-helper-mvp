@@ -141,6 +141,18 @@ def request_registration_code(
 ) -> None:
     profile = client.get("/account/register")
     assert "Личные данные" in profile.text
+    csrf_token = csrf_from(profile)
+    extra = client.post(
+        "/api/account/register/draft-extra",
+        data={
+            "birth_date": "1992-10-01",
+            "phone": "+7 999 123-45-67",
+            "csrf_token": csrf_token,
+        },
+        follow_redirects=False,
+    )
+    assert extra.status_code == 200
+    assert extra.json()["ok"] is True
     response = client.post(
         "/account/register/request-code",
         data={
@@ -149,7 +161,7 @@ def request_registration_code(
             "password_confirmation": "PokerPlayer2026",
             "phone": "+7 999 123-45-67",
             "first_name": "Алекс",
-            "csrf_token": csrf_from(profile),
+            "csrf_token": csrf_token,
         },
         follow_redirects=False,
     )
@@ -259,6 +271,7 @@ def test_registration_consents_account_session_and_profile(
         profile = client.get("/account/register")
         assert "От 6 символов, минимум одна буква" in profile.text
         assert "Номер из HI JACK!" in profile.text
+        assert "Дата рождения" in profile.text
         assert "Подтвердить через Telegram" not in profile.text
         submit = re.search(
             r"<button[^>]+data-registration-submit[^>]*>", profile.text
@@ -391,6 +404,7 @@ def test_registration_consents_account_session_and_profile(
             "SELECT * FROM clients WHERE id=?", (account["client_id"],)
         ).fetchone()
         assert client_row["phone_local"] == "9991234567"
+        assert client_row["birth_date"] == "1992-10-01"
         assert client_row["username"] == "poker_player"
         assert client_row["telegram_user_id"] == "tg-permanent-101"
 
@@ -1135,7 +1149,6 @@ def test_daily_414_lobby_ranks_by_correct_count(
                         document["version"],
                     ),
                 )
-            # first finishes with 8, second with 9 — second must be place 1
             conn.execute(
                 """
                 INSERT INTO quiz_submissions(
@@ -1312,8 +1325,6 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         )
         assert blocked.status_code == 409
 
-        # Closing the lobby and reopening the link must return to final flow,
-        # not treat the finished attempt as a hard lockout with no recovery.
         resumed = client.get(
             "/api/quiz/final-table/status?campaign=daily_test"
         )
