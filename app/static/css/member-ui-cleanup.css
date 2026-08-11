@@ -14,13 +14,23 @@
 
 /* Home: reduce the JACKCOIN card height without shrinking its typography. */
 .member-app-page[data-account-tab="home"] .jc-wallet-card {
-  min-height: 166px;
-  padding: 18px 24px;
+  min-height: 164px;
+  padding: 14px 18px;
   border-radius: 24px;
 }
 
+.member-app-page[data-account-tab="home"] .jc-wallet-top {
+  min-height: 16px;
+}
+
+.member-app-page[data-account-tab="home"] .jc-wallet-chip {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+}
+
 .member-app-page[data-account-tab="home"] .jc-wallet-balance {
-  margin: 12px 0 14px;
+  margin: 6px 0 8px;
 }
 
 .member-app-page[data-account-tab="home"] .jc-wallet-bottom {
@@ -33,7 +43,7 @@
 }
 
 .member-app-page[data-account-tab="home"] .jc-wallet-card::after {
-  top: 24px;
+  top: 16px;
 }
 
 .member-app-page[data-account-tab="home"] .home-nearest-clean .app-section-head,
@@ -86,12 +96,16 @@
 .member-app-page[data-account-tab="vault"] .vault-page-heading {
   position: relative;
   align-items: center;
+  justify-content: center;
   min-height: 72px;
-  padding-right: 118px;
+  padding: 0;
+  text-align: center;
 }
 
 .member-app-page[data-account-tab="vault"] .vault-page-heading > div:first-child {
+  width: 100%;
   min-width: 0;
+  text-align: center;
 }
 
 .member-app-page[data-account-tab="vault"] .vault-page-heading h1 {
@@ -211,16 +225,20 @@
 @media (max-width: 520px) {
   .member-app-page[data-account-tab="home"] .jc-wallet-card {
     min-height: 160px;
-    padding: 16px 18px;
+    padding: 12px 16px;
+  }
+
+  .member-app-page[data-account-tab="home"] .jc-wallet-chip {
+    top: 12px;
+    right: 16px;
   }
 
   .member-app-page[data-account-tab="home"] .jc-wallet-balance {
-    margin: 10px 0 12px;
+    margin: 5px 0 7px;
   }
 
   .member-app-page[data-account-tab="vault"] .vault-page-heading {
     min-height: 64px;
-    padding-right: 106px;
   }
 
   .member-app-page[data-account-tab="vault"] .store-balance-chip {
