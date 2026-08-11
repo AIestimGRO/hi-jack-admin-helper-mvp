@@ -16,23 +16,35 @@
   {% if ok %}<div class="notice success">{{ ok }}</div>{% endif %}
   {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
 
+  <nav class="account-registry-tabs" aria-label="Состояние пользователей">
+    <a class="{{ 'active' if view|default('active') == 'active' else '' }}" href="/master/member-accounts?view=active">Активные <span>{{ active_count|default(0) }}</span></a>
+    <a class="{{ 'active' if view|default('active') == 'archive' else '' }}" href="/master/member-accounts?view=archive">Архив <span>{{ archive_count|default(0) }}</span></a>
+  </nav>
+
   <form class="account-registry-search" method="get" action="/master/member-accounts">
+    <input type="hidden" name="view" value="{{ view|default('active') }}">
     <input name="q" value="{{ q }}" placeholder="ID, имя, телефон, почта, App ID, Referrer ID">
     <button type="submit">Найти</button>
-    {% if q %}<a href="/master/member-accounts">Сбросить</a>{% endif %}
+    {% if q %}<a href="/master/member-accounts?view={{ view|default('active') }}">Сбросить</a>{% endif %}
   </form>
 
   <div class="account-registry-layout">
     <section class="account-registry-list">
-      <div class="account-registry-list-head"><strong>Игроки</strong><small>{{ rows|length }} показано</small></div>
+      <div class="account-registry-list-head"><strong>{{ 'Архивные пользователи' if view|default('active') == 'archive' else 'Активные пользователи' }}</strong><small>{{ rows|length }} показано</small></div>
       {% for row in rows %}
-      <a class="account-registry-row {{ 'active' if selected and selected.id == row.id else '' }}" href="/master/member-accounts?client_id={{ row.id }}">
+      <a class="account-registry-row {{ 'active' if selected and selected.id == row.id else '' }}" href="/master/member-accounts?view={{ view|default('active') }}&amp;client_id={{ row.id }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">
         <span class="account-registry-avatar">{{ (row.nickname or row.first_name or row.username or 'HJ')[:1]|upper }}</span>
         <span class="account-registry-copy">
           <strong>{{ row.nickname or row.first_name or ('@' ~ row.username if row.username else 'Игрок #' ~ row.id) }}</strong>
           <small>{{ row.account_email or row.phone_full or ('ID ' ~ row.id) }}</small>
         </span>
-        <span class="account-registry-state {{ 'inactive' if row.account_id and not row.account_active else '' }}">{{ 'ЛК' if row.account_id else 'без ЛК' }}</span>
+        {% if row.client_status == 'deleted' %}
+        <span class="account-registry-state inactive">удалён</span>
+        {% elif row.account_id %}
+        <span class="account-registry-state {{ 'inactive' if not row.account_active else '' }}">{{ 'ЛК' if row.account_active else 'ЛК выкл.' }}</span>
+        {% else %}
+        <span class="account-registry-state inactive">без ЛК</span>
+        {% endif %}
       </a>
       {% else %}
       <p class="muted account-registry-empty">Ничего не найдено.</p>
@@ -105,7 +117,7 @@
         {% if selected.account_id and selected.client_status != 'deleted' %}
         <div class="account-registry-danger-card">
           <strong>Удалить и обезличить ЛК</strong>
-          <p>Доступ будет закрыт, персональные данные очищены, но история JACKSIDE, рейтинга, JACKCOIN и клубной статистики останется связанной с обезличенным игроком.</p>
+          <p>Доступ будет закрыт, персональные данные очищены, а телефон, почта и Telegram освободятся для новой регистрации. История JACKSIDE, рейтинга, JACKCOIN и клубной статистики останется связанной с обезличенным игроком.</p>
           <form action="/master/member-accounts/{{ selected.id }}/delete-account" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input name="confirmation" autocomplete="off" placeholder="Введите: УДАЛИТЬ ЛК" required>
@@ -113,7 +125,7 @@
           </form>
         </div>
         {% elif selected.account_id and selected.client_status == 'deleted' %}
-        <p class="muted">ЛК уже удалён и персональные данные обезличены. Исторические игровые записи сохранены.</p>
+        <p class="muted">ЛК уже удалён и персональные данные обезличены. Исторические игровые записи сохранены. Запись находится в архиве.</p>
         {% else %}
         <div class="account-registry-danger-card">
           <strong>Удалить пустую запись клиента полностью</strong>
