@@ -254,3 +254,131 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Desktop navigation is a dropdown again; typography from this hotfix stays intact. */
+@media (min-width: 901px) {
+  .admin-app-body .topbar > .admin-menu-toggle {
+    display: inline-grid !important;
+    margin-left: auto;
+  }
+
+  .admin-app-body .topbar {
+    padding-right: 24px !important;
+  }
+
+  .admin-app-body .container {
+    box-sizing: border-box;
+    width: min(1240px, calc(100vw - 48px)) !important;
+    max-width: 1240px !important;
+    margin-right: auto !important;
+    margin-left: auto !important;
+  }
+
+  .admin-persistent-nav[hidden] {
+    display: none !important;
+  }
+
+  .admin-persistent-nav:not([hidden]) {
+    position: fixed !important;
+    z-index: 100 !important;
+    top: 78px !important;
+    right: 24px !important;
+    bottom: auto !important;
+    left: auto !important;
+    display: flex !important;
+    width: min(370px, calc(100vw - 48px)) !important;
+    max-height: calc(100vh - 102px) !important;
+    padding: 16px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    flex-direction: column !important;
+    border-radius: 20px !important;
+    box-shadow: 0 24px 70px rgba(0,0,0,.48) !important;
+  }
+
+  .admin-persistent-nav [data-admin-menu-close] {
+    display: grid !important;
+  }
+
+  .admin-app-body.admin-menu-open {
+    overflow: auto !important;
+  }
+}
+
+/* With no permanent rail, keep the two-column registry on normal desktop widths. */
+@media (min-width: 1101px) {
+  .master-member-accounts .account-registry-layout {
+    grid-template-columns: minmax(320px, .72fr) minmax(0, 1.5fr);
+  }
+
+  .master-member-accounts .account-registry-list {
+    max-height: none;
+    overflow: hidden;
+  }
+}
+
+/* Explicit Telegram unlink control injected on the account registry page. */
+.account-registry-telegram {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.account-registry-telegram summary {
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.account-registry-telegram-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(49,219,197,.18);
+  border-radius: 14px;
+  background: rgba(49,219,197,.055);
+}
+
+.account-registry-telegram-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.account-registry-telegram-copy strong {
+  font-size: 14px;
+}
+
+.account-registry-telegram-copy p {
+  margin: 0;
+}
+
+.account-registry-telegram form {
+  flex: 0 0 auto;
+}
+
+.account-registry-telegram button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(225,92,96,.3);
+  border-radius: 12px;
+  background: rgba(128,31,35,.16);
+  color: #ffb8bb;
+  font-size: 13px !important;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .account-registry-telegram-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .account-registry-telegram button {
+    width: 100%;
+  }
+}
