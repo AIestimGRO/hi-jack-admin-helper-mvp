@@ -38,8 +38,10 @@
     <form class="member-form" action="/account/register/request-code" method="post" data-registration-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Имя <small>Можно оставить пустым</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться" value="{{ draft.first_name if draft else '' }}"></label>
+      <label>Дата рождения <small>После регистрации изменить можно через администратора</small><input name="birth_date" type="date" autocomplete="bday" min="1900-01-01" required data-registration-birth-date></label>
       <label>Электронная почта <small>Сюда придёт код</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" value="{{ draft.email if draft else '' }}" required></label>
-      <label>Номер телефона <small>Номер из HI JACK!</small><input name="phone" type="tel" maxlength="80" autocomplete="tel" inputmode="tel" placeholder="+7 999 123-45-67" value="{{ draft.phone if draft else '' }}" required></label>
+      <label>Номер телефона <small>Один актуальный номер = один аккаунт</small><input name="phone" type="tel" maxlength="80" autocomplete="tel" inputmode="tel" placeholder="+7 999 123-45-67" value="{{ draft.phone if draft else '' }}" required data-registration-phone></label>
+      <small class="password-match-message" data-registration-extra-message hidden></small>
       <label>Пароль <small>От 6 символов, минимум одна буква</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password></label>
       <label>Повторите пароль<input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password-confirmation><small class="password-match-message" data-password-match-message hidden>Пароли не совпадают</small></label>
       <button class="member-primary" type="submit" {% if not email_available %}disabled{% endif %} data-registration-submit>Получить код</button>
@@ -68,4 +70,5 @@
 
   <p class="member-switch">Уже есть аккаунт? <a href="/account/login">Войти</a></p>
 </section>
+<script src="{{ url_for('static', path='/js/member-registration-extra.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}
