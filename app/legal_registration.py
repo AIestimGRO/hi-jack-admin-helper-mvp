@@ -3,10 +3,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import secrets
 import sqlite3
 import threading
 from datetime import date
-from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -94,8 +94,7 @@ RATING_CATEGORY_KEYS = (
 
 
 def _read_legal_file(filename: str) -> str:
-    path = LEGAL_DIR / filename
-    return path.read_text(encoding="utf-8").strip()
+    return (LEGAL_DIR / filename).read_text(encoding="utf-8").strip()
 
 
 def _ip_hash(settings, request: Request) -> str:
@@ -107,6 +106,14 @@ def _ip_hash(settings, request: Request) -> str:
     ).hexdigest()
 
 
+def _csrf_token(request: Request) -> str:
+    token = str(request.session.get("csrf") or "")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        request.session["csrf"] = token
+    return token
+
+
 def _is_adult(value: str) -> bool:
     try:
         born = date.fromisoformat(str(value or ""))
@@ -115,14 +122,6 @@ def _is_adult(value: str) -> bool:
     today = date.today()
     years = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
     return years >= 18
-
-
-def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    return bool(
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-        ).fetchone()
-    )
 
 
 def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
@@ -185,26 +184,39 @@ def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS ix_member_public_rating_consent_events_account
             ON member_public_rating_consent_events(account_id, created_at DESC);
+
+        CREATE TRIGGER IF NOT EXISTS trg_legal_redact_on_client_delete
+        AFTER UPDATE OF client_status ON clients
+        WHEN NEW.client_status='deleted'
+        BEGIN
+            UPDATE member_optional_consent_events
+            SET ip_hash='deleted', user_agent=NULL
+            WHERE account_id IN (
+                SELECT id FROM member_accounts WHERE client_id=NEW.id
+            );
+            UPDATE member_public_rating_consent_events
+            SET ip_hash='deleted', user_agent=NULL
+            WHERE account_id IN (
+                SELECT id FROM member_accounts WHERE client_id=NEW.id
+            );
+        END;
         """
     )
     _seed_documents(conn)
 
 
 def _seed_documents(conn: sqlite3.Connection) -> None:
+    """Install the supplied 2026 legal package once without overwriting admin edits."""
     for code, meta in MANDATORY_DOCUMENTS.items():
-        content = _read_legal_file(meta["path"])
         current = conn.execute(
-            "SELECT id,version,title,content FROM legal_documents WHERE code=? AND is_active=1",
+            "SELECT id,version FROM legal_documents WHERE code=? AND is_active=1",
             (code,),
         ).fetchone()
-        if (
-            current
-            and str(current["version"]) == LEGAL_VERSION
-            and str(current["title"]) == meta["title"]
-            and str(current["content"]).strip() == content
-        ):
+        if current and str(current["version"]) not in {"", "1.0"}:
             continue
-        conn.execute("UPDATE legal_documents SET is_active=0 WHERE code=?", (code,))
+        content = _read_legal_file(meta["path"])
+        if current:
+            conn.execute("UPDATE legal_documents SET is_active=0 WHERE code=?", (code,))
         conn.execute(
             """
             INSERT INTO legal_documents(code,version,title,content,is_active,published_at)
@@ -219,26 +231,12 @@ def _seed_documents(conn: sqlite3.Connection) -> None:
         )
 
     for code, meta in REFERENCE_DOCUMENTS.items():
-        content = _read_legal_file(meta["path"])
         current = conn.execute(
-            """
-            SELECT id,version,title,content,kind
-            FROM legal_reference_documents
-            WHERE code=? AND is_active=1
-            """,
+            "SELECT id FROM legal_reference_documents WHERE code=? AND is_active=1",
             (code,),
         ).fetchone()
-        if (
-            current
-            and str(current["version"]) == LEGAL_VERSION
-            and str(current["title"]) == meta["title"]
-            and str(current["content"]).strip() == content
-            and str(current["kind"]) == meta["kind"]
-        ):
+        if current:
             continue
-        conn.execute(
-            "UPDATE legal_reference_documents SET is_active=0 WHERE code=?", (code,)
-        )
         conn.execute(
             """
             INSERT INTO legal_reference_documents(
@@ -251,7 +249,13 @@ def _seed_documents(conn: sqlite3.Connection) -> None:
                 is_active=1,
                 published_at=CURRENT_TIMESTAMP
             """,
-            (code, LEGAL_VERSION, meta["title"], content, meta["kind"]),
+            (
+                code,
+                LEGAL_VERSION,
+                meta["title"],
+                _read_legal_file(meta["path"]),
+                meta["kind"],
+            ),
         )
 
 
@@ -413,7 +417,6 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 )
                 return RedirectResponse(f"/account/register?{values}", status_code=303)
 
-        member = None
         if path == "/quiz" or path.startswith("/quiz/") or path in QUIZ_MEMBER_API_PATHS:
             member = _current_member(request, required=False)
             if not member:
@@ -520,19 +523,32 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                     "SELECT * FROM legal_reference_documents WHERE is_active=1"
                 ).fetchall()
             }
-            states = {
-                row["code"]: bool(row["granted"])
-                for row in conn.execute(
-                    "SELECT code,granted FROM member_optional_consent_state WHERE account_id=?",
-                    (int(member["id"]),),
-                ).fetchall()
-            }
+            raw_states = conn.execute(
+                """
+                SELECT code,document_version,granted
+                FROM member_optional_consent_state WHERE account_id=?
+                """,
+                (int(member["id"]),),
+            ).fetchall()
+            states: dict[str, bool] = {}
+            for row in raw_states:
+                current = references.get(str(row["code"]))
+                states[str(row["code"])] = bool(
+                    current
+                    and str(row["document_version"]) == str(current["version"])
+                    and row["granted"]
+                )
             rating_row = conn.execute(
                 "SELECT * FROM member_public_rating_consent_state WHERE account_id=?",
                 (int(member["id"]),),
             ).fetchone()
         rating = {key: False for key in RATING_CATEGORY_KEYS}
-        if rating_row:
+        rating_document = references.get("public-rating-consent")
+        if (
+            rating_row
+            and rating_document
+            and str(rating_row["document_version"]) == str(rating_document["version"])
+        ):
             try:
                 stored = json.loads(str(rating_row["categories_json"] or "{}"))
                 for key in RATING_CATEGORY_KEYS:
@@ -549,7 +565,7 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 "references": references,
                 "states": states,
                 "rating": rating,
-                "csrf_token": request.session.get("csrf", ""),
+                "csrf_token": _csrf_token(request),
                 "asset_version": "legal-registration-v1",
                 "ok": ok,
                 "error": error,
@@ -684,7 +700,7 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 "archive_count": int(counts["archive_count"] or 0),
                 "ok": ok,
                 "error": error,
-                "csrf_token": request.session.get("csrf", ""),
+                "csrf_token": _csrf_token(request),
                 "admin_name": request.session.get("admin_name", "Мастер"),
                 "admin_role": request.session.get("admin_role", "master_admin"),
                 "asset_version": "legal-registration-v1",
@@ -711,7 +727,7 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 "request": request,
                 "mandatory": mandatory,
                 "references": references,
-                "csrf_token": request.session.get("csrf", ""),
+                "csrf_token": _csrf_token(request),
                 "asset_version": "legal-registration-v1",
                 "admin_name": request.session.get("admin_name", "Мастер"),
                 "admin_role": request.session.get("admin_role", "master_admin"),
@@ -742,6 +758,15 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
             )
         with transaction(settings.db_path) as conn:
             if store == "mandatory" and code in MANDATORY_DOCUMENTS:
+                current = conn.execute(
+                    "SELECT version FROM legal_documents WHERE code=? AND is_active=1",
+                    (code,),
+                ).fetchone()
+                if current and str(current["version"]) == version:
+                    return RedirectResponse(
+                        "/master/legal-documents?error=Для+нового+текста+укажите+новую+версию",
+                        status_code=303,
+                    )
                 conn.execute("UPDATE legal_documents SET is_active=0 WHERE code=?", (code,))
                 conn.execute(
                     """
@@ -753,6 +778,18 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                     (code, version, title, content),
                 )
             elif store == "reference" and code in REFERENCE_DOCUMENTS:
+                current = conn.execute(
+                    """
+                    SELECT version FROM legal_reference_documents
+                    WHERE code=? AND is_active=1
+                    """,
+                    (code,),
+                ).fetchone()
+                if current and str(current["version"]) == version:
+                    return RedirectResponse(
+                        "/master/legal-documents?error=Для+нового+текста+укажите+новую+версию",
+                        status_code=303,
+                    )
                 kind = REFERENCE_DOCUMENTS[code]["kind"]
                 conn.execute(
                     "UPDATE legal_reference_documents SET is_active=0 WHERE code=?", (code,)
@@ -778,8 +815,8 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 admin_name=str(request.session.get("admin_name") or "master"),
                 action="legal_document_published",
                 entity_type="legal_document",
-                entity_id=code,
-                details={"store": store, "version": version},
+                entity_id=None,
+                details={"code": code, "store": store, "version": version},
             )
         return RedirectResponse(
             "/master/legal-documents?ok=Новая+редакция+опубликована", status_code=303
