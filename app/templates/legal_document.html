@@ -1,0 +1,14 @@
+{% extends "member_base.html" %}
+{% block title %}{{ document.title }} — Hi, Jack Club{% endblock %}
+{% block content %}
+<style>
+.legal-document-card{max-width:920px;margin:0 auto;display:grid;gap:16px}.legal-document-card .legal-document-copy{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.65;color:rgba(255,255,255,.82)}.legal-document-card .legal-document-meta{display:flex;gap:10px;flex-wrap:wrap;color:rgba(255,255,255,.5);font-size:12px}.legal-document-card .legal-document-back{display:inline-flex;width:max-content;text-decoration:none}
+</style>
+<section class="member-card legal-document-card">
+  <p class="member-eyebrow">Юридический документ</p>
+  <h1>{{ document.title }}</h1>
+  <div class="legal-document-meta"><span>Редакция {{ document.version }}</span>{% if document.published_at %}<span>Опубликовано {{ document.published_at }}</span>{% endif %}</div>
+  <div class="legal-document-copy">{{ document.content }}</div>
+  <a class="member-secondary legal-document-back" href="{{ '/account/legal' if member else '/account/register' }}">Назад</a>
+</section>
+{% endblock %}
