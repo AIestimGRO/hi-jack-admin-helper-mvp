@@ -1,0 +1,89 @@
+/* Final visual polish for the member home wallet and HI, JACK! rating. */
+
+.member-app-page[data-account-tab="home"] .jc-wallet-bottom p {
+  white-space: nowrap;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-head.hijack-rating-head-compact {
+  display: block;
+  min-height: 84px;
+  padding: 15px 18px;
+  border-color: rgba(49, 219, 197, .16);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(224, 184, 82, .08), transparent 42%),
+    linear-gradient(145deg, rgba(18, 31, 30, .96), rgba(9, 15, 15, .98));
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-head-compact .hijack-rating-me {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-head-compact .hijack-rating-me small {
+  color: #eef9f7;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: -.1px;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-head-compact .hijack-rating-me strong {
+  flex: 0 0 auto;
+  margin: 0;
+  color: #f0cf73;
+  font-size: clamp(30px, 8vw, 38px);
+  line-height: 1;
+  letter-spacing: -1.4px;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-head-compact .hijack-rating-me span {
+  display: none !important;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-periods {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 5px;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-periods button {
+  min-width: 0;
+  padding-right: 5px;
+  padding-left: 5px;
+  white-space: nowrap;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-caption {
+  display: none !important;
+}
+
+@media (max-width: 430px) {
+  .member-app-page[data-account-tab="rating"] .hijack-rating-periods {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .member-app-page[data-account-tab="rating"] .hijack-rating-periods button {
+    min-height: 40px;
+    font-size: 9px;
+    letter-spacing: -.12px;
+  }
+
+  .member-app-page[data-account-tab="rating"] .hijack-rating-head.hijack-rating-head-compact {
+    min-height: 78px;
+    padding: 13px 15px;
+  }
+
+  .member-app-page[data-account-tab="rating"] .hijack-rating-head-compact .hijack-rating-me {
+    min-height: 50px;
+  }
+}
