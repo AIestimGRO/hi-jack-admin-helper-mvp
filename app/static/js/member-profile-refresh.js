@@ -122,20 +122,17 @@
     loadStylesheetOnce('/static/css/hijack-member.css?v=3', 'data-hijack-member-extension');
     loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
 
-    // Rating/referral controller is needed only on its own tabs. Keep Home, Quizzes and Store isolated.
     if (tab === 'rating' || tab === 'profile') {
       loadScriptOnce('/static/js/hijack-member.js?v=3', 'data-hijack-member-extension');
     }
 
-    // Profile-only UI must never affect the Home, Schedule, Rating or Store render path.
     if (tab === 'profile') {
       loadStylesheetOnce('/static/css/member-achievement-carousel.css?v=4', 'data-engagement-carousel');
       loadScriptOnce('/static/js/profile-experience-v2.js?v=3', 'data-profile-experience-v2');
-      loadStylesheetOnce('/static/css/account-security.css?v=1', 'data-account-security');
-      loadScriptOnce('/static/js/account-security.js?v=1', 'data-account-security');
+      loadStylesheetOnce('/static/css/account-security.css?v=2', 'data-account-security');
+      loadScriptOnce('/static/js/account-security.js?v=2', 'data-account-security');
     }
 
-    // Last-mile visual polish is isolated from data and rating logic.
     loadStylesheetOnce('/static/css/member-final-polish.css?v=1', 'data-member-final-polish');
     loadScriptOnce('/static/js/member-final-polish.js?v=1', 'data-member-final-polish');
   }
