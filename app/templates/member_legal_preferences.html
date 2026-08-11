@@ -2,7 +2,7 @@
 {% block title %}Документы и согласия — Hi, Jack Club{% endblock %}
 {% block content %}
 <style>
-.legal-settings{max-width:900px;margin:0 auto;display:grid;gap:18px}.legal-settings-card{display:grid;gap:12px;padding:18px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.025)}.legal-settings-card h2,.legal-settings-card p{margin:0}.legal-settings-links{display:grid;gap:8px}.legal-settings-links a{color:#71e1d0;text-decoration:none}.legal-setting-form{display:grid;gap:12px}.legal-setting-check{display:flex;gap:10px;align-items:flex-start}.legal-setting-check input{margin-top:4px}.legal-setting-form textarea{box-sizing:border-box;width:100%;min-height:90px;padding:11px 12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.04);color:#fff;resize:vertical;font:inherit;line-height:1.45}.legal-rating-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.legal-settings-actions{display:flex;gap:10px;flex-wrap:wrap}@media(max-width:650px){.legal-rating-grid{grid-template-columns:1fr}}
+.legal-settings{max-width:900px;margin:0 auto;display:grid;gap:18px}.legal-settings-card{display:grid;gap:12px;padding:18px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.025)}.legal-settings-card h2,.legal-settings-card p{margin:0}.legal-settings-links{display:grid;gap:8px}.legal-settings-links a{color:#71e1d0;text-decoration:none}.legal-setting-form{display:grid;gap:12px}.legal-setting-check{display:flex;gap:10px;align-items:flex-start}.legal-setting-check input{margin-top:4px}.legal-rating-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.legal-settings-actions{display:flex;gap:10px;flex-wrap:wrap}@media(max-width:650px){.legal-rating-grid{grid-template-columns:1fr}}
 </style>
 <section class="member-card legal-settings">
   <div>
@@ -45,20 +45,19 @@
 
   <section class="legal-settings-card">
     <h2>Публичный рейтинг</h2>
-    <p class="member-muted">Разреши только те категории, которые можно показывать неопределённому кругу лиц. Телефон, email, дата рождения и технические ID сюда не входят.</p>
+    <p class="member-muted">Отдельное добровольное согласие. Без него аккаунт и внутренняя статистика работают как обычно, но данные пользователя не предназначены для публикации в открытом рейтинге. Телефон, email, дата рождения и технические ID в публичный рейтинг не входят.</p>
     <form class="legal-setting-form" method="post" action="/account/legal/public-rating">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="legal-rating-grid">
         <label class="legal-setting-check"><input type="checkbox" name="nickname" value="true" {{ 'checked' if rating.nickname else '' }}><span>Никнейм</span></label>
         <label class="legal-setting-check"><input type="checkbox" name="avatar" value="true" {{ 'checked' if rating.avatar else '' }}><span>Аватар</span></label>
-        <label class="legal-setting-check"><input type="checkbox" name="result" value="true" {{ 'checked' if rating.result else '' }}><span>Результат</span></label>
+        <label class="legal-setting-check"><input type="checkbox" name="result" value="true" {{ 'checked' if rating.result else '' }}><span>Результат / очки</span></label>
         <label class="legal-setting-check"><input type="checkbox" name="place" value="true" {{ 'checked' if rating.place else '' }}><span>Место в рейтинге</span></label>
         <label class="legal-setting-check"><input type="checkbox" name="achievements" value="true" {{ 'checked' if rating.achievements else '' }}><span>Достижения</span></label>
         <label class="legal-setting-check"><input type="checkbox" name="titles" value="true" {{ 'checked' if rating.titles else '' }}><span>Звания</span></label>
-        <label class="legal-setting-check"><input type="checkbox" name="participation_stats" value="true" {{ 'checked' if rating.participation_stats else '' }}><span>Статистика участия</span></label>
       </div>
-      <label>Ограничения или условия распространения <small class="member-muted">Необязательно. Например: «только в рейтинге текущего сезона».</small><textarea name="conditions_text" maxlength="1000" placeholder="Если ограничений нет, оставьте поле пустым">{{ rating_conditions or '' }}</textarea></label>
-      <div class="legal-settings-actions"><a class="member-text-action" href="/legal/public-rating-consent">Открыть полный текст согласия</a><button class="member-primary" type="submit">Сохранить выбор</button></div>
+      <p class="member-muted">Снять все отметки и сохранить — отозвать разрешение на публикацию данных в открытом рейтинге.</p>
+      <div class="legal-settings-actions"><a class="member-text-action" href="/legal/public-rating-consent">Открыть полный текст согласия</a><button class="member-primary" type="submit">Сохранить согласие</button></div>
     </form>
   </section>
 
