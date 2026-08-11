@@ -10,6 +10,11 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.services.login_security import (
+    login_is_locked,
+    record_login_failure,
+    record_login_success,
+)
 from app.services.quiz_identity import normalize_email
 
 
@@ -157,11 +162,30 @@ def authenticate_account(
         "SELECT * FROM member_accounts WHERE email_normalized=? AND is_active=1",
         (normalized,),
     ).fetchone()
-    if not row or not verify_password(password, row["password_hash"]):
+    if not row:
         return None
+    account_id = int(row["id"])
+    if login_is_locked(
+        conn,
+        principal_type="member",
+        principal_id=account_id,
+    ):
+        return None
+    if not verify_password(password, row["password_hash"]):
+        record_login_failure(
+            conn,
+            principal_type="member",
+            principal_id=account_id,
+        )
+        return None
+    record_login_success(
+        conn,
+        principal_type="member",
+        principal_id=account_id,
+    )
     conn.execute(
         "UPDATE member_accounts SET last_login_at=CURRENT_TIMESTAMP WHERE id=?",
-        (row["id"],),
+        (account_id,),
     )
     return row
 
