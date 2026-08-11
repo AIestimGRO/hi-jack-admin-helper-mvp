@@ -1,0 +1,256 @@
+/* Admin readability and desktop rail spacing hotfix. */
+
+.admin-app-body main.container {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.admin-app-body main.container input,
+.admin-app-body main.container select,
+.admin-app-body main.container textarea,
+.admin-app-body main.container button,
+.admin-app-body main.container a {
+  font-size: 15px;
+}
+
+.admin-app-body main.container label {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.admin-app-body main.container small,
+.admin-app-body main.container .muted {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-app-body main.container th,
+.admin-app-body main.container td {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.admin-app-body main.container .page-heading h1,
+.admin-app-body main.container .page-head h1 {
+  font-size: clamp(30px, 3vw, 42px);
+  line-height: 1.08;
+}
+
+.admin-app-body main.container .eyebrow {
+  font-size: 11px;
+}
+
+@media (min-width: 901px) {
+  :root {
+    --admin-rail-width: 300px;
+    --admin-rail-gap: 32px;
+  }
+
+  .admin-persistent-nav,
+  .admin-persistent-nav[hidden] {
+    width: var(--admin-rail-width) !important;
+    right: 18px !important;
+  }
+
+  .admin-app-body .container {
+    box-sizing: border-box;
+    width: calc(100vw - var(--admin-rail-width) - var(--admin-rail-gap) - 72px) !important;
+    max-width: 1240px !important;
+    margin-left: 24px !important;
+    margin-right: calc(var(--admin-rail-width) + var(--admin-rail-gap) + 24px) !important;
+  }
+
+  .admin-app-body .topbar {
+    padding-right: calc(var(--admin-rail-width) + var(--admin-rail-gap) + 24px) !important;
+  }
+
+  .admin-nav-group-label {
+    font-size: 10px;
+  }
+
+  .admin-persistent-nav .admin-menu-head small {
+    font-size: 10px;
+  }
+
+  .admin-persistent-nav .admin-menu-head strong {
+    max-width: 230px;
+    font-size: 16px;
+  }
+
+  .admin-persistent-nav > nav > a {
+    min-height: 58px !important;
+    padding: 9px 11px !important;
+  }
+
+  .admin-persistent-nav > nav > a strong {
+    font-size: 13px !important;
+    line-height: 1.25;
+  }
+
+  .admin-persistent-nav > nav > a small {
+    font-size: 10px !important;
+    line-height: 1.3;
+  }
+
+  .admin-persistent-nav > form button {
+    font-size: 12px !important;
+  }
+}
+
+.master-member-accounts {
+  min-width: 0;
+}
+
+.master-member-accounts .account-registry-search input,
+.master-member-accounts .account-registry-form input,
+.master-member-accounts .account-registry-form select,
+.master-member-accounts .account-registry-password input,
+.master-member-accounts .account-registry-danger input {
+  min-height: 46px;
+  font-size: 15px !important;
+}
+
+.master-member-accounts .account-registry-search button,
+.master-member-accounts .account-registry-search a,
+.master-member-accounts .account-registry-form button,
+.master-member-accounts .account-registry-password button,
+.master-member-accounts .account-registry-danger button {
+  min-height: 46px;
+  font-size: 14px !important;
+}
+
+.master-member-accounts .account-registry-layout {
+  min-width: 0;
+  grid-template-columns: minmax(300px, .72fr) minmax(0, 1.5fr);
+  gap: 18px;
+}
+
+.master-member-accounts .account-registry-list,
+.master-member-accounts .account-registry-editor {
+  min-width: 0;
+}
+
+.master-member-accounts .account-registry-row {
+  min-height: 62px;
+  padding: 12px 14px;
+}
+
+.master-member-accounts .account-registry-copy strong {
+  font-size: 14px;
+}
+
+.master-member-accounts .account-registry-copy small {
+  font-size: 11px !important;
+}
+
+.master-member-accounts .account-registry-state {
+  font-size: 10px;
+}
+
+.master-member-accounts .account-registry-editor {
+  padding: 18px;
+}
+
+.master-member-accounts .account-registry-editor-head small,
+.master-member-accounts .account-registry-meta,
+.master-member-accounts .account-registry-security-row small {
+  font-size: 11px !important;
+}
+
+.master-member-accounts .account-registry-editor-head > span {
+  font-size: 11px;
+}
+
+.master-member-accounts .account-registry-grid label {
+  gap: 7px;
+  font-size: 12px !important;
+}
+
+.master-member-accounts .account-registry-check {
+  font-size: 13px;
+}
+
+.master-member-accounts .account-registry-security-row strong {
+  font-size: 13px;
+}
+
+.master-member-accounts .account-registry-security-row i {
+  font-size: 10px;
+}
+
+.master-member-accounts .account-registry-password,
+.master-member-accounts .account-registry-security,
+.master-member-accounts .account-registry-danger {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.master-member-accounts .account-registry-password summary,
+.master-member-accounts .account-registry-security summary,
+.master-member-accounts .account-registry-danger summary {
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.account-registry-danger-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(225, 92, 96, .2);
+  border-radius: 14px;
+  background: rgba(128, 31, 35, .08);
+}
+
+.account-registry-danger-card > strong {
+  font-size: 14px;
+}
+
+.account-registry-danger-card > p {
+  margin: 0;
+  color: rgba(255,255,255,.62);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.account-registry-danger-card form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+}
+
+.account-registry-danger-card .danger {
+  border: 1px solid rgba(225, 92, 96, .34);
+  background: rgba(128, 31, 35, .2);
+  color: #ffb8bb;
+  font-weight: 850;
+}
+
+@media (min-width: 901px) and (max-width: 1280px) {
+  .master-member-accounts .account-registry-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .master-member-accounts .account-registry-list {
+    max-height: 330px;
+    overflow: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-app-body main.container {
+    font-size: 15px;
+  }
+
+  .master-member-accounts .account-registry-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .account-registry-danger-card form {
+    grid-template-columns: 1fr;
+  }
+}
