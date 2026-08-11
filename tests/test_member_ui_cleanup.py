@@ -24,10 +24,11 @@ def test_member_ui_cleanup_covers_requested_shell_changes() -> None:
     assert "store-balance-chip" in script
     assert "jackside-rating-note" in script
     assert "chat-collapsed" in script
+    assert "stableChatReplacement" in script
 
     assert ".member-app-body.member-tab-rating .member-topbar" in css
     assert ".member-app-body.member-tab-vault .member-topbar" in css
     assert ".member-app-body.member-tab-quizzes .member-topbar" in css
     assert ".store-balance-chip" in css
     assert ".is-stable-chat.chat-collapsed" in css
-    assert "min-height: 166px" in css
+    assert "min-height: 164px" in css
