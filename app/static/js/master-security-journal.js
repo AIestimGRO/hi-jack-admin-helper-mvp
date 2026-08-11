@@ -1,4 +1,16 @@
 (() => {
+  const adminNav = document.querySelector('.admin-persistent-nav nav');
+  if (adminNav && !adminNav.querySelector('a[href="/master/legal-documents"]')) {
+    const link = document.createElement('a');
+    link.href = '/master/legal-documents';
+    const strong = document.createElement('strong');
+    strong.textContent = 'Юридические документы';
+    const small = document.createElement('small');
+    small.textContent = 'Редакции и согласия';
+    link.append(strong, small);
+    adminNav.append(link);
+  }
+
   const accountForm = document.querySelector('.account-registry-form');
   if (accountForm) {
     const telegramId = accountForm.querySelector('[name="telegram_id"]');
