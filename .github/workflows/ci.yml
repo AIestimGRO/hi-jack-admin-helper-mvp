@@ -29,7 +29,20 @@ jobs:
         run: python -m compileall app load
 
       - name: Pytest
-        run: pytest -q tests
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q tests 2>&1 | tee pytest-output.txt
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Pytest failure"
+              echo '```text'
+              tail -n 160 pytest-output.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
 
       - name: pip-audit
         continue-on-error: true
@@ -55,4 +68,17 @@ jobs:
         run: playwright install --with-deps chromium
 
       - name: Playwright E2E
-        run: pytest -q e2e --browser chromium
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q e2e --browser chromium 2>&1 | tee e2e-output.txt
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Playwright E2E failure"
+              echo '```text'
+              tail -n 160 e2e-output.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
