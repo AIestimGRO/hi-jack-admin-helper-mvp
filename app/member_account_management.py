@@ -61,7 +61,7 @@ def normalize_birth_date(value: str, *, required: bool = True) -> str | None:
         parsed = date.fromisoformat(raw)
     except ValueError as exc:
         raise ValueError("Укажите корректную дату рождения") from exc
-    if parsed > date.today():
+    if parsed > datetime.now().date():
         raise ValueError("Дата рождения не может быть в будущем")
     if parsed < date(1900, 1, 1):
         raise ValueError("Проверьте дату рождения")
@@ -80,7 +80,7 @@ def assert_current_phone_available(
             SELECT c.id
             FROM clients c
             JOIN member_accounts ma ON ma.client_id=c.id
-            WHERE c.phone_local=? AND ma.is_active=1
+            WHERE c.phone_local=?
             LIMIT 1
             """,
             (normalized,),
@@ -419,7 +419,11 @@ def install_member_account_management(app: FastAPI) -> FastAPI:
         birth_date: str = Form(""),
         app_user_id: str = Form(""),
         referrer_app_user_id: str = Form(""),
+        telegram_id: str = Form(""),
         telegram_user_id: str = Form(""),
+        source: str = Form(""),
+        acquisition_campaign_code: str = Form(""),
+        acquisition_source: str = Form(""),
         client_status: str = Form("existing"),
         account_active: bool = Form(False),
         csrf_token: str = Form(...),
@@ -432,9 +436,7 @@ def install_member_account_management(app: FastAPI) -> FastAPI:
                 raise ValueError("Некорректный номер телефона")
             normalized_email = normalize_email(email) if str(email or "").strip() else None
             normalized_birth_date = normalize_birth_date(birth_date, required=False)
-            status = str(client_status or "existing").strip()
-            if status not in {"existing", "new", "deleted", "blocked"}:
-                status = "existing"
+            status = str(client_status or "existing").strip()[:40] or "existing"
             with transaction(settings.db_path) as conn:
                 row = _identity_row(conn, client_id)
                 if not row:
@@ -452,12 +454,14 @@ def install_member_account_management(app: FastAPI) -> FastAPI:
                     if conflict:
                         raise ValueError("Эта почта уже используется другим аккаунтом")
                 full = full_phone(phone_local) if phone_local else None
+                old_account_email = str(row["account_email_normalized"] or "")
                 conn.execute(
                     """
                     UPDATE clients SET
                         first_name=?,nickname=?,username=?,phone_raw=?,phone_full=?,phone_local=?,
                         email=?,email_normalized=?,birth_date=?,app_user_id=?,referrer_app_user_id=?,
-                        telegram_user_id=?,client_status=?,updated_at=CURRENT_TIMESTAMP
+                        telegram_id=?,telegram_user_id=?,source=?,acquisition_campaign_code=?,
+                        acquisition_source=?,client_status=?,updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (
@@ -472,7 +476,11 @@ def install_member_account_management(app: FastAPI) -> FastAPI:
                         normalized_birth_date,
                         app_user_id.strip()[:120] or None,
                         referrer_app_user_id.strip()[:120] or None,
+                        telegram_id.strip()[:120] or None,
                         telegram_user_id.strip()[:120] or None,
+                        source.strip()[:120] or "manual",
+                        acquisition_campaign_code.strip()[:120] or None,
+                        acquisition_source.strip()[:120] or None,
                         status,
                         client_id,
                     ),
@@ -493,7 +501,7 @@ def install_member_account_management(app: FastAPI) -> FastAPI:
                             account_id,
                         ),
                     )
-                    if not account_active:
+                    if not account_active or old_account_email != str(normalized_email or ""):
                         conn.execute(
                             "UPDATE member_sessions SET revoked_at=CURRENT_TIMESTAMP WHERE account_id=? AND revoked_at IS NULL",
                             (account_id,),
