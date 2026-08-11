@@ -259,7 +259,7 @@
 @media (min-width: 901px) {
   .admin-app-body .topbar > .admin-menu-toggle {
     display: inline-grid !important;
-    margin-left: auto;
+    margin-left: 12px !important;
   }
 
   .admin-app-body .topbar {
