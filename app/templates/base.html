@@ -49,6 +49,7 @@
 
       <span class="admin-nav-group-label">Игроки</span>
       {% if admin_role == 'master_admin' %}
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/member-accounts') else '' }}" href="/master/member-accounts"><span>ID</span><div><strong>Учётные данные</strong><small>Регистрация, контакты и доступы</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'engagement' else '' }}" href="/master?tab=engagement"><span>♛</span><div><strong>Звания и рефералы</strong><small>Titles, достижения и реферальная программа</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/engagement-icons') else '' }}" href="/master/engagement-icons"><span>◇</span><div><strong>Иконки коллекции</strong><small>Арт званий и достижений</small></div></a>
       {% endif %}
