@@ -1,5 +1,7 @@
 """Stable application entry point for ``uvicorn app.main:app``."""
 
+from starlette.middleware.sessions import SessionMiddleware
+
 from app.account_security import install_account_security
 from app.admin_account_lifecycle import install_admin_account_lifecycle
 from app.admin_telegram_unlink import install_admin_telegram_unlink
@@ -20,6 +22,19 @@ from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
 
 
+def _session_middleware_outermost(application):
+    """Keep request.session available to extension middleware."""
+    for index, middleware in enumerate(application.user_middleware):
+        if middleware.cls is SessionMiddleware:
+            if index:
+                application.user_middleware.insert(
+                    0, application.user_middleware.pop(index)
+                )
+            application.middleware_stack = None
+            break
+    return application
+
+
 def _install_extensions(application):
     application = install_product_shell(application)
     application = install_account_security(application)
@@ -38,7 +53,8 @@ def _install_extensions(application):
     application = install_hijack_rating_relink(application)
     application = install_hijack_rating_baseline(application)
     application = install_hijack_rating_paging(application)
-    return install_profile_experience(application)
+    application = install_profile_experience(application)
+    return _session_middleware_outermost(application)
 
 
 def create_app(settings=None):
