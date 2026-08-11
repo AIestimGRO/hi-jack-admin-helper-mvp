@@ -47,7 +47,14 @@ def send_member_email_code(
     purpose: str,
     expires_minutes: int,
 ) -> None:
-    action = "создания аккаунта" if purpose == "register" else "восстановления пароля"
+    actions = {
+        "register": "создания аккаунта",
+        "reset_password": "восстановления пароля",
+        "change_email": "смены привязанной почты",
+        "change_phone": "смены номера телефона",
+        "delete_account": "удаления аккаунта",
+    }
+    action = actions.get(purpose, "подтверждения действия в аккаунте")
     message = EmailMessage()
     message["Subject"] = f"Код Hi, Jack Club: {code}"
     message["From"] = sender
