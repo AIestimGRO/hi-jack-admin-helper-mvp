@@ -4,6 +4,7 @@
 
   const birthday = form.querySelector('[data-registration-birth-date]');
   const phone = form.querySelector('[data-registration-phone]');
+  const marketing = form.querySelector('[data-registration-marketing]');
   const message = form.querySelector('[data-registration-extra-message]');
   const submit = form.querySelector('[data-registration-submit]');
 
@@ -11,6 +12,20 @@
     if (!message) return;
     message.textContent = text || '';
     message.hidden = !text;
+  }
+
+  async function postForm(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: payload,
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || 'Не удалось проверить данные');
+    }
+    return data;
   }
 
   form.addEventListener('submit', async (event) => {
@@ -29,28 +44,24 @@
     }
 
     const csrf = form.querySelector('input[name="csrf_token"]')?.value || '';
-    const payload = new FormData();
-    payload.set('csrf_token', csrf);
-    payload.set('birth_date', birthday.value);
-    payload.set('phone', phone.value);
+    const legalPayload = new FormData();
+    legalPayload.set('csrf_token', csrf);
+    legalPayload.set('birth_date', birthday.value);
+    if (marketing?.checked) legalPayload.set('marketing', 'true');
+
+    const identityPayload = new FormData();
+    identityPayload.set('csrf_token', csrf);
+    identityPayload.set('birth_date', birthday.value);
+    identityPayload.set('phone', phone.value);
 
     if (submit) submit.disabled = true;
     try {
-      const response = await fetch('/api/account/register/draft-extra', {
-        method: 'POST',
-        body: payload,
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' },
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.ok) {
-        showMessage(data.error || 'Проверьте номер телефона и дату рождения');
-        return;
-      }
+      await postForm('/api/account/register/legal-extra', legalPayload);
+      await postForm('/api/account/register/draft-extra', identityPayload);
       form.dataset.extraValidated = '1';
       form.requestSubmit();
-    } catch (_) {
-      showMessage('Не удалось проверить данные. Попробуйте ещё раз');
+    } catch (error) {
+      showMessage(error?.message || 'Не удалось проверить данные. Попробуйте ещё раз');
     } finally {
       if (submit && form.dataset.extraValidated !== '1') submit.disabled = false;
     }
