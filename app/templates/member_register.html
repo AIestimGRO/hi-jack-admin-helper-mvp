@@ -18,13 +18,20 @@
     <p class="member-eyebrow">Первый вход · шаг {{ 1 if step == 'privacy' else 2 }} из 3</p>
     <h1>{{ document.title }}</h1>
     <p class="document-version">Редакция {{ document.version }}</p>
+    {% if step == 'rewards' %}
+      <p class="member-muted">Перед предоставлением согласия тебе доступна <a href="/legal/privacy-policy" target="_blank" rel="noopener">Политика обработки и защиты персональных данных</a>.</p>
+    {% endif %}
     <div class="legal-copy">{{ document.content }}</div>
     <form class="member-form consent-form" action="/account/register/consent" method="post" data-consent-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="document_code" value="{{ step }}">
       <label class="member-check">
         <input name="accepted" type="checkbox" value="true" required data-consent-checkbox>
-        <span>Прочитано и принято</span>
+        {% if step == 'privacy' %}
+        <span>Я принимаю Пользовательское соглашение и Правила Hi, Jack! Club</span>
+        {% else %}
+        <span>Я даю согласие на обработку моих персональных данных</span>
+        {% endif %}
       </label>
       <button class="member-primary" type="submit" disabled data-consent-submit>Далее</button>
     </form>
@@ -38,12 +45,21 @@
     <form class="member-form" action="/account/register/request-code" method="post" data-registration-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Имя <small>Можно оставить пустым</small><input name="first_name" maxlength="100" autocomplete="name" placeholder="Как к вам обращаться" value="{{ draft.first_name if draft else '' }}"></label>
-      <label>Дата рождения <small>После регистрации изменить можно через администратора</small><input name="birth_date" type="date" autocomplete="bday" min="1900-01-01" required data-registration-birth-date></label>
+      <label>Дата рождения <small>Регистрация доступна только с 18 лет. После регистрации изменить можно через администратора</small><input name="birth_date" type="date" autocomplete="bday" min="1900-01-01" required data-registration-birth-date></label>
       <label>Электронная почта <small>Сюда придёт код</small><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" value="{{ draft.email if draft else '' }}" required></label>
       <label>Номер телефона <small>Номер из HI JACK! · один актуальный номер = один аккаунт</small><input name="phone" type="tel" maxlength="80" autocomplete="tel" inputmode="tel" placeholder="+7 999 123-45-67" value="{{ draft.phone if draft else '' }}" required data-registration-phone></label>
       <small class="password-match-message" data-registration-extra-message hidden></small>
       <label>Пароль <small>От 6 символов, минимум одна буква</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password></label>
       <label>Повторите пароль<input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password-confirmation><small class="password-match-message" data-password-match-message hidden>Пароли не совпадают</small></label>
+
+      <div class="registration-optional-consent">
+        <label class="member-check">
+          <input name="marketing_consent" type="checkbox" value="true" data-registration-marketing>
+          <span>Хочу получать новости, акции и специальные предложения Hi, Jack! Club</span>
+        </label>
+        <small class="member-muted">Необязательно. Чекбокс выключен по умолчанию, отказ не препятствует регистрации. <a href="/legal/marketing-consent" target="_blank" rel="noopener">Полный текст согласия</a></small>
+      </div>
+
       <button class="member-primary" type="submit" {% if not email_available %}disabled{% endif %} data-registration-submit>Получить код</button>
     </form>
   {% else %}
@@ -68,7 +84,15 @@
     <p class="member-muted member-verify-hint">Нет письма? Проверьте «Спам»</p>
   {% endif %}
 
+  <div class="registration-legal-links">
+    <a href="/legal/user-agreement" target="_blank" rel="noopener">Пользовательское соглашение</a>
+    <a href="/legal/privacy-policy" target="_blank" rel="noopener">Политика персональных данных</a>
+    <a href="/legal/personal-data-consent" target="_blank" rel="noopener">Согласие на обработку ПД</a>
+  </div>
   <p class="member-switch">Уже есть аккаунт? <a href="/account/login">Войти</a></p>
 </section>
+<style>
+.registration-optional-consent{display:grid;gap:6px;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}.registration-optional-consent small{line-height:1.45}.registration-legal-links{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:14px}.registration-legal-links a{font-size:11px;color:rgba(255,255,255,.55)}
+</style>
 <script src="{{ url_for('static', path='/js/member-registration-extra.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}
