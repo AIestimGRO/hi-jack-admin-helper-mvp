@@ -35,7 +35,7 @@
     <details class="account-security-item" data-security-phone>
       <summary><span><small>Телефон</small><strong data-security-phone-value>—</strong></span><b>Сменить</b></summary>
       <div class="account-security-body">
-        <p>Код придёт на текущую привязанную почту. Старый номер сохранится только как технический alias для истории рейтинга HI, JACK!.</p>
+        <p>Код придёт на текущую привязанную почту. Новый номер не может быть привязан к другому аккаунту. После смены старый номер освобождается.</p>
         <form class="account-security-form" action="/account/security/phone/request" method="post">
           <input type="hidden" name="csrf_token" value="${csrf}">
           <input type="tel" name="new_phone" autocomplete="tel" maxlength="32" placeholder="Новый номер телефона" required>
@@ -45,6 +45,28 @@
           <input type="hidden" name="csrf_token" value="${csrf}">
           <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6-значный код" required>
           <button type="submit">Подтвердить</button>
+        </form>
+      </div>
+    </details>
+
+    <details class="account-security-item" data-security-birthday>
+      <summary><span><small>Дата рождения</small><strong data-security-birthday-value>—</strong></span><b data-security-birthday-action>Указать</b></summary>
+      <div class="account-security-body">
+        <p data-security-birthday-copy>Дата рождения указывается один раз. Если нужно исправление, обратитесь к администратору клуба.</p>
+        <a class="account-security-link" href="/account/birthday" data-security-birthday-link>Указать дату рождения</a>
+      </div>
+    </details>
+
+    <details class="account-security-item">
+      <summary><span><small>Пароль</small><strong>Сменить пароль</strong></span><b>Сменить</b></summary>
+      <div class="account-security-body">
+        <p>После смены пароля все остальные активные сессии аккаунта будут закрыты.</p>
+        <form class="account-security-form" action="/account/security/password/change" method="post">
+          <input type="hidden" name="csrf_token" value="${csrf}">
+          <input type="password" name="current_password" autocomplete="current-password" minlength="6" maxlength="128" placeholder="Текущий пароль" required>
+          <input type="password" name="new_password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="Новый пароль" required>
+          <input type="password" name="new_password_confirmation" autocomplete="new-password" minlength="6" maxlength="128" placeholder="Повторите новый пароль" required>
+          <button type="submit">Сменить пароль</button>
         </form>
       </div>
     </details>
@@ -68,17 +90,32 @@
   `;
   profilePanel.insertAdjacentElement('afterend', panel);
 
-  fetch('/api/account/security-state', {
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json' },
-  })
-    .then((response) => (response.ok ? response.json() : null))
-    .then((state) => {
-      if (!state) return;
+  Promise.all([
+    fetch('/api/account/security-state', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    }).then((response) => (response.ok ? response.json() : null)),
+    fetch('/api/account/identity-state', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    }).then((response) => (response.ok ? response.json() : null)),
+  ])
+    .then(([security, identity]) => {
       const email = panel.querySelector('[data-security-email-value]');
       const phone = panel.querySelector('[data-security-phone-value]');
-      if (email) email.textContent = state.email || '—';
-      if (phone) phone.textContent = state.phone || '—';
+      const birthday = panel.querySelector('[data-security-birthday-value]');
+      const birthdayAction = panel.querySelector('[data-security-birthday-action]');
+      const birthdayLink = panel.querySelector('[data-security-birthday-link]');
+      const birthdayCopy = panel.querySelector('[data-security-birthday-copy]');
+      if (email && security) email.textContent = security.email || '—';
+      if (phone && security) phone.textContent = security.phone || '—';
+      const birthDate = identity?.birth_date || '';
+      if (birthday) birthday.textContent = birthDate ? birthDate.split('-').reverse().join('.') : 'Не указана';
+      if (birthDate) {
+        if (birthdayAction) birthdayAction.textContent = 'Сохранено';
+        if (birthdayLink) birthdayLink.remove();
+        if (birthdayCopy) birthdayCopy.textContent = 'Для исправления даты рождения обратитесь к мастер-администратору клуба.';
+      }
     })
     .catch(() => {});
 })();
