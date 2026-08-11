@@ -132,6 +132,10 @@
       loadStylesheetOnce('/static/css/member-achievement-carousel.css?v=4', 'data-engagement-carousel');
       loadScriptOnce('/static/js/profile-experience-v2.js?v=3', 'data-profile-experience-v2');
     }
+
+    // Last-mile visual polish is isolated from data and rating logic.
+    loadStylesheetOnce('/static/css/member-final-polish.css?v=1', 'data-member-final-polish');
+    loadScriptOnce('/static/js/member-final-polish.js?v=1', 'data-member-final-polish');
   }
 
   if (openMonthlyRatingByDefault()) return;
