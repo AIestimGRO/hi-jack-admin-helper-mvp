@@ -9,7 +9,7 @@
     <div>
       <p class="eyebrow">Игроки</p>
       <h1>Регистрационные и учётные данные</h1>
-      <p class="muted">Телефон, почта, дата рождения, идентификаторы и состояние аккаунта. Пароли не отображаются — их можно только сбросить.</p>
+      <p class="muted">Контакты, дата рождения, идентификаторы, источник регистрации и доступ в ЛК. Пароли не отображаются — их можно только сбросить.</p>
     </div>
   </header>
 
@@ -26,7 +26,7 @@
     <section class="account-registry-list">
       <div class="account-registry-list-head"><strong>Игроки</strong><small>{{ rows|length }} показано</small></div>
       {% for row in rows %}
-      <a class="account-registry-row {{ 'active' if selected and selected.id == row.id else '' }}" href="/master/member-accounts?client_id={{ row.id }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">
+      <a class="account-registry-row {{ 'active' if selected and selected.id == row.id else '' }}" href="/master/member-accounts?client_id={{ row.id }}">
         <span class="account-registry-avatar">{{ (row.nickname or row.first_name or row.username or 'HJ')[:1]|upper }}</span>
         <span class="account-registry-copy">
           <strong>{{ row.nickname or row.first_name or ('@' ~ row.username if row.username else 'Игрок #' ~ row.id) }}</strong>
@@ -57,23 +57,23 @@
           <label>Дата рождения<input name="birth_date" type="date" value="{{ selected.birth_date or '' }}" min="1900-01-01"></label>
           <label>App User ID<input name="app_user_id" value="{{ selected.app_user_id or '' }}" maxlength="120"></label>
           <label>Referrer ID<input name="referrer_app_user_id" value="{{ selected.referrer_app_user_id or '' }}" maxlength="120"></label>
+          <label>Telegram ID<input name="telegram_id" value="{{ selected.telegram_id or '' }}" maxlength="120"></label>
           <label>Telegram User ID<input name="telegram_user_id" value="{{ selected.telegram_user_id or '' }}" maxlength="120"></label>
-          <label>Статус клиента
-            <select name="client_status">
-              {% for value,label in [('existing','existing'),('new','new'),('blocked','blocked'),('deleted','deleted')] %}
-              <option value="{{ value }}" {{ 'selected' if selected.client_status == value else '' }}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </label>
+          <label>Статус клиента<input name="client_status" value="{{ selected.client_status or 'existing' }}" maxlength="40"></label>
+          <label>Источник<input name="source" value="{{ selected.source or '' }}" maxlength="120"></label>
+          <label>Кампания привлечения<input name="acquisition_campaign_code" value="{{ selected.acquisition_campaign_code or '' }}" maxlength="120"></label>
+          <label>Источник привлечения<input name="acquisition_source" value="{{ selected.acquisition_source or '' }}" maxlength="120"></label>
         </div>
         {% if selected.account_id %}
         <label class="account-registry-check"><input type="checkbox" name="account_active" value="true" {{ 'checked' if selected.account_active else '' }}><span>Разрешить вход в личный кабинет</span></label>
         {% endif %}
         <div class="account-registry-meta">
           <span>Создан клиент: {{ selected.created_at or '—' }}</span>
+          <span>Обновлён клиент: {{ selected.updated_at or '—' }}</span>
           <span>Создан ЛК: {{ selected.account_created_at or '—' }}</span>
+          <span>Обновлён ЛК: {{ selected.account_updated_at or '—' }}</span>
           <span>Последний вход: {{ selected.last_login_at or '—' }}</span>
-          <span>Источник: {{ selected.source or '—' }}{% if selected.acquisition_source %} · {{ selected.acquisition_source }}{% endif %}</span>
+          {% if selected.account_id %}<span>Session version: {{ selected.session_version }}</span>{% endif %}
         </div>
         <button class="primary" type="submit">Сохранить учётные данные</button>
       </form>
@@ -91,7 +91,7 @@
       </details>
       {% endif %}
       {% else %}
-      <div class="account-registry-placeholder"><strong>Выберите игрока</strong><p class="muted">Справа откроются все регистрационные и учётные данные с возможностью редактирования мастер-администратором.</p></div>
+      <div class="account-registry-placeholder"><strong>Выберите игрока</strong><p class="muted">Справа откроются регистрационные и учётные данные с возможностью редактирования мастер-администратором.</p></div>
       {% endif %}
     </section>
   </div>
