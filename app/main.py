@@ -15,6 +15,7 @@ from app.main_impl import create_app as _base_create_app
 from app.member_account_management import install_member_account_management
 from app.product_shell import install_product_shell
 from app.profile_experience import install_profile_experience
+from app.public_rating_consent_policy import install_public_rating_consent_policy
 from app.security_journal import install_security_journal
 
 
@@ -30,6 +31,7 @@ def _install_extensions(application):
     # base tables before the legal extension adds its own foreign keys/triggers.
     init_db(application.state.settings.db_path)
     application = install_legal_registration(application)
+    application = install_public_rating_consent_policy(application)
     application = install_hijack_extensions(application)
     application = install_hijack_rating_relink(application)
     application = install_hijack_rating_baseline(application)
