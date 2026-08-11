@@ -44,15 +44,6 @@ jobs:
           fi
           exit "$status"
 
-      - name: Upload pytest output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-output
-          path: pytest-output.txt
-          if-no-files-found: ignore
-          retention-days: 1
-
       - name: pip-audit
         continue-on-error: true
         run: pip-audit -r requirements.txt -r requirements-dev.txt
@@ -91,12 +82,3 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$status"
-
-      - name: Upload Playwright output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-output
-          path: e2e-output.txt
-          if-no-files-found: ignore
-          retention-days: 1
