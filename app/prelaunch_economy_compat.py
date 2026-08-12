@@ -9,6 +9,8 @@ from app.db import transaction
 
 def ensure_prelaunch_economy_compat(conn: sqlite3.Connection) -> None:
     """Rebuild launch-only triggers with legacy-safe and Unicode-safe guards."""
+    from app.prelaunch_experience import _amount_sql, _jackside_referral_trigger_sql
+
     conn.executescript(
         """
         DROP TRIGGER IF EXISTS trg_prelaunch_daily_campaign_defaults;
@@ -43,6 +45,97 @@ def ensure_prelaunch_economy_compat(conn: sqlite3.Connection) -> None:
                 ),
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=NEW.id;
+        END;
+        """
+    )
+
+    final_correct_amount = _amount_sql(
+        "jackside_final_correct",
+        entity_type="jackside",
+        entity_id_sql="ft.campaign_code",
+    )
+    final_win_amount = _amount_sql(
+        "jackside_final_win",
+        entity_type="jackside",
+        entity_id_sql="ft.campaign_code",
+    )
+    conn.executescript(
+        f"""
+        DROP TRIGGER IF EXISTS trg_prelaunch_final_correct_jc;
+        CREATE TRIGGER trg_prelaunch_final_correct_jc
+        AFTER INSERT ON daily_414_final_answers
+        WHEN NEW.is_correct=1
+        BEGIN
+            INSERT OR IGNORE INTO jackcoin_ledger(
+                client_id, amount, operation_type, source_type, source_id,
+                idempotency_key, comment
+            )
+            SELECT df.client_id,
+                   {final_correct_amount},
+                   'earn', 'jackside_final_correct', CAST(NEW.id AS TEXT),
+                   'jackside:final-correct:' || NEW.id,
+                   'JACKSIDE: правильный ответ в суперфинале'
+            FROM daily_414_finalists df
+            JOIN daily_414_final_tables ft ON ft.id=df.final_table_id
+            WHERE df.id=NEW.finalist_id
+              AND ft.campaign_code LIKE 'jackside_%'
+              AND ({final_correct_amount}) > 0;
+        END;
+
+        DROP TRIGGER IF EXISTS trg_prelaunch_final_win_jc;
+        CREATE TRIGGER trg_prelaunch_final_win_jc
+        AFTER UPDATE OF status ON daily_414_finalists
+        WHEN NEW.status='winner' AND OLD.status<>'winner'
+        BEGIN
+            INSERT OR IGNORE INTO jackcoin_ledger(
+                client_id, amount, operation_type, source_type, source_id,
+                idempotency_key, comment
+            )
+            SELECT NEW.client_id,
+                   {final_win_amount},
+                   'earn', 'jackside_final_win', CAST(NEW.final_table_id AS TEXT),
+                   'jackside:final-win:' || NEW.id,
+                   'JACKSIDE: победа в суперфинале'
+            FROM daily_414_final_tables ft
+            WHERE ft.id=NEW.final_table_id
+              AND ft.campaign_code LIKE 'jackside_%'
+              AND ({final_win_amount}) > 0;
+        END;
+
+        DROP TRIGGER IF EXISTS trg_prelaunch_final_win_insert_jc;
+        CREATE TRIGGER trg_prelaunch_final_win_insert_jc
+        AFTER INSERT ON daily_414_finalists
+        WHEN NEW.status='winner'
+        BEGIN
+            INSERT OR IGNORE INTO jackcoin_ledger(
+                client_id, amount, operation_type, source_type, source_id,
+                idempotency_key, comment
+            )
+            SELECT NEW.client_id,
+                   {final_win_amount},
+                   'earn', 'jackside_final_win', CAST(NEW.final_table_id AS TEXT),
+                   'jackside:final-win:' || NEW.id,
+                   'JACKSIDE: победа в суперфинале'
+            FROM daily_414_final_tables ft
+            WHERE ft.id=NEW.final_table_id
+              AND ft.campaign_code LIKE 'jackside_%'
+              AND ({final_win_amount}) > 0;
+        END;
+
+        DROP TRIGGER IF EXISTS trg_prelaunch_jackside_referral_jc;
+        CREATE TRIGGER trg_prelaunch_jackside_referral_jc
+        AFTER INSERT ON quiz_submissions
+        WHEN IFNULL(NEW.main_round_completed,1)=1
+         AND NEW.max_correct_count>0
+         AND NEW.campaign_code LIKE 'jackside_%'
+         AND EXISTS (
+             SELECT 1 FROM quiz_campaigns qc
+             WHERE qc.code=NEW.campaign_code AND qc.campaign_type='daily_414'
+         )
+        BEGIN
+            {_jackside_referral_trigger_sql(1)}
+            {_jackside_referral_trigger_sql(2)}
+            {_jackside_referral_trigger_sql(3)}
         END;
         """
     )
