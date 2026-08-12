@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-dashboard.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-profile-refresh.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/prelaunch.css') }}?v={{ asset_version }}">
 </head>
 <body class="{{ 'member-app-body' if member else 'member-auth-body' }}">
   <header class="member-topbar">
@@ -226,6 +227,7 @@
   <script src="{{ url_for('static', path='/js/member.js') }}?v={{ asset_version }}" defer></script>
   <script src="{{ url_for('static', path='/js/member-profile-refresh.js') }}?v={{ asset_version }}" defer></script>
   <script src="{{ url_for('static', path='/js/product-shell.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/prelaunch-member.js') }}?v={{ asset_version }}" defer></script>
   <script type="module" src="{{ url_for('static', path='/js/reward-animations.js') }}?v={{ asset_version }}"></script>
   <script src="{{ url_for('static', path='/js/reward-stickers.js') }}?v={{ asset_version }}" defer></script>
 </body>
