@@ -35,8 +35,20 @@ def cleanup_quiz_data(
         "UPDATE quiz_reward_codes SET status='expired' WHERE status='issued' AND valid_until IS NOT NULL AND valid_until < ?",
         (datetime.now(timezone.utc).isoformat(timespec="seconds"),),
     )
+
+    # Generic quiz details may be short-lived, but JACKSIDE submissions are the
+    # immutable source for day/month/year ratings, streak history and final-table
+    # records. Never remove issue-backed/daily_414 submissions through the generic
+    # retention job. This also protects daily_414_finalists, whose submission FK
+    # uses ON DELETE CASCADE.
     submissions = conn.execute(
-        f"DELETE FROM quiz_submissions WHERE created_at < datetime('now', '-{int(detail_days)} days')"
+        f"""
+        DELETE FROM quiz_submissions
+        WHERE created_at < datetime('now', '-{int(detail_days)} days')
+          AND campaign_code NOT IN (
+              SELECT code FROM quiz_campaigns WHERE campaign_type='daily_414'
+          )
+        """
     ).rowcount
     attempts = conn.execute(
         f"""
