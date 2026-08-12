@@ -87,6 +87,23 @@ def test_admin_simple_mutations_use_reload_free_transport() -> None:
     assert "input[type=\"file\"]" in script
     assert "multipart/form-data" in script
 
+    # Specialized question editors keep their own JSON/media AJAX implementation;
+    # the other builder POST actions still use the generic reload-free transport.
+    assert "#quick-question-form, #bulk-question-form, [data-existing-question-form]" in script
+    assert "form.closest('[data-quiz-builder]')" not in script
+
     # Only an intentional redirect to another page may navigate the browser.
     assert "finalUrl.pathname !== location.pathname" in script
     assert "window.location.assign(finalUrl.href)" in script
+
+
+def test_quiz_builder_save_flows_no_longer_reload_the_current_page() -> None:
+    script = (ROOT / "app/static/js/app.js").read_text(encoding="utf-8")
+
+    assert "function finishBuilderAction(message, form)" in script
+    assert "resetNewQuestionEditor" in script
+    assert "finishBuilderAction(data.message, form)" in script
+    assert "bulkForm.elements.bulk_text.value = ''" in script
+    assert "finishBuilderAction(data.message, bulkForm)" in script
+    assert "window.HJAdminToast" in script
+    assert "window.location.assign(`${window.location.pathname}?ok=" not in script
