@@ -1,7 +1,7 @@
 -r requirements.txt
-pytest==8.4.2
+pytest==9.0.3
 httpx==0.28.1
 ruff==0.12.7
 playwright==1.54.0
-pytest-playwright==0.7.0
+pytest-playwright==0.8.0
 pip-audit==2.9.0
