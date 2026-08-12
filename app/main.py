@@ -2,6 +2,7 @@
 
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
 from app.admin_access_control import install_admin_access_control
 from app.admin_account_lifecycle import install_admin_account_lifecycle
@@ -28,7 +29,9 @@ from app.product_shell import install_product_shell
 from app.profile_experience import install_profile_experience
 from app.public_rating_consent_policy import install_public_rating_consent_policy
 from app.pwa import install_pwa
+from app.quiz_export import install_quiz_export
 from app.rating_profile_links import install_rating_profile_links
+from app.referral_entry_hotfix import install_referral_entry_hotfix
 from app.referral_registration_integrity import install_referral_registration_integrity
 from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
@@ -72,12 +75,15 @@ def _install_extensions(application):
     application = install_profile_experience(application)
     application = install_prelaunch_experience(application)
     application = install_club_links_hotfix(application)
+    application = install_account_links_hotfix(application)
+    application = install_quiz_export(application)
     application = install_prelaunch_economy_compat(application)
     application = install_prelaunch_profile_sharing(application)
     application = install_prelaunch_profile_privacy(application)
     application = install_prelaunch_data_integrity(application)
     application = install_jackside_rating_freshness(application)
     application = install_referral_registration_integrity(application)
+    application = install_referral_entry_hotfix(application)
     application = install_staff_quiz_admin(application)
     application = install_admin_access_control(application)
     return _session_middleware_outermost(application)
