@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.db import connect
 from app.product_shell import _require_master
@@ -67,11 +67,82 @@ def _stream_file(handle) -> Iterator[bytes]:
         handle.close()
 
 
+def _single_line(value: Any) -> str:
+    return " ".join(str(value or "").replace("\r", "\n").splitlines()).strip()
+
+
+def _questions_as_bulk_text(questions: list[dict[str, Any]]) -> str:
+    blocks: list[str] = []
+    for question in questions:
+        question_type = str(question.get("type") or "")
+        if question_type not in {"single_choice", "multi_choice"}:
+            raise ValueError(
+                "TXT export supports only questions with answer options; "
+                "text-answer questions cannot be pasted back through bulk creation"
+            )
+
+        title = _single_line(question.get("title"))
+        options = list(question.get("options") or [])
+        if not title or len(options) < 2:
+            raise ValueError("TXT export found an incomplete question")
+
+        lines = [title]
+        correct_count = 0
+        for option in options:
+            option_text = _single_line(option.get("text"))
+            if not option_text:
+                raise ValueError("TXT export found an empty answer option")
+            is_correct = bool(option.get("correct"))
+            correct_count += int(is_correct)
+            lines.append(("*" if is_correct else "-") + option_text)
+
+        if correct_count < 1:
+            raise ValueError("TXT export found a question without a correct answer")
+        blocks.append("\n".join(lines))
+
+    if not blocks:
+        raise ValueError("Квиз не содержит вопросов для TXT-экспорта")
+    return "\n\n".join(blocks) + "\n"
+
+
+def _safe_campaign_code(campaign_code: str) -> str:
+    return "".join(ch for ch in campaign_code if ch.isalnum() or ch in "-_") or "quiz"
+
+
 def install_quiz_export(app: FastAPI) -> FastAPI:
     if getattr(app.state, "quiz_export_installed", False):
         return app
     app.state.quiz_export_installed = True
     settings = app.state.settings
+
+    @app.get("/api/master/quiz-campaigns/{campaign_id}/export.txt")
+    async def export_quiz_txt(request: Request, campaign_id: int):
+        _require_master(request)
+
+        with connect(settings.db_path) as conn:
+            campaign = conn.execute(
+                "SELECT * FROM quiz_campaigns WHERE id=?",
+                (campaign_id,),
+            ).fetchone()
+            if not campaign:
+                raise HTTPException(status_code=404, detail="Квиз не найден")
+            campaign_code = str(campaign["code"])
+            questions = load_builder_questions(conn, campaign_code)
+
+        try:
+            text = _questions_as_bulk_text(questions)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        version = int(campaign["current_version"] or 1)
+        filename = f"quiz-{_safe_campaign_code(campaign_code)}-v{version}-questions.txt"
+        # UTF-8 BOM keeps Cyrillic readable in Windows editors while remaining
+        # harmless when the text is copied into the bulk-question textarea.
+        return Response(
+            content="\ufeff" + text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @app.get("/api/master/quiz-campaigns/{campaign_id}/export.zip")
     async def export_quiz_zip(request: Request, campaign_id: int):
@@ -99,7 +170,10 @@ def install_quiz_export(app: FastAPI) -> FastAPI:
         archive = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
         missing_media: list[str] = []
         added_media: set[str] = set()
-        section_refs = {int(row["id"]): f"section-{index}" for index, row in enumerate(sections, start=1)}
+        section_refs = {
+            int(row["id"]): f"section-{index}"
+            for index, row in enumerate(sections, start=1)
+        }
 
         def add_media(web_path: str | None) -> str | None:
             value = str(web_path or "").strip()
@@ -151,9 +225,13 @@ def install_quiz_export(app: FastAPI) -> FastAPI:
                         "visual_type": str(question.get("visual_type") or "standard"),
                         "image_path": image_path or None,
                         "image_archive": add_media(image_path),
-                        "section_ref": section_refs.get(int(section_id)) if section_id else None,
+                        "section_ref": (
+                            section_refs.get(int(section_id)) if section_id else None
+                        ),
                         "placeholder": question.get("placeholder"),
-                        "accepted_text_answers": list(question.get("accepted_text_answers") or []),
+                        "accepted_text_answers": list(
+                            question.get("accepted_text_answers") or []
+                        ),
                         "game_round": str(question.get("game_round") or "main"),
                         "required": bool(question.get("required")),
                         "points": int(question.get("points") or 0),
@@ -203,8 +281,7 @@ def install_quiz_export(app: FastAPI) -> FastAPI:
 
         archive.seek(0)
         version = int(campaign["current_version"] or 1)
-        safe_code = "".join(ch for ch in campaign_code if ch.isalnum() or ch in "-_") or "quiz"
-        filename = f"quiz-{safe_code}-v{version}.zip"
+        filename = f"quiz-{_safe_campaign_code(campaign_code)}-v{version}.zip"
         return StreamingResponse(
             _stream_file(archive),
             media_type="application/zip",
