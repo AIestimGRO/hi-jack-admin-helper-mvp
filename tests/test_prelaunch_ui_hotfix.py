@@ -29,8 +29,9 @@ def _member_account(conn, client_id: int, email: str) -> int:
     return int(
         conn.execute(
             """
-            INSERT INTO member_accounts(client_id,email,email_normalized,password_hash)
-            VALUES (?,?,?,?)
+            INSERT INTO member_accounts(
+                client_id,email,email_normalized,password_hash,email_verified_at
+            ) VALUES (?,?,?,?,CURRENT_TIMESTAMP)
             """,
             (client_id, email, email.lower(), "test-hash"),
         ).lastrowid
