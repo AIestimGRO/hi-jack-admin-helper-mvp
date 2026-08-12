@@ -43,10 +43,13 @@ def install_account_links_hotfix(app: FastAPI) -> FastAPI:
             {
                 "request": request,
                 "member": member,
-                "current_tab": "profile",
+                # This is a standalone member page. Marking it as profile causes
+                # member_base.html to render profile-only blocks that require the
+                # full account dashboard context (quiz_stats, ratings, vault, etc.).
+                "current_tab": "links",
                 "links": links,
                 "engagement": engagement,
-                "asset_version": "account-links-v2",
+                "asset_version": "account-links-v3",
             },
         )
 
