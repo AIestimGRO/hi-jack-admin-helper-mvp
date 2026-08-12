@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Квизы — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Квиз-администратор</p><h1>Квизы и JACKSIDE</h1><p class="muted">Создание обычных квизов, переход в конструктор вопросов и работа с ежедневными выпусками JACKSIDE.</p></div></div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <div class="section-head"><h2>Новый обычный квиз</h2></div>
+  <form class="master-create" action="/api/staff/quizzes/create" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Код<input name="code" maxlength="50" pattern="[a-z0-9][a-z0-9_-]{0,49}" placeholder="summer_quiz" required></label>
+    <label>Название<input name="title" maxlength="80" required></label>
+    <label>Порог баллов<input name="pass_score" type="number" min="0" max="10000" value="0"></label>
+    <label>Секунд на вопрос<input name="question_time_limit_seconds" type="number" min="0" max="3600" value="20"></label>
+    <label>Секунд на весь квиз<input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="120"></label>
+    <label>Попыток<input name="max_attempts" type="number" min="1" max="100" value="3"></label>
+    <label>Награда<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in preferences %}<option value="{{ pref.code }}">{{ pref.title }}</option>{% endfor %}</select></label>
+    <label>Количество бонусов<input name="bonus_amount" type="number" min="0" max="1000" value="0"></label>
+    <label class="check-label"><input name="verification_required" type="checkbox" value="true"> Требовать подтверждённый вход</label>
+    <button class="primary" type="submit">Создать и открыть конструктор</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="section-head"><h2>JACKSIDE 4:14</h2></div>
+  <p class="muted">Ежедневные выпуски создаются через отдельный мастер — там сохраняются расписание, выпуск и центральные настройки экономики.</p>
+  <a class="primary button" href="/master/jackside-issues">Открыть выпуски JACKSIDE</a>
+</div>
+
+<div class="section-head"><h2>Кампании</h2><span class="muted">{{ campaigns|length }}</span></div>
+<div class="master-list">
+{% for campaign in campaigns %}
+<article class="card master-item {{ '' if campaign.is_active else 'inactive' }}">
+  <div class="master-item-head"><div><h3>{{ campaign.title }}</h3><code>{{ campaign.code }}</code></div><span class="type-pill">{{ 'JACKSIDE' if campaign.campaign_type == 'daily_414' else 'Квиз' }}</span></div>
+  <p class="muted">{{ 'Активен' if campaign.is_active else 'Отключён' }} · версия {{ campaign.current_version }}</p>
+  <div class="campaign-actions">
+    <a class="button" href="/master/quiz-builder/{{ campaign.id }}">Конструктор вопросов</a>
+    {% if campaign.campaign_type == 'daily_414' %}
+      <a class="button" href="/master/jackside-issues">Настройки выпуска</a>
+    {% else %}
+      <details>
+        <summary>Настройки</summary>
+        <form class="inline-edit" action="/api/staff/quizzes/{{ campaign.id }}/update" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Название<input name="title" maxlength="80" value="{{ campaign.title }}" required></label>
+          <label>Порог<input name="pass_score" type="number" min="0" max="10000" value="{{ campaign.pass_score }}"></label>
+          <label>Секунд на вопрос<input name="question_time_limit_seconds" type="number" min="0" max="3600" value="{{ campaign.question_time_limit_seconds }}"></label>
+          <label>Секунд на квиз<input name="quiz_time_limit_seconds" type="number" min="0" max="7200" value="{{ campaign.quiz_time_limit_seconds }}"></label>
+          <label>Попыток<input name="max_attempts" type="number" min="1" max="100" value="{{ campaign.max_attempts }}"></label>
+          <label>Награда<select name="bonus_preference_code"><option value="">Без бонуса</option>{% for pref in preferences %}<option value="{{ pref.code }}" {% if campaign.bonus_preference_code == pref.code %}selected{% endif %}>{{ pref.title }}</option>{% endfor %}</select></label>
+          <label>Количество<input name="bonus_amount" type="number" min="0" max="1000" value="{{ campaign.bonus_amount }}"></label>
+          <label class="check-label"><input name="verification_required" type="checkbox" value="true" {% if campaign.verification_required %}checked{% endif %}> Требовать подтверждённый вход</label>
+          <button class="button" type="submit">Сохранить</button>
+        </form>
+      </details>
+      <form action="/api/staff/quizzes/{{ campaign.id }}/toggle" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="{{ 'danger-outline' if campaign.is_active else 'success-outline' }}" type="submit">{{ 'Отключить' if campaign.is_active else 'Включить' }}</button>
+      </form>
+    {% endif %}
+  </div>
+</article>
+{% else %}<div class="card empty">Кампаний пока нет.</div>{% endfor %}
+</div>
+{% endblock %}
