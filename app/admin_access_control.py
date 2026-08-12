@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import re
 import sqlite3
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -26,6 +26,8 @@ ACCESS_LABELS = {
     ACCESS_QUIZ_MANAGER: "Квиз-администратор",
     ACCESS_BARTENDER: "Бармен",
 }
+_CLIENT_PAGE_RE = re.compile(r"^/clients/\d+$")
+_CLIENT_QR_RE = re.compile(r"^/api/clients/\d+/qr$")
 
 
 def ensure_admin_access_schema(conn: sqlite3.Connection) -> None:
@@ -84,7 +86,7 @@ def _role_from_request(request: Request) -> str:
     return ACCESS_BARTENDER
 
 
-def _is_public_admin_asset(path: str) -> bool:
+def _is_shared_path(path: str) -> bool:
     return (
         path.startswith("/static/")
         or path.startswith("/quiz-media/")
@@ -96,11 +98,13 @@ def _is_public_admin_asset(path: str) -> bool:
 
 def bartender_path_allowed(path: str, method: str) -> bool:
     method = method.upper()
-    if _is_public_admin_asset(path):
+    if _is_shared_path(path):
         return True
-    if method == "GET" and (path == "/clients" or path.startswith("/clients/")):
+    if method == "GET" and (path == "/clients" or bool(_CLIENT_PAGE_RE.fullmatch(path))):
         return True
-    if method == "GET" and path.startswith("/api/clients/") and path.endswith("/qr"):
+    if method == "GET" and bool(_CLIENT_QR_RE.fullmatch(path)):
+        return True
+    if method == "GET" and path == "/staff/redeem":
         return True
     if method == "POST" and path in {
         "/api/preferences/add",
@@ -109,23 +113,16 @@ def bartender_path_allowed(path: str, method: str) -> bool:
         "/staff/redeem",
     }:
         return True
-    if method == "GET" and path == "/staff/redeem":
-        return True
     return False
 
 
-def manager_path_allowed(path: str, method: str, query: dict[str, str] | None = None) -> bool:
+def manager_path_allowed(path: str, method: str) -> bool:
     if bartender_path_allowed(path, method):
         return True
     method = method.upper()
-    query = query or {}
-    if _is_public_admin_asset(path):
+    if _is_shared_path(path):
         return True
     if path == "/" and method == "GET":
-        return True
-    if path.startswith("/clients/") or path == "/clients":
-        return method in {"GET", "POST"}
-    if path.startswith("/api/clients/"):
         return True
     if path.startswith("/admin/quiz") or path.startswith("/api/admin/quiz"):
         return True
@@ -137,15 +134,11 @@ def manager_path_allowed(path: str, method: str, query: dict[str, str] | None = 
         return True
     if path.startswith("/master/jackside-issues"):
         return True
-    if path.startswith("/master/engagement-icons"):
-        return True
     if path.startswith("/api/master/quiz"):
         return True
     if path.startswith("/api/master/jackside"):
         return True
-    if path.startswith("/api/master/preferences"):
-        return True
-    if path.startswith("/api/master/engagement"):
+    if path.startswith("/staff/quizzes") or path.startswith("/api/staff/quizzes"):
         return True
     if path.startswith("/staff-access") or path.startswith("/api/staff-access"):
         return True
@@ -153,13 +146,6 @@ def manager_path_allowed(path: str, method: str, query: dict[str, str] | None = 
         return True
     if path == "/logs" and method == "GET":
         return True
-    if path == "/master" and method == "GET":
-        return str(query.get("tab") or "preferences") in {
-            "preferences",
-            "campaigns",
-            "analytics",
-            "engagement",
-        }
     return False
 
 
@@ -170,10 +156,11 @@ def access_path_allowed(
     method: str,
     query: dict[str, str] | None = None,
 ) -> bool:
+    del query
     if access_role == ACCESS_MASTER:
         return True
     if access_role == ACCESS_QUIZ_MANAGER:
-        return manager_path_allowed(path, method, query)
+        return manager_path_allowed(path, method)
     return bartender_path_allowed(path, method)
 
 
@@ -386,7 +373,7 @@ def install_admin_access_control(app: FastAPI) -> FastAPI:
             encoded = hash_pin(pin)
             with transaction(settings.db_path) as conn:
                 target = conn.execute(
-                    "SELECT id,role,username FROM admins WHERE id=?",
+                    "SELECT id,role FROM admins WHERE id=?",
                     (admin_id,),
                 ).fetchone()
                 if not target:
