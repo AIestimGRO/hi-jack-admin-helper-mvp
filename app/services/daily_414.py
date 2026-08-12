@@ -22,15 +22,13 @@ LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS = (
 DAILY_414_FINAL_QUESTION_SECONDS = 30
 DAILY_414_FINAL_TABLE_SIZE = 10
 
-JACKCOIN_PER_CORRECT = 5
+JACKCOIN_PER_CORRECT = 10
 JACKCOIN_COMPLETION_BONUS = 10
-JACKCOIN_PERFECT_BONUS = 20
-JACKCOIN_STREAK_BONUSES = {
-    3: 10,
-    7: 30,
-    14: 70,
-    30: 150,
-}
+JACKCOIN_PERFECT_BONUS = 30
+# Launch streak milestones are separate ledger operations managed by the
+# configurable JACKCOIN economy. Keep the base submission award streak-free so
+# a 7/15/30/100-day milestone can never be paid twice.
+JACKCOIN_STREAK_BONUSES: dict[int, int] = {}
 DEFAULT_CAMPAIGN_TIMEZONE = "Europe/Moscow"
 
 
