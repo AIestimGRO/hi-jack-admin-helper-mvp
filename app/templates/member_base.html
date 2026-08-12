@@ -31,7 +31,7 @@
   {% if member %}
   <nav class="member-bottom-nav" aria-label="Основная навигация" data-legacy-nav="Квизы Хранилище">
     <a class="{{ 'active' if current_tab|default('home') == 'home' else '' }}" href="/account">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.1a1.1 1.1 0 0 1-1.1 1.1H15v-6H9v6H4.1A1.1 1.1 0 0 1 3 19.9V10.8Z"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.1a1.1 1.1 0 0 1-1.1 1.1H15v-6H9v6H4.1A1.1 1.1 0 0 1 3 19.9Z"/></svg>
       <span>Главная</span>
     </a>
     <a class="{{ 'active' if current_tab|default('') == 'quizzes' else '' }}" href="/account?tab=quizzes">
