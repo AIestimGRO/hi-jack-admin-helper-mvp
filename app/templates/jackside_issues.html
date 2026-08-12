@@ -33,6 +33,23 @@
     </form>
   </details>
 
+  <details class="card prelaunch-copy-issue" id="legacy-jackside-copy">
+    <summary>Скопировать старый JACKSIDE, созданный до системы выпусков</summary>
+    <form class="grid-form" method="post" action="/api/master/jackside-issues/copy-legacy">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <p class="muted">Старый квиз и его результаты останутся без изменений. Будет создан новый выпуск с новым кодом, а вопросы, варианты ответов, секции, финал и приз дня будут взяты из выбранного старого квиза.</p>
+      <label>Старый квиз
+        <select name="source_campaign_id" id="legacy-jackside-source" required disabled>
+          <option value="">Загрузка…</option>
+        </select>
+      </label>
+      <label>Новая дата<input type="date" name="issue_date" required></label>
+      <label>Старт<input type="datetime-local" name="starts_at" required></label>
+      <button type="submit" id="legacy-jackside-copy-button" disabled>Создать новый выпуск на основе квиза</button>
+      <p class="muted" id="legacy-jackside-source-status" aria-live="polite"></p>
+    </form>
+  </details>
+
   <section class="card prelaunch-issue-list">
     <div class="section-head"><h2>Рабочие выпуски</h2><span class="muted">последние 10</span></div>
     {% for issue in issues[:10] %}
@@ -61,4 +78,63 @@
     {% endif %}
   </section>
 </section>
+
+<script>
+(() => {
+  const select = document.getElementById('legacy-jackside-source');
+  const button = document.getElementById('legacy-jackside-copy-button');
+  const status = document.getElementById('legacy-jackside-source-status');
+  if (!select || !button || !status) return;
+
+  const describe = (item) => {
+    const main = Number(item.main_question_count || 0);
+    const finalCount = Number(item.final_question_count || 0);
+    const submissions = Number(item.submission_count || 0);
+    const schedule = item.active_from ? ` · ${String(item.active_from).slice(0, 16).replace('T', ' ')}` : '';
+    return `${item.title} · ${main} осн. · финал ${finalCount} · прохождений ${submissions}${schedule}`;
+  };
+
+  fetch('/api/master/jackside-issues/legacy-sources', {
+    headers: { 'Accept': 'application/json' },
+    credentials: 'same-origin'
+  })
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      const sources = Array.isArray(payload.sources) ? payload.sources : [];
+      select.replaceChildren();
+      if (!sources.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Старых JACKSIDE-квизов не найдено';
+        select.append(option);
+        status.textContent = 'Здесь показываются только daily_414-квизы, которые ещё не связаны с системой выпусков.';
+        return;
+      }
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Выберите старый квиз';
+      select.append(placeholder);
+      for (const item of sources) {
+        const option = document.createElement('option');
+        option.value = String(item.id);
+        option.textContent = describe(item);
+        select.append(option);
+      }
+      select.disabled = false;
+      button.disabled = false;
+      status.textContent = `Найдено старых квизов: ${sources.length}. Старые результаты при копировании не изменяются.`;
+    })
+    .catch((error) => {
+      select.replaceChildren();
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Не удалось загрузить список';
+      select.append(option);
+      status.textContent = `Ошибка загрузки списка: ${error.message}`;
+    });
+})();
+</script>
 {% endblock %}
