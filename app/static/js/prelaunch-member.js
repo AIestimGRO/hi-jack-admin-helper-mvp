@@ -1,8 +1,37 @@
 (() => {
+  const ensureHotfixStyle = () => {
+    if (document.querySelector('link[data-prelaunch-ui-hotfix]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/static/css/prelaunch-ui-hotfix.css?v=1';
+    link.dataset.prelaunchUiHotfix = 'true';
+    document.head.appendChild(link);
+  };
+
   const json = async (url) => {
     const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
+  };
+
+  const compactFeaturedJackside = () => {
+    const card = document.querySelector('.quiz-feature-card');
+    if (!card?.querySelector('.quiz-feature-art')) return;
+    const copy = card.querySelector('.quiz-feature-copy');
+    if (!copy) return;
+
+    const dateLine = [...copy.children].find((node) => (
+      node.tagName === 'P'
+      && !node.classList.contains('quiz-feature-prize')
+      && !node.classList.contains('quiz-feature-hint')
+      && !node.classList.contains('quiz-feature-seated')
+    ));
+    if (!dateLine) return;
+
+    const times = [...String(dateLine.textContent || '').matchAll(/\b(\d{1,2}:\d{2})\b/g)];
+    if (!times.length) return;
+    const time = times.at(-1)[1];
+    dateLine.textContent = card.classList.contains('upcoming') ? `Старт · ${time}` : `Сегодня · ${time}`;
   };
 
   const socialCard = (links) => {
@@ -28,7 +57,20 @@
 
     const mount = document.querySelector('.member-app-page') || document.querySelector('.member-shell');
     if (!mount || mount.querySelector('.social-hub-card')) return;
-    mount.appendChild(socialCard(eligible));
+    const card = socialCard(eligible);
+
+    if (tab === 'home') {
+      const gameCard = mount.querySelector('.quiz-feature-card');
+      const gameSection = gameCard?.closest('.home-section');
+      if (gameSection) gameSection.insertAdjacentElement('afterend', card);
+      else mount.appendChild(card);
+    } else if (tab === 'profile') {
+      const firstProfileSection = mount.querySelector('.profile-section, .profile-rich-section');
+      if (firstProfileSection) firstProfileSection.insertAdjacentElement('beforebegin', card);
+      else mount.appendChild(card);
+    } else {
+      mount.appendChild(card);
+    }
   };
 
   const linkLeaderboardNames = async () => {
@@ -70,9 +112,12 @@
   };
 
   const run = () => {
+    ensureHotfixStyle();
+    compactFeaturedJackside();
     injectSocialHub();
     linkLeaderboardNames();
     window.setTimeout(() => {
+      compactFeaturedJackside();
       injectSocialHub();
       linkLeaderboardNames();
     }, 650);
