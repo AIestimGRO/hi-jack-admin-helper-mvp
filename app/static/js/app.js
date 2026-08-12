@@ -123,7 +123,6 @@ if (adminMenu && adminMenuToggles.length) {
 const quizBuilder = document.querySelector('[data-quiz-builder]');
 if (quizBuilder) {
   const campaignId = quizBuilder.dataset.campaignId;
-  const isDaily414 = quizBuilder.dataset.campaignType === 'daily_414';
   const defaultFinalQuestionSeconds = Number(quizBuilder.dataset.finalDefaultSeconds || 30);
   const csrfToken = quizBuilder.dataset.csrfToken;
 
@@ -142,8 +141,15 @@ if (quizBuilder) {
     form.querySelectorAll('button').forEach((button) => { button.disabled = busy; });
   }
 
-  function finishBuilderAction(message) {
-    window.location.assign(`${window.location.pathname}?ok=${encodeURIComponent(message)}`);
+  function finishBuilderAction(message, form) {
+    const status = form?.querySelector('.form-status');
+    if (status) {
+      status.textContent = message;
+      status.classList.remove('error');
+      status.classList.add('success');
+    }
+    if (form) setFormBusy(form, false);
+    if (window.HJAdminToast) window.HJAdminToast(message);
   }
 
   function optionLetter(index) {
@@ -281,11 +287,23 @@ if (quizBuilder) {
       optionsBox.lastElementChild.querySelector('input[type="text"]').focus();
     });
 
+    function resetNewQuestionEditor() {
+      form.reset();
+      if (form.elements.image_path) form.elements.image_path.value = '';
+      mediaInput.value = '';
+      form.querySelector('[data-question-media] img')?.remove();
+      optionsBox.replaceChildren();
+      [true, false, false, false].forEach((correct) => addOption('', correct, true));
+      syncType();
+      syncRound();
+      syncVisual();
+    }
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const status = form.querySelector('.form-status');
       status.textContent = '';
-      status.classList.remove('error');
+      status.classList.remove('error', 'success');
       const options = [...optionsBox.querySelectorAll('.quick-option-row')].map((row) => ({
         option_id: row.dataset.optionId || null,
         option_code: row.dataset.optionCode || null,
@@ -325,15 +343,13 @@ if (quizBuilder) {
           placeholder: form.elements.placeholder.value,
         };
         const data = await builderRequest(url, payload);
-        const movedBetweenRounds = Boolean(
-          questionId
-          && form.dataset.gameRound
-          && form.dataset.gameRound !== payload.game_round
-        );
-        if (!questionId || !isDaily414 || movedBetweenRounds) {
-          finishBuilderAction(data.message);
+
+        if (!questionId) {
+          resetNewQuestionEditor();
+          finishBuilderAction(data.message, form);
           return;
         }
+
         (data.options || []).forEach((option, index) => {
           const row = optionsBox.children[index];
           if (!row) return;
@@ -351,16 +367,16 @@ if (quizBuilder) {
           preview.src = imagePath;
         }
         mediaInput.value = '';
+        form.dataset.gameRound = payload.game_round;
         const card = form.closest('[data-question-card]');
         const summary = card?.querySelector('.hj-question-summary strong');
         if (summary) summary.textContent = payload.title.trim();
-        status.textContent = data.message;
-        status.classList.add('success');
-        setFormBusy(form, false);
+        finishBuilderAction(data.message, form);
       } catch (error) {
         status.textContent = error.message;
         status.classList.add('error');
         setFormBusy(form, false);
+        if (window.HJAdminToast) window.HJAdminToast(error.message, 'error');
       }
     });
   }
@@ -376,6 +392,7 @@ if (quizBuilder) {
     event.preventDefault();
     const status = bulkForm.querySelector('.form-status');
     status.textContent = '';
+    status.classList.remove('error', 'success');
     setFormBusy(bulkForm, true);
     try {
       const data = await builderRequest(`/api/master/quiz-campaigns/${campaignId}/questions/bulk-create`, {
@@ -384,11 +401,13 @@ if (quizBuilder) {
         points: 1,
         time_limit_seconds: 0,
       });
-      finishBuilderAction(data.message);
+      bulkForm.elements.bulk_text.value = '';
+      finishBuilderAction(data.message, bulkForm);
     } catch (error) {
       status.textContent = error.message;
       status.classList.add('error');
       setFormBusy(bulkForm, false);
+      if (window.HJAdminToast) window.HJAdminToast(error.message, 'error');
     }
   });
 
