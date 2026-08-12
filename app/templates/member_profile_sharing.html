@@ -1,0 +1,29 @@
+{% extends "member_base.html" %}
+{% block title %}Профиль для игроков — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="prelaunch-member-page">
+  <header class="prelaunch-member-hero">
+    <p class="member-eyebrow">Приватность профиля</p>
+    <h1>Профиль для игроков клуба</h1>
+    <p class="member-muted">Этот доступ работает только между зарегистрированными и авторизованными участниками Hi, Jack Club.</p>
+  </header>
+
+  {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+
+  <form class="member-card legal-setting-form" method="post" action="/account/profile-sharing">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="legal-setting-check">
+      <input type="checkbox" name="share_game_profile" value="true" {{ 'checked' if granted else '' }}>
+      <span><strong>Показывать мою игровую статистику и историю участия другим зарегистрированным игрокам</strong><br><small>JACKSIDE: количество игр, точность, 10/10, серии, финалы и победы. HI JACK: турниры, рейтинг, kills. Также показывается хронология квизов и турниров.</small></span>
+    </label>
+    <p class="member-muted">Никнейм, аватар, звания и достижения по-прежнему управляются отдельно в настройках согласия на отображение в рейтинге. Телефон, email, дата рождения, Telegram ID, баланс JACKCOIN, покупки, награды, реферальное дерево и технические данные другим игрокам не показываются.</p>
+    <button class="member-primary" type="submit">Сохранить</button>
+  </form>
+
+  <div class="public-profile-actions">
+    <a class="member-secondary" href="/account/legal">Настройки рейтинга и согласий</a>
+    <a class="member-secondary" href="/account?tab=profile">Вернуться в профиль</a>
+  </div>
+</section>
+{% endblock %}
