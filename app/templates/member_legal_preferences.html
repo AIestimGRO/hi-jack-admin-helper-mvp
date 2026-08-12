@@ -44,8 +44,8 @@
   </section>
 
   <section class="legal-settings-card">
-    <h2>Публичный рейтинг и игровой профиль</h2>
-    <p class="member-muted">Отдельное добровольное согласие. Без него аккаунт и внутренняя статистика работают как обычно. Телефон, email, дата рождения, Telegram ID, баланс JACKCOIN и технические ID никогда не входят в профиль другого игрока.</p>
+    <h2>Публичный рейтинг</h2>
+    <p class="member-muted">Отдельное добровольное согласие с фиксированным набором категорий. Без него аккаунт и внутренняя статистика работают как обычно.</p>
     <form class="legal-setting-form" method="post" action="/account/legal/public-rating">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="legal-rating-grid">
@@ -55,11 +55,16 @@
         <label class="legal-setting-check"><input type="checkbox" name="place" value="true" {{ 'checked' if rating.place else '' }}><span>Место в рейтинге</span></label>
         <label class="legal-setting-check"><input type="checkbox" name="achievements" value="true" {{ 'checked' if rating.achievements else '' }}><span>Достижения</span></label>
         <label class="legal-setting-check"><input type="checkbox" name="titles" value="true" {{ 'checked' if rating.titles else '' }}><span>Звания</span></label>
-        <label class="legal-setting-check"><input type="checkbox" name="participation_stats" value="true" {{ 'checked' if rating.participation_stats else '' }}><span>Игровая статистика и история участия в квизах и турнирах</span></label>
       </div>
-      <p class="member-muted">Снять все отметки и сохранить — отозвать разрешение на отображение этих данных другим участникам клуба.</p>
+      <p class="member-muted">Снять все отметки и сохранить — отозвать разрешение на отображение этих данных.</p>
       <div class="legal-settings-actions"><a class="member-text-action" href="/legal/public-rating-consent">Открыть полный текст согласия</a><button class="member-primary" type="submit">Сохранить согласие</button></div>
     </form>
+  </section>
+
+  <section class="legal-settings-card">
+    <h2>Профиль для других игроков клуба</h2>
+    <p class="member-muted">Расширенная игровая статистика и история квизов/турниров включаются отдельно и доступны только зарегистрированным участникам Hi, Jack Club. Телефон, email, дата рождения, Telegram ID, баланс JACKCOIN и технические данные в этот профиль не входят.</p>
+    <div class="legal-settings-actions"><a class="member-primary" href="/account/profile-sharing">Настроить видимость профиля</a></div>
   </section>
 
   <a class="member-secondary" href="/account?tab=profile">Вернуться в профиль</a>
