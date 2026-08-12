@@ -11,6 +11,7 @@ from app.db import transaction
 from app.main import create_app
 from app.services.jackside_engagement import ensure_jackside_referral_code
 from app.services.member_accounts import MEMBER_COOKIE_NAME, issue_session
+from app.services.quiz import parse_quick_questions
 
 
 def make_client(tmp_path: Path) -> tuple[TestClient, Settings]:
@@ -171,3 +172,68 @@ def test_quiz_export_zip_contains_structure_answers_and_images(tmp_path: Path) -
         assert payload["sections"][0]["background_image_archive"] == "images/section.webp"
         assert payload["questions"][0]["image_archive"] == "images/question.png"
         assert payload["questions"][0]["options"][1]["correct"] is True
+
+
+def test_quiz_export_txt_is_directly_accepted_by_bulk_parser(tmp_path: Path) -> None:
+    client, settings = make_client(tmp_path)
+    with client:
+        login_master(client)
+        with transaction(settings.db_path) as conn:
+            campaign_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO quiz_campaigns(code,title,campaign_type)
+                    VALUES ('txt-demo','TXT Demo','classic')
+                    """
+                ).lastrowid
+            )
+            first_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO quiz_questions(
+                        campaign_code,code,type,title,game_round,required,points,position,is_active
+                    ) VALUES ('txt-demo','q1','single_choice','Столица Франции?','main',1,1,10,1)
+                    """
+                ).lastrowid
+            )
+            second_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO quiz_questions(
+                        campaign_code,code,type,title,game_round,required,points,position,is_active
+                    ) VALUES ('txt-demo','q2','multi_choice','Выберите простые числа','main',1,1,20,1)
+                    """
+                ).lastrowid
+            )
+            conn.executemany(
+                """
+                INSERT INTO quiz_options(question_id,code,text,is_correct,position,is_active)
+                VALUES (?,?,?,?,?,1)
+                """,
+                [
+                    (first_id, "a", "Лондон", 0, 10),
+                    (first_id, "b", "Париж", 1, 20),
+                    (first_id, "c", "Берлин", 0, 30),
+                    (second_id, "a", "2", 1, 10),
+                    (second_id, "b", "3", 1, 20),
+                    (second_id, "c", "4", 0, 30),
+                ],
+            )
+
+        response = client.get(f"/api/master/quiz-campaigns/{campaign_id}/export.txt")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "questions.txt" in response.headers["content-disposition"]
+
+        text = response.text.lstrip("\ufeff")
+        assert "Столица Франции?\n-Лондон\n*Париж\n-Берлин" in text
+        assert "Выберите простые числа\n*2\n*3\n-4" in text
+        assert "@photo" not in text
+        assert "/quiz-media/" not in text
+
+        parsed = parse_quick_questions(text)
+        assert len(parsed) == 2
+        assert parsed[0]["question_type"] == "single_choice"
+        assert parsed[0]["options"][1]["is_correct"] is True
+        assert parsed[1]["question_type"] == "multi_choice"
+        assert sum(int(item["is_correct"]) for item in parsed[1]["options"]) == 2
