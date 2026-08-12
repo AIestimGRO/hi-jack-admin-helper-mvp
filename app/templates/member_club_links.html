@@ -1,0 +1,19 @@
+{% extends "member_base.html" %}
+{% block title %}Hi, Jack в сети{% endblock %}
+{% block content %}
+<section class="prelaunch-member-page">
+  <header class="prelaunch-member-hero"><p class="member-eyebrow">HI, JACK! ONLINE</p><h1>Мы в сети</h1><p class="member-muted">Новости, запись на игры, клубные сервисы и быстрый маршрут.</p></header>
+  <div class="club-links-grid">
+    {% for link in links %}
+    <a class="club-link-card type-{{ link.link_type }}" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+      <span class="club-link-mark">{% if link.link_type == 'telegram' %}TG{% elif link.link_type == 'miniapp' %}APP{% elif link.link_type == 'maps' %}MAP{% else %}HJ{% endif %}</span>
+      <span><small>{{ 'Telegram' if link.link_type == 'telegram' else ('Mini App' if link.link_type == 'miniapp' else ('Карты' if link.link_type == 'maps' else 'Hi, Jack')) }}</small><strong>{{ link.title }}</strong><em>{{ link.description }}</em></span>
+      <b aria-hidden="true">↗</b>
+    </a>
+    {% else %}
+    <div class="member-card smart-empty"><span>HJ</span><div><h3>Ссылки готовятся</h3><p>Клубные каналы скоро появятся здесь.</p></div></div>
+    {% endfor %}
+  </div>
+  <a class="member-secondary" href="/account">Вернуться на главную</a>
+</section>
+{% endblock %}
