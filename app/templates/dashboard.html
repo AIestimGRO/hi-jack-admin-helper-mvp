@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set access_role = request.session.get('admin_access_role') or ('master' if admin_role == 'master_admin' else 'bartender') %}
 <div class="page-head">
   <div><p class="eyebrow">Администратор: {{ admin_name }}</p><h1>Панель клуба</h1></div>
 </div>
@@ -9,9 +10,13 @@
 </form>
 <section class="admin-workflow-grid" aria-label="Частые действия">
   <a class="admin-workflow-card clients" href="/clients"><span>01</span><div><strong>Найти клиента</strong><small>Телефон, имя, никнейм или ID</small></div><b>→</b></a>
-  <a class="admin-workflow-card vault" href="/admin/vault"><span>02</span><div><strong>Выдать награду</strong><small>QR или короткий код JACK CARD</small></div><b>→</b></a>
+  <a class="admin-workflow-card vault" href="/admin/vault"><span>02</span><div><strong>Награды и JACK CARD</strong><small>Каталог, QR и короткие коды</small></div><b>→</b></a>
   <a class="admin-workflow-card quiz" href="/admin/quiz-results"><span>03</span><div><strong>Проверить квизы</strong><small>Результаты и участники</small></div><b>→</b></a>
-  {% if admin_role == 'master_admin' %}<a class="admin-workflow-card master" href="/master"><span>04</span><div><strong>Настроить сервис</strong><small>Кампании, награды и доступы</small></div><b>→</b></a>{% endif %}
+  {% if access_role == 'master' %}
+  <a class="admin-workflow-card master" href="/master"><span>04</span><div><strong>Настроить сервис</strong><small>Кампании, экономика и доступы</small></div><b>→</b></a>
+  {% elif access_role == 'quiz_manager' %}
+  <a class="admin-workflow-card master" href="/staff/quizzes"><span>04</span><div><strong>Управлять квизами</strong><small>Создание, конструктор и JACKSIDE</small></div><b>→</b></a>
+  {% endif %}
 </section>
 <section class="stat-grid">
   <div class="stat card"><strong>{{ counts.clients }}</strong><span>клиентов</span></div>
