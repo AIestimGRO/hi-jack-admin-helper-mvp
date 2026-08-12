@@ -64,7 +64,7 @@ def test_brand_theme_and_versioned_assets_are_used_everywhere(tmp_path):
 
         dashboard = client.get("/")
         assert "Частые действия" in dashboard.text or "Найти клиента" in dashboard.text
-        assert "Выдать награду" in dashboard.text
+        assert "Награды и JACK CARD" in dashboard.text
         assert "Проверить квизы" in dashboard.text
 
         quiz = client.get("/quiz?campaign=default")
