@@ -3,6 +3,7 @@
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.account_security import install_account_security
+from app.admin_access_control import install_admin_access_control
 from app.admin_account_lifecycle import install_admin_account_lifecycle
 from app.admin_telegram_unlink import install_admin_telegram_unlink
 from app.db import init_db
@@ -70,6 +71,7 @@ def _install_extensions(application):
     application = install_prelaunch_profile_privacy(application)
     application = install_prelaunch_data_integrity(application)
     application = install_jackside_rating_freshness(application)
+    application = install_admin_access_control(application)
     return _session_middleware_outermost(application)
 
 
