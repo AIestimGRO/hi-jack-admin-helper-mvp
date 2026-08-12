@@ -1,0 +1,11 @@
+{% extends "member_base.html" %}
+{% block title %}Игроки клуба — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="prelaunch-member-page players-directory-page">
+  <header class="prelaunch-member-hero"><p class="member-eyebrow">HI, JACK CLUB</p><h1>Игроки клуба</h1><p class="member-muted">Профили доступны только зарегистрированным участникам и только в объёме добровольно разрешённых данных.</p></header>
+  <div class="players-directory-list">
+    {% for player in players %}<a href="/players/{{ player.client_id }}"><span class="player-directory-mark">{{ player.display_name[:1]|upper }}</span><strong>{{ player.display_name }}</strong><b aria-hidden="true">›</b></a>{% else %}<div class="member-card smart-empty"><span>HJ</span><div><h3>Открытых профилей пока нет</h3><p>Игроки появятся после включения разрешений на публикацию.</p></div></div>{% endfor %}
+  </div>
+  <a class="member-secondary" href="/account?tab=rating">Вернуться в рейтинг</a>
+</section>
+{% endblock %}
