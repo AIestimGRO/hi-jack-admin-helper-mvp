@@ -130,7 +130,7 @@ def copy_legacy_campaign_to_issue(
         final_question_time_seconds=int(source["final_question_time_seconds"] or 30),
         timezone_name=timezone_name,
     )
-    created = ensure_issue_campaign(
+    ensure_issue_campaign(
         conn,
         issue=created,
         timezone_name=timezone_name,
