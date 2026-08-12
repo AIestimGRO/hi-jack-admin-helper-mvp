@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from app import prelaunch_experience as experience
 from app.config import BASE_DIR
 from app.db import connect, transaction
-from app.product_shell import _check_csrf, _current_member
+from app.product_shell import _check_csrf, _csrf_token, _current_member
 
 
 PROFILE_SHARING_CATEGORY = "participation_stats"
@@ -49,7 +49,6 @@ def _rating_categories_with_registered_profile(
     conn: sqlite3.Connection, account_id: int
 ) -> dict[str, bool]:
     categories = dict(_ORIGINAL_RATING_CATEGORIES(conn, account_id))
-    ensure_profile_sharing_schema(conn)
     if _sharing_enabled(conn, account_id):
         categories[PROFILE_SHARING_CATEGORY] = True
     return categories
@@ -73,7 +72,6 @@ def install_prelaunch_profile_sharing(app: FastAPI) -> FastAPI:
     ):
         member = _current_member(request, required=True)
         with connect(settings.db_path) as conn:
-            ensure_profile_sharing_schema(conn)
             granted = _sharing_enabled(conn, int(member["id"]))
         return templates.TemplateResponse(
             request,
@@ -82,7 +80,7 @@ def install_prelaunch_profile_sharing(app: FastAPI) -> FastAPI:
                 "request": request,
                 "member": member,
                 "current_tab": "profile",
-                "csrf_token": request.session.get("csrf", ""),
+                "csrf_token": _csrf_token(request),
                 "granted": granted,
                 "ok": ok,
                 "error": error,
@@ -100,7 +98,6 @@ def install_prelaunch_profile_sharing(app: FastAPI) -> FastAPI:
         _check_csrf(request, csrf_token)
         granted = bool(share_game_profile)
         with transaction(settings.db_path) as conn:
-            ensure_profile_sharing_schema(conn)
             conn.execute(
                 """
                 INSERT INTO member_profile_sharing(account_id, share_game_profile)
