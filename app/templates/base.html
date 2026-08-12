@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-smart.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-persistent-nav.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/prelaunch.css') }}?v={{ asset_version }}">
   {% block head %}{% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', path='/css/admin-usability-hotfix.css') }}?v={{ asset_version }}">
 </head>
@@ -57,13 +58,15 @@
 
       <span class="admin-nav-group-label">Награды</span>
       {% if admin_role == 'master_admin' %}
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/economy') else '' }}" href="/master/economy"><span>JC</span><div><strong>Экономика JACKCOIN</strong><small>Все суммы начислений и рефералы</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'preferences' else '' }}" href="/master?tab=preferences"><span>+</span><div><strong>Преференции</strong><small>Типы клубных бонусов</small></div></a>
       {% endif %}
       <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Карты и награды</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Награды кампаний</small></div></a>
 
-      <span class="admin-nav-group-label">Система</span>
+      <span class="admin-nav-group-label">Контент и система</span>
       {% if admin_role == 'master_admin' %}
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/club-links') else '' }}" href="/master/club-links"><span>↗</span><div><strong>Hi, Jack в сети</strong><small>Telegram, Mini App, карты и ссылки</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'admins' else '' }}" href="/master?tab=admins"><span>◎</span><div><strong>Администраторы</strong><small>Доступы и PIN</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/legal-documents') else '' }}" href="/master/legal-documents"><span>§</span><div><strong>Юридические документы</strong><small>Редакции и согласия</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'audit' else '' }}" href="/master?tab=audit"><span>≡</span><div><strong>Журнал действий</strong><small>Аудит мастер-админки</small></div></a>
