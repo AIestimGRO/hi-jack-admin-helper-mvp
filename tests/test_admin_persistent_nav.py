@@ -15,7 +15,7 @@ def test_admin_uses_only_one_persistent_navigation_shell() -> None:
     assert "/master?tab=analytics" in template
     assert "/master?tab=engagement" in template
     assert "/master?tab=preferences" in template
-    assert "/master?tab=admins" in template
+    assert "/staff-access" in template
     assert "/master?tab=audit" in template
 
     assert ".admin-persistent-nav[hidden]" in css
