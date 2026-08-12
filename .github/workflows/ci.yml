@@ -45,7 +45,6 @@ jobs:
           exit "$status"
 
       - name: pip-audit
-        continue-on-error: true
         run: pip-audit -r requirements.txt -r requirements-dev.txt
 
   e2e:
