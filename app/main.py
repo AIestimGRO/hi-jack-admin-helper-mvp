@@ -23,6 +23,7 @@ from app.prelaunch_profile_sharing import install_prelaunch_profile_sharing
 from app.product_shell import install_product_shell
 from app.profile_experience import install_profile_experience
 from app.public_rating_consent_policy import install_public_rating_consent_policy
+from app.rating_profile_links import install_rating_profile_links
 from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
 
@@ -59,6 +60,7 @@ def _install_extensions(application):
     application = install_hijack_rating_baseline(application)
     application = install_hijack_rating_paging(application)
     application = install_hijack_rating_transfer(application)
+    application = install_rating_profile_links(application)
     application = install_profile_experience(application)
     application = install_prelaunch_experience(application)
     application = install_prelaunch_economy_compat(application)
