@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -5,6 +6,10 @@ import pytest
 from app.db import init_db, transaction
 from app.hijack_rating_baseline import ensure_baseline_schema
 from app.hijack_rating_transfer import transfer_hijack_rating_owner
+from app.prelaunch_data_integrity import (
+    calendar_jackside_rating_payload,
+    dedupe_title_collection,
+)
 from app.services.hijack_rating import ensure_hijack_rating_schema
 
 
@@ -41,6 +46,39 @@ def _import(conn, name: str = "Tournament") -> int:
             ) VALUES (?, '2026-08-01', 'rating.xlsx')
             """,
             (name,),
+        ).lastrowid
+    )
+
+
+def _daily_campaign(conn, code: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO quiz_campaigns(code,title,campaign_type)
+        VALUES (?,?,'daily_414')
+        """,
+        (code, code),
+    )
+
+
+def _submission(
+    conn,
+    *,
+    client_id: int,
+    code: str,
+    created_at: str,
+    correct: int = 8,
+    questions: int = 10,
+) -> int:
+    return int(
+        conn.execute(
+            """
+            INSERT INTO quiz_submissions(
+                campaign_code,campaign_version,client_id,phone_raw,phone_local,
+                answers_json,max_score,correct_count,max_correct_count,passed,
+                main_round_completed,created_at,ip_hash
+            ) VALUES (?,1,?,'','9990000000','{}',?,?,?,?,1,?,'test')
+            """,
+            (code, client_id, questions, correct, questions, int(correct >= questions), created_at),
         ).lastrowid
     )
 
@@ -133,6 +171,106 @@ def test_hijack_rating_owner_transfer_blocks_overlapping_tournament(tmp_path) ->
         assert owners == {source_id, target_id}
 
 
+def test_jackside_month_rating_uses_calendar_month_and_keeps_old_source_rows(tmp_path) -> None:
+    db_path = tmp_path / "calendar-month.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        player = _client(conn, "August")
+        old_player = _client(conn, "July")
+        for index, day in enumerate(("2026-08-01", "2026-08-05", "2026-08-12"), start=1):
+            code = f"jackside_202608{index:02d}"
+            _daily_campaign(conn, code)
+            conn.execute(
+                "INSERT INTO jackside_issues(issue_date,title,campaign_code) VALUES (?,?,?)",
+                (day, code, code),
+            )
+            _submission(
+                conn,
+                client_id=player,
+                code=code,
+                created_at=f"{day}T15:20:00+00:00",
+            )
+        old_code = "jackside_20260731"
+        _daily_campaign(conn, old_code)
+        conn.execute(
+            "INSERT INTO jackside_issues(issue_date,title,campaign_code) VALUES ('2026-07-31',?,?)",
+            (old_code, old_code),
+        )
+        _submission(
+            conn,
+            client_id=old_player,
+            code=old_code,
+            created_at="2026-07-31T15:20:00+00:00",
+        )
+
+        payload = calendar_jackside_rating_payload(
+            conn,
+            client_id=player,
+            period="month",
+            as_of=datetime(2026, 8, 12, 12, 0, tzinfo=timezone.utc),
+        )
+
+        assert payload["label"] == "08.2026"
+        assert payload["source_rows"] == 3
+        assert payload["stored_source_rows"] == 4
+        assert [int(row["client_id"]) for row in payload["rows"]] == [player]
+        assert int(conn.execute("SELECT COUNT(*) FROM quiz_submissions").fetchone()[0]) == 4
+
+
+def test_jackside_year_rating_uses_calendar_year(tmp_path) -> None:
+    db_path = tmp_path / "calendar-year.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        player = _client(conn, "Current year")
+        old_player = _client(conn, "Previous year")
+        for code, day, owner in (
+            ("jackside_20260102", "2026-01-02", player),
+            ("jackside_20260812", "2026-08-12", player),
+            ("jackside_20251231", "2025-12-31", old_player),
+        ):
+            _daily_campaign(conn, code)
+            conn.execute(
+                "INSERT INTO jackside_issues(issue_date,title,campaign_code) VALUES (?,?,?)",
+                (day, code, code),
+            )
+            _submission(
+                conn,
+                client_id=owner,
+                code=code,
+                created_at=f"{day}T15:20:00+00:00",
+                correct=7,
+            )
+
+        payload = calendar_jackside_rating_payload(
+            conn,
+            client_id=player,
+            period="year",
+            as_of=datetime(2026, 8, 12, 12, 0, tzinfo=timezone.utc),
+        )
+
+        assert payload["label"] == "2026"
+        assert payload["source_rows"] == 2
+        assert payload["stored_source_rows"] == 3
+        assert [int(row["client_id"]) for row in payload["rows"]] == [player]
+        assert int(payload["rows"][0]["completed_count"]) == 2
+
+
+def test_title_collection_hides_duplicate_visible_names_without_deleting_history() -> None:
+    payload = {
+        "items": [
+            {"kind": "title", "state": "active", "name": "Финалист"},
+            {"kind": "achievement", "state": "active", "name": "Финалист"},
+            {"kind": "title", "state": "locked", "name": "Легенда JACKSIDE"},
+        ],
+        "active_count": 2,
+        "total_count": 3,
+    }
+    result = dedupe_title_collection(payload)
+    assert [item["name"] for item in result["items"]] == ["Финалист", "Легенда JACKSIDE"]
+    assert result["active_count"] == 1
+    assert result["total_count"] == 2
+
+
 def test_prelaunch_ui_hotfix_keeps_campaign_save_in_place() -> None:
     script = (ROOT / "app/static/js/prelaunch-admin.js").read_text(encoding="utf-8")
     assert "form.campaign-edit" in script
@@ -149,6 +287,14 @@ def test_prelaunch_ui_hotfix_uses_exact_rating_client_ids() -> None:
     assert "client_ids" in script
     assert "`/players/${clientId}`" in script
     assert "MutationObserver" in script
+
+
+def test_prelaunch_ui_hotfix_uses_calendar_month_and_year_ui() -> None:
+    script = (ROOT / "app/static/js/prelaunch-member.js").read_text(encoding="utf-8")
+    assert "/api/account/jackside-calendar-rating" in script
+    assert "yearTab.textContent = 'Год'" in script
+    assert "Календарный месяц" in script
+    assert "Календарный год" in script
 
 
 def test_prelaunch_ui_hotfix_compacts_home_quiz_card() -> None:
