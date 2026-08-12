@@ -29,6 +29,7 @@
       <div class="hj-hero-actions">
         <a class="primary button" href="{{ request.app.state.settings.quiz_public_base_url.rstrip('/') }}/quiz?campaign={{ campaign.code }}" target="hj-quiz-preview" rel="noopener noreferrer">Посмотреть квиз ↗</a>
         <a class="button" href="/master?tab=campaigns">Настройки</a>
+        <a class="button" href="/api/master/quiz-campaigns/{{ campaign.id }}/export.txt">Скачать TXT</a>
         <form action="/api/master/quiz-campaigns/{{ campaign.id }}/publish-version" method="post" onsubmit="return confirm('Опубликовать новую версию? Все участники смогут пройти квиз заново, а незавершённые попытки будут закрыты.');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="button" type="submit">Опубликовать новую версию</button>
