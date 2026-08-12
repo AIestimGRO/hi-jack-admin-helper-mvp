@@ -1,5 +1,5 @@
 -r requirements.txt
-pytest==9.0.3
+pytest==8.4.2
 httpx==0.28.1
 ruff==0.12.7
 playwright==1.54.0
