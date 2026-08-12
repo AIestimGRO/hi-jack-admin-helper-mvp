@@ -157,6 +157,20 @@
     });
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', centralizeCampaignEconomy, { once: true });
-  else centralizeCampaignEconomy();
+  const keepQuizManagerScoped = () => {
+    if (document.body.dataset.adminAccessRole !== 'quiz_manager') return;
+    if (!location.pathname.startsWith('/master/quiz-builder/')) return;
+    document.querySelectorAll('a[href="/master?tab=campaigns"]').forEach((link) => {
+      link.href = '/staff/quizzes';
+      if (link.textContent.trim() === 'Настройки') link.textContent = 'К списку квизов';
+    });
+  };
+
+  const run = () => {
+    centralizeCampaignEconomy();
+    keepQuizManagerScoped();
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
+  else run();
 })();
