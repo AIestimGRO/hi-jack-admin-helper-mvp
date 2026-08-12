@@ -15,7 +15,14 @@
   .hj-rating-import-row small{display:block;margin-top:5px;color:rgba(255,255,255,.48)}
   .hj-rating-conditions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .hj-rating-conditions span{padding:9px 10px;border-radius:11px;background:rgba(255,255,255,.035);font-size:11px}
-  @media(max-width:760px){.hj-rating-admin-grid{grid-template-columns:1fr}.hj-rating-columns,.hj-rating-conditions{grid-template-columns:1fr}.hj-rating-import-row{grid-template-columns:1fr}}
+  .hj-rating-transfer{margin-top:18px;padding:18px;display:grid;gap:12px;border-color:rgba(49,219,197,.18)}
+  .hj-rating-transfer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .hj-rating-transfer-head h2{margin:2px 0 5px}.hj-rating-transfer-head p{margin:0}
+  .hj-rating-transfer form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:10px;align-items:end}
+  .hj-rating-transfer label{display:grid;gap:6px;font-size:12px;color:var(--muted,#99a4a2)}
+  .hj-rating-transfer input{min-height:44px}
+  .hj-rating-transfer-note{padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);font-size:11px;color:var(--muted,#99a4a2)}
+  @media(max-width:760px){.hj-rating-admin-grid{grid-template-columns:1fr}.hj-rating-columns,.hj-rating-conditions{grid-template-columns:1fr}.hj-rating-import-row{grid-template-columns:1fr}.hj-rating-transfer form{grid-template-columns:1fr}.hj-rating-transfer-head{display:grid}}
 </style>
 {% endblock %}
 {% block content %}
@@ -26,6 +33,7 @@
     <p class="muted">Каждая загрузка — отдельный турнир. Игроки связываются с личными кабинетами по номеру телефона.</p>
   </div>
   <div class="admin-actions">
+    <a class="button" href="/master/member-accounts">Учётные данные</a>
     <a class="button" href="/master?tab=engagement">Звания</a>
     <a class="button" href="/master/engagement-icons">Иконки</a>
   </div>
@@ -65,6 +73,25 @@
     </div>
   </section>
 </div>
+
+<section class="card hj-rating-transfer">
+  <div class="hj-rating-transfer-head">
+    <div>
+      <p class="eyebrow">Исправление привязки</p>
+      <h2>Перенести рейтинг HI JACK</h2>
+      <p class="muted">Для ситуации, когда старый ЛК удалён, а тот же игрок зарегистрировал новый аккаунт.</p>
+    </div>
+    <a class="button" href="/master/member-accounts?view=archive">Найти старый Client ID</a>
+  </div>
+  <div class="hj-rating-transfer-note">Переносятся только строки рейтинга HI JACK и исходного общего рейтинга. JACKCOIN, JACKSIDE, награды, рефералы, логины и персональные данные не меняются. Если у нового профиля уже есть данные в тех же турнирах, сервер остановит перенос.</div>
+  <form action="/api/master/hijack-rating/transfer-owner" method="post" onsubmit="return confirm('Перенести весь рейтинг HI JACK со старого Client ID на новый?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Старый Client ID<input name="source_client_id" type="number" min="1" inputmode="numeric" required></label>
+    <label>Новый Client ID<input name="target_client_id" type="number" min="1" inputmode="numeric" required></label>
+    <label>Подтверждение<input name="confirmation" autocomplete="off" placeholder="ПЕРЕНЕСТИ РЕЙТИНГ" required></label>
+    <button class="primary" type="submit">Перенести</button>
+  </form>
+</section>
 
 <section style="margin-top:24px">
   <div class="section-head"><h2>История загрузок</h2><span class="muted">{{ imports|length }}</span></div>
