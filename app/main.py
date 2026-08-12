@@ -15,6 +15,7 @@ from app.main_impl import *  # noqa: F403
 from app.main_impl import app as _base_app
 from app.main_impl import create_app as _base_create_app
 from app.member_account_management import install_member_account_management
+from app.prelaunch_experience import install_prelaunch_experience
 from app.product_shell import install_product_shell
 from app.profile_experience import install_profile_experience
 from app.public_rating_consent_policy import install_public_rating_consent_policy
@@ -54,6 +55,7 @@ def _install_extensions(application):
     application = install_hijack_rating_baseline(application)
     application = install_hijack_rating_paging(application)
     application = install_profile_experience(application)
+    application = install_prelaunch_experience(application)
     return _session_middleware_outermost(application)
 
 
