@@ -112,6 +112,8 @@ def test_quiz_manager_can_run_content_and_rewards_but_not_master_system() -> Non
         ("/master/club-links", "GET"),
         ("/master/engagement-icons", "GET"),
         ("/clients/import", "GET"),
+        ("/api/clients/42/comment", "POST"),
+        ("/api/clients/42/quiz/test/extra-attempt", "POST"),
         ("/api/master/admins", "POST"),
         ("/api/master/hijack-rating/transfer-owner", "POST"),
         ("/api/master/economy/update", "POST"),
@@ -155,6 +157,6 @@ def test_scoped_navigation_does_not_send_manager_to_generic_master() -> None:
     assert "href=\"/staff-users\"" in base
     assert "href=\"/staff-access\"" in base
     assert "access_role == 'quiz_manager'" in dashboard
-    assert "access_role != 'bartender'" in client
+    assert "{% if access_role == 'master' %}" in client
     assert "document.body.dataset.adminAccessRole !== 'quiz_manager'" in script
     assert "link.href = '/staff/quizzes'" in script
