@@ -1,6 +1,7 @@
 from datetime import date, datetime, timezone
 
 from app.db import connect, init_db, transaction
+from app.prelaunch_economy_compat import ensure_prelaunch_economy_compat
 from app.prelaunch_experience import ECONOMY_DEFAULTS, ensure_prelaunch_schema
 from app.services.hijack_rating import ensure_hijack_rating_schema
 from app.services.jackside_issues import create_issue
@@ -21,6 +22,7 @@ def test_prelaunch_economy_schema_seeds_launch_defaults(tmp_path) -> None:
     with transaction(db_path) as conn:
         ensure_hijack_rating_schema(conn)
         ensure_prelaunch_schema(conn)
+        ensure_prelaunch_economy_compat(conn)
         amounts = {
             row["setting_key"]: int(row["amount"])
             for row in conn.execute(
@@ -45,6 +47,7 @@ def test_new_jackside_issue_snapshots_economy_and_does_not_reprice(tmp_path) -> 
     init_db(db_path)
     with transaction(db_path) as conn:
         ensure_prelaunch_schema(conn)
+        ensure_prelaunch_economy_compat(conn)
         issue = create_issue(
             conn,
             issue_date_value=date(2026, 8, 20),
@@ -83,11 +86,34 @@ def test_new_jackside_issue_snapshots_economy_and_does_not_reprice(tmp_path) -> 
         assert snapshot_after == 10
 
 
+def test_legacy_daily_campaign_is_not_repriced_by_launch_economy(tmp_path) -> None:
+    db_path = tmp_path / "legacy-daily.sqlite3"
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        ensure_prelaunch_schema(conn)
+        ensure_prelaunch_economy_compat(conn)
+        conn.execute(
+            """
+            INSERT INTO quiz_campaigns(
+                code,title,campaign_type,jackcoin_per_correct,
+                jackcoin_completion_bonus,jackcoin_perfect_bonus
+            ) VALUES ('daily_test','Legacy daily','daily_414',5,10,20)
+            """
+        )
+        row = conn.execute(
+            "SELECT * FROM quiz_campaigns WHERE code='daily_test'"
+        ).fetchone()
+        assert int(row["jackcoin_per_correct"]) == 5
+        assert int(row["jackcoin_completion_bonus"]) == 10
+        assert int(row["jackcoin_perfect_bonus"]) == 20
+
+
 def test_launch_streak_milestone_is_separate_and_idempotent(tmp_path) -> None:
     db_path = tmp_path / "streak.sqlite3"
     init_db(db_path)
     with transaction(db_path) as conn:
         ensure_prelaunch_schema(conn)
+        ensure_prelaunch_economy_compat(conn)
         client_id = _client(conn)
         create_issue(
             conn,
@@ -135,6 +161,7 @@ def test_hijack_regular_participation_awards_50_and_final_awards_zero(tmp_path) 
     with transaction(db_path) as conn:
         ensure_hijack_rating_schema(conn)
         ensure_prelaunch_schema(conn)
+        ensure_prelaunch_economy_compat(conn)
         regular_client = _client(conn, "Regular")
         final_client = _client(conn, "Final")
 
