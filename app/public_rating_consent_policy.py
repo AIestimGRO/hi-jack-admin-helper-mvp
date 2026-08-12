@@ -18,6 +18,7 @@ PUBLIC_RATING_CATEGORY_KEYS = (
     "place",
     "achievements",
     "titles",
+    "participation_stats",
 )
 
 
@@ -37,6 +38,7 @@ def install_public_rating_consent_policy(app: FastAPI) -> FastAPI:
         place: bool = Form(False),
         achievements: bool = Form(False),
         titles: bool = Form(False),
+        participation_stats: bool = Form(False),
         csrf_token: str = Form(...),
     ):
         member = _current_member(request, required=True)
@@ -48,6 +50,7 @@ def install_public_rating_consent_policy(app: FastAPI) -> FastAPI:
             "place": place,
             "achievements": achievements,
             "titles": titles,
+            "participation_stats": participation_stats,
         }
         with transaction(settings.db_path) as conn:
             _record_rating_consent(
