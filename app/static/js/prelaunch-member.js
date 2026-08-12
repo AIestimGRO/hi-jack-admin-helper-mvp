@@ -73,35 +73,53 @@
     }
   };
 
-  const linkLeaderboardNames = async () => {
+  let ratingLinkSerial = 0;
+  const linkLeaderboardRows = async () => {
     if (!location.pathname.startsWith('/account')) return;
     const params = new URLSearchParams(location.search);
     if ((params.get('tab') || '') !== 'rating') return;
-    let payload;
-    try { payload = await json('/api/account/player-directory'); } catch (_) { return; }
-    const players = Array.isArray(payload.players) ? payload.players : [];
-    const grouped = new Map();
-    players.forEach((player) => {
-      const key = String(player.display_name || '').trim().toLocaleLowerCase('ru-RU');
-      if (!key) return;
-      const list = grouped.get(key) || [];
-      list.push(player);
-      grouped.set(key, list);
-    });
 
-    document.querySelectorAll('.leaderboard-player strong').forEach((strong) => {
-      if (strong.closest('a')) return;
-      const key = String(strong.textContent || '').trim().toLocaleLowerCase('ru-RU');
-      const matches = grouped.get(key) || [];
-      if (matches.length !== 1) return;
+    const requestedSection = params.get('section') || 'month';
+    const isClub = requestedSection === 'club';
+    let rows;
+    let section;
+    let period = '';
+
+    if (isClub) {
+      rows = [...document.querySelectorAll('.hijack-rating-list article')];
+      if (!rows.length) rows = [...document.querySelectorAll('.club-leaderboard:not(.jackside-leaderboard) article')];
+      section = 'club';
+      period = document.querySelector('[data-hijack-period].active')?.dataset.hijackPeriod || 'global';
+    } else {
+      rows = [...document.querySelectorAll('.jackside-leaderboard article')];
+      section = ['today', 'month', 'all'].includes(requestedSection) ? requestedSection : 'month';
+    }
+    if (!rows.length) return;
+
+    const serial = ++ratingLinkSerial;
+    const limit = Math.min(rows.length, 100);
+    const query = new URLSearchParams({ section, offset: '0', limit: String(limit) });
+    if (isClub) query.set('period', period);
+
+    let payload;
+    try { payload = await json(`/api/account/rating-profile-links?${query}`); } catch (_) { return; }
+    if (serial !== ratingLinkSerial) return;
+    const clientIds = Array.isArray(payload.client_ids) ? payload.client_ids : [];
+
+    rows.slice(0, clientIds.length).forEach((article, index) => {
+      const strong = article.querySelector('.leaderboard-player strong');
+      if (!strong || strong.closest('a.player-profile-link')) return;
+      const clientId = Number(clientIds[index]);
+      if (!Number.isInteger(clientId) || clientId <= 0) return;
       const link = document.createElement('a');
       link.className = 'player-profile-link';
-      link.href = `/players/${matches[0].client_id}`;
+      link.href = `/players/${clientId}`;
+      link.setAttribute('aria-label', `Открыть профиль ${String(strong.textContent || 'игрока').trim()}`);
       strong.replaceWith(link);
       link.appendChild(strong);
     });
 
-    const head = document.querySelector('.jackside-rating-section .app-section-head, .club-rating-summary');
+    const head = document.querySelector('.jackside-rating-section .app-section-head, .club-rating-summary, .hijack-rating-head');
     if (head && !document.querySelector('.players-directory-shortcut')) {
       const shortcut = document.createElement('a');
       shortcut.className = 'players-directory-shortcut';
@@ -111,15 +129,28 @@
     }
   };
 
+  const observeRatingChanges = () => {
+    const page = document.querySelector('.member-app-page');
+    const params = new URLSearchParams(location.search);
+    if (!page || (params.get('tab') || '') !== 'rating') return;
+    let timer = 0;
+    const observer = new MutationObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(linkLeaderboardRows, 80);
+    });
+    observer.observe(page, { subtree: true, childList: true });
+  };
+
   const run = () => {
     ensureHotfixStyle();
     compactFeaturedJackside();
     injectSocialHub();
-    linkLeaderboardNames();
+    linkLeaderboardRows();
+    observeRatingChanges();
     window.setTimeout(() => {
       compactFeaturedJackside();
       injectSocialHub();
-      linkLeaderboardNames();
+      linkLeaderboardRows();
     }, 650);
   };
 
