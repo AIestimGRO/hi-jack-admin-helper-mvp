@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
