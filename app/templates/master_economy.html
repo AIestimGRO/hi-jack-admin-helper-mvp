@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Экономика JACKCOIN — Hi Jack Club{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/prelaunch.css') }}?v={{ asset_version }}">{% endblock %}
+{% block content %}
+<section class="prelaunch-page">
+  <div class="page-head prelaunch-head">
+    <div><p class="eyebrow">Master · экономика клуба</p><h1>Экономика JACKCOIN</h1><p class="muted">Здесь задаются дефолты для новых событий. Уже созданные JACKSIDE и импортированные турниры сохраняют свой snapshot и не пересчитываются задним числом.</p></div>
+    <a class="button" href="/master/jackside-issues">Выпуски JACKSIDE</a>
+  </div>
+
+  {% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+  <section class="prelaunch-summary-grid">
+    <article class="prelaunch-summary"><small>10/10 основная игра</small><strong>{{ (rows|selectattr('setting_key','equalto','jackside_completion')|map(attribute='amount')|first|default(0)) + 10 * (rows|selectattr('setting_key','equalto','jackside_correct')|map(attribute='amount')|first|default(0)) + (rows|selectattr('setting_key','equalto','jackside_perfect')|map(attribute='amount')|first|default(0)) }} JC</strong><span>без финала и серии</span></article>
+    <article class="prelaunch-summary"><small>Последний верный ответ + победа</small><strong>{{ (rows|selectattr('setting_key','equalto','jackside_final_correct')|map(attribute='amount')|first|default(0)) + (rows|selectattr('setting_key','equalto','jackside_final_win')|map(attribute='amount')|first|default(0)) }} JC</strong><span>сейчас 50 + 414</span></article>
+    <article class="prelaunch-summary"><small>Следующий выпуск</small><strong>{{ next_issue_date[8:10] }}.{{ next_issue_date[5:7] }}</strong><span>18:14 · Europe/Moscow</span></article>
+  </section>
+
+  <form class="prelaunch-economy-form" method="post" action="/api/master/economy/update">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% set state = namespace(section='') %}
+    {% for row in rows %}
+      {% if row.section != state.section %}
+        {% if state.section %}</div></section>{% endif %}
+        {% set state.section = row.section %}
+        <section class="card prelaunch-economy-section">
+          <div class="section-head"><h2>{{ row.section }}</h2></div>
+          <div class="prelaunch-setting-grid">
+      {% endif %}
+      <label class="prelaunch-setting">
+        <span>{{ row.title }}</span>
+        <div><input type="number" min="0" max="1000000" name="{{ row.setting_key }}" value="{{ row.amount }}" required><b>JC</b></div>
+        <small>{{ row.setting_key }}</small>
+      </label>
+      {% if loop.last %}</div></section>{% endif %}
+    {% endfor %}
+    <div class="prelaunch-sticky-actions"><button class="primary" type="submit">Сохранить экономику</button><span>Изменения применяются только к новым snapshots.</span></div>
+  </form>
+
+  <section class="card prelaunch-quick-issue">
+    <div><p class="eyebrow">Ежедневная работа</p><h2>Создать следующий JACKSIDE</h2><p class="muted">Экономика подставится автоматически. Дополнительный приз JC — это приз дня сверх базовых 414 JC за победу.</p></div>
+    <form method="post" action="/api/master/jackside-issues/create-default">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Дата<input type="date" name="issue_date" value="{{ next_issue_date }}" required></label>
+      <label>Старт<input type="datetime-local" name="starts_at" value="{{ next_issue_start }}" required></label>
+      <label>Название <small>можно пустым</small><input name="title" maxlength="100" placeholder="JACKSIDE"></label>
+      <label>Доп. приз JC <small>0 = без доп. JC-приза</small><input type="number" name="prize_jackcoin" min="0" max="1000000" value="0"></label>
+      <button class="primary" type="submit">Создать draft</button>
+    </form>
+  </section>
+
+  <details class="card prelaunch-audit">
+    <summary>История изменений экономики · последние {{ audits|length }}</summary>
+    <div class="table-wrap"><table><thead><tr><th>Когда</th><th>Настройка</th><th>Было</th><th>Стало</th><th>Кто</th></tr></thead><tbody>
+      {% for row in audits %}<tr><td>{{ row.created_at }}</td><td><code>{{ row.setting_key }}</code></td><td>{{ row.old_amount }} JC</td><td>{{ row.new_amount }} JC</td><td>{{ row.admin_name or '—' }}</td></tr>{% else %}<tr><td colspan="5">Изменений пока нет</td></tr>{% endfor %}
+    </tbody></table></div>
+  </details>
+</section>
+{% endblock %}
