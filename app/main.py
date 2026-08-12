@@ -22,6 +22,7 @@ from app.prelaunch_profile_sharing import install_prelaunch_profile_sharing
 from app.product_shell import install_product_shell
 from app.profile_experience import install_profile_experience
 from app.public_rating_consent_policy import install_public_rating_consent_policy
+from app.pwa import install_pwa
 from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
 
@@ -41,6 +42,7 @@ def _session_middleware_outermost(application):
 
 def _install_extensions(application):
     application = install_product_shell(application)
+    application = install_pwa(application)
     application = install_account_security(application)
     application = install_member_account_management(application)
     application = install_admin_account_lifecycle(application)
