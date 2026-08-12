@@ -91,8 +91,16 @@ def _is_shared_path(path: str) -> bool:
         path.startswith("/static/")
         or path.startswith("/quiz-media/")
         or path.startswith("/reward-media/")
+        or path.startswith("/pwa/")
         or path.startswith("/health")
-        or path in {"/login", "/logout"}
+        or path
+        in {
+            "/login",
+            "/logout",
+            "/manifest.webmanifest",
+            "/favicon.ico",
+            "/service-worker.js",
+        }
     )
 
 
