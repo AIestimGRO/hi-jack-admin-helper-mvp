@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Рефералы — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Мастер-админ</p>
+    <h1>Реферальные связи JACKSIDE</h1>
+    <p class="muted">Ручное восстановление потерянной связи после регистрации. История JACKCOIN и игр не переносится и не переписывается.</p>
+  </div>
+</div>
+
+{% if ok %}<div class="notice success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+
+<section class="card">
+  <h2>Привязать приглашённого</h2>
+  <p class="muted">Используйте только когда точно знаете, кто пригласил пользователя. Если у приглашённого уже есть другой реферер, операция будет заблокирована.</p>
+  <form action="/api/master/referrals/link" method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Client ID пригласившего
+      <input name="referrer_client_id" type="number" min="1" required>
+    </label>
+    <label>Client ID приглашённого
+      <input name="invited_client_id" type="number" min="1" required>
+    </label>
+    <label>Подтверждение
+      <input name="confirmation" placeholder="ПРИВЯЗАТЬ" required autocomplete="off">
+    </label>
+    <div class="form-actions"><button class="primary" type="submit">Зафиксировать связь</button></div>
+  </form>
+</section>
+
+<section class="section-head"><h2>Последние связи</h2></section>
+<div class="card table-wrap">
+  {% if rows %}
+  <table class="admin-card-table">
+    <thead><tr><th>Создано</th><th>Пригласивший</th><th>Приглашённый</th><th>Прогресс</th><th>Статус</th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td data-label="Создано">{{ row.created_at }}</td>
+        <td data-label="Пригласивший"><a href="/clients/{{ row.referrer_client_id }}">{{ row.referrer_name or ('Client #' ~ row.referrer_client_id) }}</a><small>#{{ row.referrer_client_id }}</small></td>
+        <td data-label="Приглашённый"><a href="/clients/{{ row.invited_client_id }}">{{ row.invited_name or ('Client #' ~ row.invited_client_id) }}</a><small>#{{ row.invited_client_id }}</small></td>
+        <td data-label="Прогресс">{{ row.distinct_completed_days }}/3</td>
+        <td data-label="Статус">{{ 'Квалифицирован' if row.qualified_at else 'В процессе' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Реферальных связей пока нет.</div>{% endif %}
+</div>
+{% endblock %}
