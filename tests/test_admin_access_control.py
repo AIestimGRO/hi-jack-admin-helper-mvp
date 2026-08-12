@@ -61,6 +61,10 @@ def test_bartender_allowlist_is_operational_only() -> None:
         ("/api/preferences/set-discount", "POST"),
         ("/staff/redeem", "GET"),
         ("/staff/redeem", "POST"),
+        ("/manifest.webmanifest", "GET"),
+        ("/favicon.ico", "GET"),
+        ("/service-worker.js", "GET"),
+        ("/pwa/icon-192.png", "GET"),
     ]
     denied = [
         ("/", "GET"),
