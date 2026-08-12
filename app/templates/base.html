@@ -62,6 +62,7 @@
       {% if is_master %}
       <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/member-accounts') else '' }}" href="/master/member-accounts"><span>ID</span><div><strong>Учётные данные</strong><small>Регистрация, контакты и доступы</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'engagement' else '' }}" href="/master?tab=engagement"><span>♛</span><div><strong>Звания и рефералы</strong><small>Titles, достижения и реферальная программа</small></div></a>
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/referrals') else '' }}" href="/master/referrals"><span>↗</span><div><strong>Реферальные связи</strong><small>Проверка и ручное восстановление</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/engagement-icons') else '' }}" href="/master/engagement-icons"><span>◇</span><div><strong>Иконки коллекции</strong><small>Арт званий и достижений</small></div></a>
       {% else %}
       <a class="admin-menu-master {{ 'active' if current_path.startswith('/staff-users') else '' }}" href="/staff-users"><span>ID</span><div><strong>Поддержка пользователей</strong><small>Поиск и сброс пароля ЛК</small></div></a>
