@@ -1,0 +1,62 @@
+{% extends "member_base.html" %}
+{% block title %}Профиль игрока — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="prelaunch-member-page public-player-page">
+  {% if profile.restricted %}
+  <div class="public-profile-restricted member-card">
+    <div class="public-profile-avatar placeholder">HJ</div>
+    <div><p class="member-eyebrow">Профиль игрока</p><h1>Игрок ограничил просмотр профиля</h1><p class="member-muted">Личные данные и игровая статистика доступны только в объёме добровольно разрешённых категорий.</p></div>
+  </div>
+  {% else %}
+  <header class="public-profile-hero">
+    <div class="public-profile-avatar {{ 'has-image' if profile.avatar_path else 'placeholder' }}">{% if profile.avatar_path %}<img src="{{ profile.avatar_path }}" alt="Аватар {{ profile.display_name }}">{% else %}HJ{% endif %}</div>
+    <div><p class="member-eyebrow">Игрок Hi, Jack</p><h1>{{ profile.display_name }}</h1>{% if profile.selected_title %}<p class="public-profile-title">{{ profile.selected_title.icon or '★' }} {{ profile.selected_title.name }}</p>{% endif %}</div>
+  </header>
+
+  {% if profile.categories.result or profile.categories.participation_stats %}
+  <section class="public-profile-stats">
+    <div class="app-section-head"><div><p class="member-eyebrow">JACKSIDE</p><h2>Игра в цифрах</h2></div></div>
+    <div class="public-stat-grid">
+      <article><small>Игр</small><strong>{{ profile.jackside.games }}</strong></article>
+      <article><small>Точность</small><strong>{{ profile.jackside.accuracy }}%</strong></article>
+      <article><small>10/10</small><strong>{{ profile.jackside.perfect }}</strong></article>
+      <article><small>Финалов</small><strong>{{ profile.jackside.finals }}</strong></article>
+      <article><small>Побед</small><strong>{{ profile.jackside.wins }}</strong></article>
+      <article><small>Лучшая серия</small><strong>{{ profile.jackside.best_streak }}</strong></article>
+    </div>
+  </section>
+
+  <section class="public-profile-stats">
+    <div class="app-section-head"><div><p class="member-eyebrow">HI JACK!</p><h2>Турнирная статистика</h2></div></div>
+    <div class="public-stat-grid three">
+      <article><small>Турниров</small><strong>{{ profile.hijack.tournaments }}</strong></article>
+      <article><small>Рейтинг</small><strong>{{ profile.hijack.rating_points }}</strong></article>
+      <article><small>Kills</small><strong>{{ profile.hijack.kills }}</strong></article>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if profile.titles or profile.achievements %}
+  <section class="public-collection-section">
+    <div class="app-section-head"><div><p class="member-eyebrow">Hi, Titles!</p><h2>Звания и достижения</h2></div></div>
+    <div class="public-emblem-grid">
+      {% for item in profile.titles %}<article><span class="{{ 'has-art' if item.icon_path else '' }}">{% if item.icon_path %}<img src="{{ item.icon_path }}" alt="">{% else %}{{ item.icon or '★' }}{% endif %}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }}</small></div></article>{% endfor %}
+      {% for item in profile.achievements %}<article><span class="{{ 'has-art' if item.icon_path else '' }}">{% if item.icon_path %}<img src="{{ item.icon_path }}" alt="">{% else %}{{ item.icon or '◆' }}{% endif %}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }}</small></div></article>{% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if profile.categories.participation_stats %}
+  <section class="public-history-section">
+    <div class="app-section-head"><div><p class="member-eyebrow">История</p><h2>Квизы и турниры</h2></div><span>{{ profile.history|length }}</span></div>
+    <div class="public-history-list">
+      {% for item in profile.history %}
+      <article><span class="history-kind {{ item.kind }}">{{ '4:14' if item.kind == 'jackside' else 'HJ' }}</span><div><strong>{{ item.title }}</strong><small>{{ item.date }}</small></div><b>{{ item.result }}</b></article>
+      {% else %}<div class="member-card smart-empty"><span>HJ</span><div><h3>История пока пуста</h3></div></div>{% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  {% endif %}
+  <div class="public-profile-actions"><a class="member-secondary" href="javascript:history.back()">Назад</a><a class="member-secondary" href="/players">Игроки клуба</a></div>
+</section>
+{% endblock %}
