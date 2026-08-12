@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <title>{% block title %}Hi, Jack Club{% endblock %}</title>
+  <meta name="theme-color" content="#07110f">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-extra.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/member-dashboard.css') }}?v={{ asset_version }}">
@@ -27,7 +31,7 @@
   {% if member %}
   <nav class="member-bottom-nav" aria-label="Основная навигация" data-legacy-nav="Квизы Хранилище">
     <a class="{{ 'active' if current_tab|default('home') == 'home' else '' }}" href="/account">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.1a1.1 1.1 0 0 1-1.1 1.1H15v-6H9v6H4.1A1.1 1.1 0 0 1 3 19.9Z"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.1a1.1 1.1 0 0 1-1.1 1.1H15v-6H9v6H4.1A1.1 1.1 0 0 1 3 19.9V10.8Z"/></svg>
       <span>Главная</span>
     </a>
     <a class="{{ 'active' if current_tab|default('') == 'quizzes' else '' }}" href="/account?tab=quizzes">
@@ -230,5 +234,6 @@
   <script src="{{ url_for('static', path='/js/prelaunch-member.js') }}?v={{ asset_version }}" defer></script>
   <script type="module" src="{{ url_for('static', path='/js/reward-animations.js') }}?v={{ asset_version }}"></script>
   <script src="{{ url_for('static', path='/js/reward-stickers.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/pwa-install.js') }}?v={{ asset_version }}" defer></script>
 </body>
 </html>
