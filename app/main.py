@@ -6,6 +6,7 @@ from app.account_security import install_account_security
 from app.admin_access_control import install_admin_access_control
 from app.admin_account_lifecycle import install_admin_account_lifecycle
 from app.admin_telegram_unlink import install_admin_telegram_unlink
+from app.club_links_hotfix import install_club_links_hotfix
 from app.db import init_db
 from app.hijack_extensions import install_hijack_extensions
 from app.hijack_rating_baseline import install_hijack_rating_baseline
@@ -70,6 +71,7 @@ def _install_extensions(application):
     application = install_rating_profile_links(application)
     application = install_profile_experience(application)
     application = install_prelaunch_experience(application)
+    application = install_club_links_hotfix(application)
     application = install_prelaunch_economy_compat(application)
     application = install_prelaunch_profile_sharing(application)
     application = install_prelaunch_profile_privacy(application)
