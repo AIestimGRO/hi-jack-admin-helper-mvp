@@ -20,15 +20,16 @@
 {% set access_role = request.session.get('admin_access_role') or ('master' if admin_role == 'master_admin' else 'bartender') %}
 {% set can_content = access_role in ['master', 'quiz_manager'] %}
 {% set is_master = access_role == 'master' %}
+{% set is_manager = access_role == 'quiz_manager' %}
 {% set is_bartender = access_role == 'bartender' %}
 {% set admin_section = 'home' %}
 {% if current_path.startswith('/admin/vault') or current_path.startswith('/staff/redeem') %}{% set admin_section = 'vault' %}
-{% elif current_path.startswith('/admin/quiz') or current_path.startswith('/master/quiz') or current_path.startswith('/master/jackside') %}{% set admin_section = 'quiz' %}
+{% elif current_path.startswith('/admin/quiz') or current_path.startswith('/master/quiz') or current_path.startswith('/master/jackside') or current_path.startswith('/staff/quizzes') %}{% set admin_section = 'quiz' %}
 {% elif current_path.startswith('/clients') %}{% set admin_section = 'clients' %}
 {% elif current_path.startswith('/master') or current_path.startswith('/staff-') %}{% set admin_section = 'master' %}
 {% elif current_path.startswith('/logs') or current_path.startswith('/admin/rewards') %}{% set admin_section = 'logs' %}
 {% endif %}
-<body class="admin-app-body admin-section-{{ admin_section }}">
+<body class="admin-app-body admin-section-{{ admin_section }}" data-admin-access-role="{{ access_role }}">
   {% if request.session.get('authenticated') %}
   <header class="topbar">
     <a class="brand" href="{{ '/clients' if is_bartender else '/' }}"><img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt=""><span><strong>Hi, Jack!</strong><small>Club Helper</small></span></a>
@@ -48,21 +49,30 @@
       {% if can_content %}
       <span class="admin-nav-group-label">Игра</span>
       <a class="{{ 'active' if current_path.startswith('/admin/quiz') else '' }}" href="/admin/quiz-results"><span>?</span><div><strong>Результаты квизов</strong><small>Ответы и статистика</small></div></a>
+      {% if is_master %}
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'campaigns' else '' }}" href="/master?tab=campaigns"><span>4:14</span><div><strong>Квизы и JACKSIDE</strong><small>Кампании и настройки игры</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'analytics' else '' }}" href="/master?tab=analytics"><span>Σ</span><div><strong>Аналитика JACKSIDE</strong><small>Показатели игры</small></div></a>
+      {% else %}
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/staff/quizzes') else '' }}" href="/staff/quizzes"><span>4:14</span><div><strong>Квизы и JACKSIDE</strong><small>Создание и конструктор вопросов</small></div></a>
+      {% endif %}
       <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/jackside-issues') else '' }}" href="/master/jackside-issues"><span>4:14</span><div><strong>Выпуски JACKSIDE</strong><small>Расписание и состояние игр</small></div></a>
       {% if is_master %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/master/hijack-rating') else '' }}" href="/master/hijack-rating"><span>HJ</span><div><strong>Рейтинг HI, JACK!</strong><small>Турниры и Excel-загрузки</small></div></a>{% endif %}
 
       <span class="admin-nav-group-label">Игроки</span>
-      {% if is_master %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/master/member-accounts') else '' }}" href="/master/member-accounts"><span>ID</span><div><strong>Учётные данные</strong><small>Регистрация, контакты и доступы</small></div></a>{% endif %}
-      {% if access_role == 'quiz_manager' %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/staff-users') else '' }}" href="/staff-users"><span>ID</span><div><strong>Поддержка пользователей</strong><small>Поиск и сброс пароля ЛК</small></div></a>{% endif %}
+      {% if is_master %}
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/member-accounts') else '' }}" href="/master/member-accounts"><span>ID</span><div><strong>Учётные данные</strong><small>Регистрация, контакты и доступы</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'engagement' else '' }}" href="/master?tab=engagement"><span>♛</span><div><strong>Звания и рефералы</strong><small>Titles, достижения и реферальная программа</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/engagement-icons') else '' }}" href="/master/engagement-icons"><span>◇</span><div><strong>Иконки коллекции</strong><small>Арт званий и достижений</small></div></a>
+      {% else %}
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/staff-users') else '' }}" href="/staff-users"><span>ID</span><div><strong>Поддержка пользователей</strong><small>Поиск и сброс пароля ЛК</small></div></a>
+      {% endif %}
 
       <span class="admin-nav-group-label">Награды</span>
-      {% if is_master %}<a class="admin-menu-master {{ 'active' if current_path.startswith('/master/economy') else '' }}" href="/master/economy"><span>JC</span><div><strong>Экономика JACKCOIN</strong><small>Все суммы начислений и рефералы</small></div></a>{% endif %}
+      {% if is_master %}
+      <a class="admin-menu-master {{ 'active' if current_path.startswith('/master/economy') else '' }}" href="/master/economy"><span>JC</span><div><strong>Экономика JACKCOIN</strong><small>Все суммы начислений и рефералы</small></div></a>
       <a class="admin-menu-master {{ 'active' if current_path == '/master' and master_tab == 'preferences' else '' }}" href="/master?tab=preferences"><span>+</span><div><strong>Преференции</strong><small>Типы клубных бонусов</small></div></a>
-      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Карты и награды</small></div></a>
+      {% endif %}
+      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Каталог, карты и награды</small></div></a>
       <a class="{{ 'active' if current_path.startswith('/admin/rewards') else '' }}" href="/admin/rewards"><span>#</span><div><strong>Коды квизов</strong><small>Награды кампаний</small></div></a>
 
       <span class="admin-nav-group-label">Команда и система</span>
@@ -84,7 +94,7 @@
   {% if request.session.get('authenticated') %}
   <nav class="admin-bottom-nav" aria-label="Быстрые разделы">
     <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="/clients"><span>◉</span><small>Клиенты</small></a>
-    {% if can_content %}<a class="{{ 'active' if admin_section == 'quiz' else '' }}" href="/admin/quiz-results"><span>?</span><small>Квизы</small></a>{% endif %}
+    {% if can_content %}<a class="{{ 'active' if admin_section == 'quiz' else '' }}" href="{{ '/master?tab=campaigns' if is_master else '/staff/quizzes' }}"><span>?</span><small>Квизы</small></a>{% endif %}
     <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="{{ '/staff/redeem' if is_bartender else '/admin/vault' }}"><span>♦</span><small>{{ 'Погасить' if is_bartender else 'Store' }}</small></a>
     {% if can_content %}<a class="{{ 'active' if current_path.startswith('/staff-access') else '' }}" href="/staff-access"><span>◎</span><small>Команда</small></a>{% endif %}
     <button type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span>•••</span><small>Ещё</small></button>
