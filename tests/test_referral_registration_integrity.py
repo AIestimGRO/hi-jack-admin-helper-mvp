@@ -120,7 +120,7 @@ def test_referral_entry_keeps_code_in_signed_session_until_member_exists() -> No
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
     base = (ROOT / "app/templates/base.html").read_text(encoding="utf-8")
 
-    assert f'request.session[PENDING_REFERRAL_KEY] = clean_code' in source
+    assert 'request.session[PENDING_REFERRAL_KEY] = clean_code' in source
     assert "pending_referral_binding_middleware" in source
     assert "_current_member(request, required=False)" in source
     assert 'request.session.pop(PENDING_REFERRAL_KEY, None)' in source
