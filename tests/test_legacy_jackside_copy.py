@@ -180,4 +180,4 @@ def test_copy_legacy_daily_creates_new_issue_without_mutating_source(tmp_path) -
 
     assert dict(source_after) == dict(source_before)
     assert source_question_ids_after == source_question_ids_before
-    assert all(int(row["id"]) != campaign_id for row in remaining_sources)
+    assert campaign_id in [int(row["id"]) for row in remaining_sources]
