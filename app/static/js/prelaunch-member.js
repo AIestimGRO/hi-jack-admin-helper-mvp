@@ -73,6 +73,101 @@
     }
   };
 
+  const formatDuration = (value) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+    const seconds = Math.max(0, Number(value)) / 1000;
+    if (seconds < 60) return `${seconds.toFixed(1)}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = (seconds - minutes * 60).toFixed(1).padStart(4, '0');
+    return `${minutes}:${remainder}`;
+  };
+
+  const calendarRatingRow = (row, period) => {
+    const article = document.createElement('article');
+    const placeNumber = Number(row.place || 0);
+    article.className = [
+      placeNumber > 0 && placeNumber <= 3 ? `podium podium-${placeNumber}` : '',
+      period === 'month' && !row.place ? 'is-calibrating' : '',
+    ].filter(Boolean).join(' ');
+
+    const place = document.createElement('span');
+    place.className = 'leaderboard-place';
+    place.textContent = row.place ? String(row.place) : '•••';
+
+    const player = document.createElement('span');
+    player.className = 'leaderboard-player';
+    const link = document.createElement('a');
+    link.className = 'player-profile-link';
+    link.href = `/players/${Number(row.client_id)}`;
+    const name = document.createElement('strong');
+    name.textContent = row.display_name || 'Игрок';
+    link.append(name);
+    const details = document.createElement('small');
+    if (period === 'month') {
+      details.textContent = `${Number(row.accuracy || 0)}% · ${Number(row.completed_count || 0)} игр · ${Number(row.active_days || 0)} активных дней`;
+    } else {
+      details.textContent = `${Number(row.accuracy || 0)}% · ${formatDuration(row.average_answer_time_ms)}/ответ · ${Number(row.completed_count || 0)} игр`;
+    }
+    player.append(link, details);
+
+    const score = document.createElement('strong');
+    if (period === 'month' && !row.place) {
+      score.className = 'leaderboard-calibration';
+      score.textContent = 'Калибровка';
+      const small = document.createElement('small');
+      small.textContent = `${Number(row.completed_count || 0)}/3 игр · ${Number(row.question_total || 0)}/30 ответов`;
+      score.append(small);
+    } else {
+      score.className = 'leaderboard-points';
+      score.textContent = period === 'month' ? String(row.rating_score ?? 0) : String(row.points ?? 0);
+      const small = document.createElement('small');
+      small.textContent = period === 'month' ? 'балл' : 'points';
+      score.append(small);
+    }
+
+    article.append(place, player, score);
+    return article;
+  };
+
+  const renderCalendarJacksideRating = async () => {
+    if (!location.pathname.startsWith('/account')) return;
+    const params = new URLSearchParams(location.search);
+    if ((params.get('tab') || '') !== 'rating') return;
+    const section = params.get('section') || 'month';
+    if (!['month', 'all'].includes(section)) return;
+    const period = section === 'all' ? 'year' : 'month';
+    const list = document.querySelector('.jackside-leaderboard');
+    if (!list) return;
+
+    const tabs = document.querySelector('.rating-period-tabs');
+    const yearTab = tabs?.querySelector('a[href*="section=all"]');
+    if (yearTab) yearTab.textContent = 'Год';
+
+    let payload;
+    try { payload = await json(`/api/account/jackside-calendar-rating?period=${period}`); } catch (_) { return; }
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    list.textContent = '';
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'member-card smart-empty';
+      empty.innerHTML = '<span>HJ</span><div><h3>За этот период пока нет завершённых игр</h3></div>';
+      list.append(empty);
+    } else {
+      rows.forEach((row) => list.append(calendarRatingRow(row, period)));
+    }
+
+    const sectionRoot = list.closest('.jackside-rating-section');
+    const heading = sectionRoot?.querySelector('.app-section-head h2');
+    if (heading) heading.textContent = `Рейтинг JACKSIDE — ${period === 'month' ? 'месяц' : 'год'}`;
+    const note = sectionRoot?.querySelector('.jackside-rating-note');
+    if (note) {
+      note.textContent = period === 'month'
+        ? `Календарный месяц ${payload.label || ''}. Учитываются только завершённые JACKSIDE этого месяца; прошлый месяц не смешивается с текущим.`
+        : `Календарный год ${payload.label || ''}. JACKSIDE points считаются только по завершённым играм этого года.`;
+    }
+    list.dataset.calendarRating = period;
+  };
+
   let ratingLinkSerial = 0;
   const linkLeaderboardRows = async () => {
     if (!location.pathname.startsWith('/account')) return;
@@ -145,12 +240,12 @@
     ensureHotfixStyle();
     compactFeaturedJackside();
     injectSocialHub();
-    linkLeaderboardRows();
+    renderCalendarJacksideRating().finally(linkLeaderboardRows);
     observeRatingChanges();
     window.setTimeout(() => {
       compactFeaturedJackside();
       injectSocialHub();
-      linkLeaderboardRows();
+      renderCalendarJacksideRating().finally(linkLeaderboardRows);
     }, 650);
   };
 
