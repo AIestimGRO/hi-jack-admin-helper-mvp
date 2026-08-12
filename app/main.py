@@ -27,6 +27,7 @@ from app.product_shell import install_product_shell
 from app.profile_experience import install_profile_experience
 from app.public_rating_consent_policy import install_public_rating_consent_policy
 from app.rating_profile_links import install_rating_profile_links
+from app.referral_registration_integrity import install_referral_registration_integrity
 from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
 from app.staff_quiz_admin import install_staff_quiz_admin
@@ -72,6 +73,7 @@ def _install_extensions(application):
     application = install_prelaunch_profile_privacy(application)
     application = install_prelaunch_data_integrity(application)
     application = install_jackside_rating_freshness(application)
+    application = install_referral_registration_integrity(application)
     application = install_staff_quiz_admin(application)
     application = install_admin_access_control(application)
     return _session_middleware_outermost(application)
