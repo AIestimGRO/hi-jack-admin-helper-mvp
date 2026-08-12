@@ -15,6 +15,7 @@ from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.hijack_rating_transfer import install_hijack_rating_transfer
 from app.jackside_rating_freshness import install_jackside_rating_freshness
+from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
 from app.main_impl import *  # noqa: F403
 from app.main_impl import app as _base_app
@@ -84,6 +85,7 @@ def _install_extensions(application):
     application = install_jackside_rating_freshness(application)
     application = install_referral_registration_integrity(application)
     application = install_referral_entry_hotfix(application)
+    application = install_legacy_jackside_copy(application)
     application = install_staff_quiz_admin(application)
     application = install_admin_access_control(application)
     return _session_middleware_outermost(application)
