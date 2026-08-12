@@ -26,6 +26,8 @@
     node._hideTimer = window.setTimeout(() => node.classList.remove('show'), 2600);
   };
 
+  window.HJAdminToast = toast;
+
   const hideLabel = (form, name) => {
     const input = form.querySelector(`[name="${name}"]`);
     const label = input?.closest('label');
@@ -83,17 +85,45 @@
     form.classList.add('jackside-compact-edit');
   };
 
-  const installReloadFreeSave = (form) => {
+  const responseMessage = async (response, fallback) => {
+    const type = response.headers.get('content-type') || '';
+    if (!type.includes('application/json')) return fallback;
+    try {
+      const payload = await response.clone().json();
+      return payload.message || payload.detail || payload.error || fallback;
+    } catch (_) {
+      return fallback;
+    }
+  };
+
+  const refreshFragment = async (response, selector, scrollX, scrollY) => {
+    const html = await response.clone().text();
+    if (!html) return false;
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const next = parsed.querySelector(selector);
+    const current = document.querySelector(selector);
+    if (!next || !current) return false;
+    current.replaceWith(next);
+    requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+    return true;
+  };
+
+  const installReloadFreeSave = (form, options = {}) => {
     if (form.dataset.ajaxSaveInstalled === 'true') return;
     form.dataset.ajaxSaveInstalled = 'true';
 
     form.addEventListener('submit', async (event) => {
+      if (event.defaultPrevented) return;
       event.preventDefault();
-      const submit = form.querySelector('button[type="submit"]');
-      const originalText = submit?.textContent || '';
+
+      const submit = event.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+      const originalText = submit?.textContent || submit?.value || '';
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
       if (submit) {
         submit.disabled = true;
-        submit.textContent = 'Сохраняю…';
+        if (submit.tagName === 'INPUT') submit.value = 'Сохраняю…';
+        else submit.textContent = 'Сохраняю…';
       }
 
       try {
@@ -102,19 +132,68 @@
           body: new FormData(form),
           credentials: 'same-origin',
           redirect: 'follow',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
         const finalUrl = new URL(response.url || location.href, location.href);
         const error = finalUrl.searchParams.get('error');
-        if (!response.ok || error) throw new Error(error || `Ошибка ${response.status}`);
-        toast(finalUrl.searchParams.get('ok') || 'Изменения сохранены');
+        if (!response.ok || error) {
+          throw new Error(error || await responseMessage(response, `Ошибка ${response.status}`));
+        }
+
+        if (finalUrl.origin === location.origin && finalUrl.pathname !== location.pathname) {
+          window.location.assign(finalUrl.href);
+          return;
+        }
+
+        const refreshSelector = options.refreshSelector || form.dataset.ajaxRefresh || '';
+        if (refreshSelector) {
+          const refreshed = await refreshFragment(response, refreshSelector, scrollX, scrollY);
+          if (refreshed) run();
+        }
+
+        if (options.resetOnSuccess || form.dataset.ajaxReset === 'true') form.reset();
+        toast(finalUrl.searchParams.get('ok') || await responseMessage(response, 'Изменения сохранены'));
       } catch (error) {
         toast(error?.message || 'Не удалось сохранить изменения', 'error');
       } finally {
-        if (submit) {
+        if (submit && document.contains(submit)) {
           submit.disabled = false;
-          submit.textContent = originalText || 'Сохранить';
+          if (submit.tagName === 'INPUT') submit.value = originalText || 'Сохранить';
+          else submit.textContent = originalText || 'Сохранить';
         }
       }
+    });
+  };
+
+  const isGenericReloadFreeCandidate = (form) => {
+    if (!(form instanceof HTMLFormElement)) return false;
+    if ((form.method || 'get').toLowerCase() !== 'post') return false;
+    if (form.dataset.noAjax === 'true' || form.dataset.fullNavigation === 'true') return false;
+    if (form.closest('[data-quiz-builder]')) return false;
+    if (form.querySelector('input[type="file"]')) return false;
+    if ((form.enctype || '').toLowerCase().includes('multipart/form-data')) return false;
+    if (form.target && form.target !== '_self') return false;
+
+    const action = new URL(form.action || location.href, location.href);
+    if (action.origin !== location.origin) return false;
+    if (['/login', '/logout'].includes(action.pathname)) return false;
+    if (action.pathname.startsWith('/clients/import')) return false;
+    return true;
+  };
+
+  const installGenericReloadFreeActions = () => {
+    if (!document.querySelector('.admin-current-user')) return;
+    document.querySelectorAll('form').forEach((form) => {
+      if (!isGenericReloadFreeCandidate(form)) return;
+      let refreshSelector = '';
+      let resetOnSuccess = false;
+      if (location.pathname === '/master/club-links') {
+        refreshSelector = '.prelaunch-page';
+        resetOnSuccess = form.action.endsWith('/create');
+      } else if (location.pathname === '/master/referrals') {
+        refreshSelector = '.prelaunch-page';
+      }
+      installReloadFreeSave(form, { refreshSelector, resetOnSuccess });
     });
   };
 
@@ -167,8 +246,10 @@
   };
 
   const run = () => {
+    ensureHotfixStyle();
     centralizeCampaignEconomy();
     keepQuizManagerScoped();
+    installGenericReloadFreeActions();
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
