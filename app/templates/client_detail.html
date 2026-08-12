@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set access_role = request.session.get('admin_access_role') or ('master' if admin_role == 'master_admin' else 'bartender') %}
 {% block title %}{{ client.first_name or client.nickname or 'Клиент' }} — Hi Jack Club{% endblock %}
 {% block content %}
 <a class="back" href="/clients">← К поиску</a>
@@ -36,6 +37,7 @@
 </div>
 <datalist id="discount-values"><option value="0"><option value="5"><option value="10"><option value="15"><option value="20"><option value="25"><option value="30"></datalist>
 
+{% if access_role != 'bartender' %}
 <details class="card app-data"><summary>Данные клиента и источник</summary><dl><dt>Статус</dt><dd>{{ 'Новый' if client.client_status=='new' else 'Существующий' }}</dd><dt>Первая кампания</dt><dd>{{ client.acquisition_campaign_code or '—' }}</dd><dt>Источник привлечения</dt><dd>{{ client.acquisition_source or client.source }}</dd><dt>App ID</dt><dd>{{ client.app_user_id or '—' }}</dd><dt>Telegram ID из APP</dt><dd>{{ client.telegram_id or '—' }}</dd><dt>Подтверждённый Telegram ID</dt><dd>{{ client.telegram_user_id or '—' }}</dd><dt>Email</dt><dd>{{ client.email or '—' }}</dd><dt>Referrer ID</dt><dd>{{ client.referrer_app_user_id or '—' }}</dd></dl></details>
 <section class="card comment-box"><h3>Комментарий администратора</h3><form action="/api/clients/{{ client.id }}/comment" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><textarea name="comment" maxlength="1000" placeholder="Заметка о клиенте">{{ client.comment }}</textarea><button class="button" type="submit">Сохранить</button></form></section>
 
@@ -48,11 +50,12 @@
     <div class="quiz-participation-actions">
       <form action="/api/clients/{{ client.id }}/quiz/{{ item.campaign_code }}/extra-attempt" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button" type="submit">+1 попытка</button></form>
       {% if item.has_active_attempt %}<form action="/api/clients/{{ client.id }}/quiz/{{ item.campaign_code }}/finish-active" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Завершить активную</button></form>{% endif %}
-      {% if admin_role=='master_admin' %}<form action="/api/clients/{{ client.id }}/quiz/{{ item.campaign_code }}/reset-attempts" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Сбросить счётчик</button></form>{% endif %}
+      {% if access_role == 'master' %}<form action="/api/clients/{{ client.id }}/quiz/{{ item.campaign_code }}/reset-attempts" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="danger-outline" type="submit">Сбросить счётчик</button></form>{% endif %}
     </div>
   </article>
 {% endfor %}
 </div>
+{% endif %}
 {% endif %}
 
 <section class="section-head"><h2>История операций</h2></section>
