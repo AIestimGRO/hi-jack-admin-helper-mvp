@@ -1,6 +1,9 @@
 {% extends "member_base.html" %}
 {% block title %}Профиль для игроков — Hi, Jack Club{% endblock %}
 {% block content %}
+<style>
+.profile-sharing-form{display:grid;gap:14px;padding:18px}.profile-sharing-check{display:flex;gap:12px;align-items:flex-start;padding:13px;border:1px solid rgba(113,225,208,.15);border-radius:16px;background:rgba(113,225,208,.04)}.profile-sharing-check input{margin-top:4px}.profile-sharing-check span{display:block;line-height:1.35}.profile-sharing-check small{display:inline-block;margin-top:6px;opacity:.62}.profile-sharing-actions{display:flex;gap:10px;flex-wrap:wrap}
+</style>
 <section class="prelaunch-member-page">
   <header class="prelaunch-member-hero">
     <p class="member-eyebrow">Приватность профиля</p>
@@ -11,9 +14,9 @@
   {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
   {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
 
-  <form class="member-card legal-setting-form" method="post" action="/account/profile-sharing">
+  <form class="member-card profile-sharing-form" method="post" action="/account/profile-sharing">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label class="legal-setting-check">
+    <label class="profile-sharing-check">
       <input type="checkbox" name="share_game_profile" value="true" {{ 'checked' if granted else '' }}>
       <span><strong>Показывать мою игровую статистику и историю участия другим зарегистрированным игрокам</strong><br><small>JACKSIDE: количество игр, точность, 10/10, серии, финалы и победы. HI JACK: турниры, рейтинг, kills. Также показывается хронология квизов и турниров.</small></span>
     </label>
@@ -21,7 +24,7 @@
     <button class="member-primary" type="submit">Сохранить</button>
   </form>
 
-  <div class="public-profile-actions">
+  <div class="profile-sharing-actions">
     <a class="member-secondary" href="/account/legal">Настройки рейтинга и согласий</a>
     <a class="member-secondary" href="/account?tab=profile">Вернуться в профиль</a>
   </div>
