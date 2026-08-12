@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Команда и доступы — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Команда и доступы</p><h1>Роли сотрудников</h1><p class="muted">Каждый сотрудник видит только те разделы и действия, которые входят в его роль.</p></div></div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2>Новый сотрудник</h2>
+  <form class="master-create" action="/api/staff-access/create" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Логин<input name="username" minlength="3" maxlength="40" pattern="[a-zA-Z0-9_.-]+" autocomplete="off" required></label>
+    <label>Имя сотрудника<input name="display_name" maxlength="80" required></label>
+    <label>Начальный PIN<input name="pin" type="password" minlength="4" maxlength="128" autocomplete="new-password" required></label>
+    <label>Роль<select name="access_role">
+      {% if actor_role == 'master' %}<option value="quiz_manager">Квиз-администратор</option>{% endif %}
+      <option value="bartender">Бармен</option>
+    </select></label>
+    <button class="primary" type="submit">Создать доступ</button>
+  </form>
+</div>
+
+<div class="section-head"><h2>Сотрудники</h2><span class="muted">{{ rows|length }}</span></div>
+<div class="master-list">
+{% for item in rows %}
+  <article class="card master-item {{ '' if item.is_active else 'inactive' }}">
+    <div class="master-item-head"><div><h3>{{ item.display_name }}</h3><code>{{ item.username }}</code></div><span class="type-pill">{{ item.role_label }}</span></div>
+    <p class="muted">{{ 'Активен' if item.is_active else 'Отключён' }} · последний вход: {{ item.last_login_at or 'ещё не входил' }}</p>
+    {% set can_manage = actor_role == 'master' and item.effective_role != 'master' or actor_role == 'quiz_manager' and item.effective_role == 'bartender' %}
+    {% if can_manage %}
+    <div class="admin-actions">
+      <form class="pin-reset" action="/api/staff-access/{{ item.id }}/reset-pin" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input name="pin" type="password" minlength="4" maxlength="128" placeholder="Новый PIN" required>
+        <button class="button" type="submit">Сменить PIN</button>
+      </form>
+      <form action="/api/staff-access/{{ item.id }}/toggle" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="{{ 'danger-outline' if item.is_active else 'success-outline' }}" type="submit">{{ 'Отключить' if item.is_active else 'Включить' }}</button>
+      </form>
+    </div>
+    {% elif item.effective_role == 'master' %}<p class="muted">Мастер-аккаунт управляется только из мастер-зоны.</p>{% endif %}
+  </article>
+{% endfor %}
+</div>
+
+<section class="card">
+  <h2>Что умеют роли</h2>
+  <div class="table-wrap"><table><thead><tr><th>Роль</th><th>Доступ</th></tr></thead><tbody>
+    <tr><td><strong>Мастер</strong></td><td>Полный доступ ко всей системе, юридическим документам, экономике, рейтингам, аудитам и доступам.</td></tr>
+    <tr><td><strong>Квиз-администратор</strong></td><td>Квизы/JACKSIDE, результаты, награды и JACK CARD, звания/достижения, типы бонусов, сброс пароля пользователя и управление барменами.</td></tr>
+    <tr><td><strong>Бармен</strong></td><td>Поиск клиента, QR, ручное начисление/списание бонусов и погашение активированной JACK CARD.</td></tr>
+  </tbody></table></div>
+</section>
+{% endblock %}
