@@ -169,7 +169,7 @@
     if (!(form instanceof HTMLFormElement)) return false;
     if ((form.method || 'get').toLowerCase() !== 'post') return false;
     if (form.dataset.noAjax === 'true' || form.dataset.fullNavigation === 'true') return false;
-    if (form.closest('[data-quiz-builder]')) return false;
+    if (form.matches('#quick-question-form, #bulk-question-form, [data-existing-question-form]')) return false;
     if (form.querySelector('input[type="file"]')) return false;
     if ((form.enctype || '').toLowerCase().includes('multipart/form-data')) return false;
     if (form.target && form.target !== '_self') return false;
