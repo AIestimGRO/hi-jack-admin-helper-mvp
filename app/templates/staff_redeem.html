@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Погашение JACK CARD — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">JACK CARD</p><h1>Погасить карту</h1><p class="muted">Введите короткий код с активированной карты игрока. После подтверждения карта станет недоступна для повторного использования.</p></div></div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<section class="card vault-redeem-card">
+  <form action="/staff/redeem" method="post" onsubmit="return confirm('Погасить эту карту? Повторное использование будет невозможно.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Код карты<input name="code" maxlength="20" inputmode="text" autocomplete="off" placeholder="4 цифры или код JACK CARD" required autofocus></label>
+    <button class="primary" type="submit">Погасить карту</button>
+  </form>
+</section>
+<div class="card"><p class="muted">Если карта не активирована, попросите игрока открыть её в своём ЛК и получить короткий код.</p></div>
+{% endblock %}
