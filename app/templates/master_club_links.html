@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Ссылки клуба — Hi Jack Club{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', path='/css/prelaunch.css') }}?v={{ asset_version }}">{% endblock %}
+{% block content %}
+<section class="prelaunch-page">
+  <div class="page-head prelaunch-head"><div><p class="eyebrow">Master · контент</p><h1>Hi, Jack в сети</h1><p class="muted">Один источник ссылок для главной страницы, профиля и отдельного раздела пользователя.</p></div></div>
+  {% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+  <div class="prelaunch-link-admin-list">
+    {% for link in links %}
+    <form class="card prelaunch-link-admin" method="post" action="/api/master/club-links/{{ link.id }}/update">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="prelaunch-link-admin-head"><div><h2>{{ link.title }}</h2><code>{{ link.code }}</code></div><span class="type-pill">{{ link.link_type }}</span></div>
+      <label>Название<input name="title" value="{{ link.title }}" maxlength="100" required></label>
+      <label>Описание<input name="description" value="{{ link.description }}" maxlength="300"></label>
+      <label>Ссылка<input name="url" value="{{ link.url }}" maxlength="1000" placeholder="https://..."></label>
+      <div class="prelaunch-check-row">
+        <label><input type="checkbox" name="is_active" value="true" {{ 'checked' if link.is_active else '' }}> Активна</label>
+        <label><input type="checkbox" name="show_home" value="true" {{ 'checked' if link.show_home else '' }}> На главной</label>
+        <label><input type="checkbox" name="show_profile" value="true" {{ 'checked' if link.show_profile else '' }}> В профиле</label>
+      </div>
+      <label>Порядок<input type="number" name="position" min="0" max="9999" value="{{ link.position }}"></label>
+      <button class="primary" type="submit">Сохранить</button>
+    </form>
+    {% endfor %}
+  </div>
+
+  <details class="card prelaunch-new-link">
+    <summary>Добавить ещё одну ссылку</summary>
+    <form method="post" action="/api/master/club-links/create">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Код<input name="code" maxlength="50" placeholder="vk" required></label>
+      <label>Название<input name="title" maxlength="100" placeholder="VK" required></label>
+      <label>Описание<input name="description" maxlength="300"></label>
+      <label>Ссылка<input name="url" maxlength="1000" placeholder="https://..."></label>
+      <button class="primary" type="submit">Добавить</button>
+    </form>
+  </details>
+</section>
+{% endblock %}
