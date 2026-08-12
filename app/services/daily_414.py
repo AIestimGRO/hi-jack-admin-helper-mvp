@@ -22,13 +22,18 @@ LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS = (
 DAILY_414_FINAL_QUESTION_SECONDS = 30
 DAILY_414_FINAL_TABLE_SIZE = 10
 
-JACKCOIN_PER_CORRECT = 10
+# Compatibility defaults for direct/legacy callers. The pre-launch economy
+# extension snapshots the launch defaults (10/10/30) onto each new JACKSIDE
+# issue/campaign, so historic campaigns are never silently recalculated.
+JACKCOIN_PER_CORRECT = 5
 JACKCOIN_COMPLETION_BONUS = 10
-JACKCOIN_PERFECT_BONUS = 30
-# Launch streak milestones are separate ledger operations managed by the
-# configurable JACKCOIN economy. Keep the base submission award streak-free so
-# a 7/15/30/100-day milestone can never be paid twice.
-JACKCOIN_STREAK_BONUSES: dict[int, int] = {}
+JACKCOIN_PERFECT_BONUS = 20
+JACKCOIN_STREAK_BONUSES = {
+    3: 10,
+    7: 30,
+    14: 70,
+    30: 150,
+}
 DEFAULT_CAMPAIGN_TIMEZONE = "Europe/Moscow"
 
 
@@ -262,6 +267,20 @@ def _next_streak(
     return 1
 
 
+def _launch_economy_enabled(conn: sqlite3.Connection) -> bool:
+    try:
+        return bool(
+            conn.execute(
+                """
+                SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='jackcoin_economy_settings'
+                """
+            ).fetchone()
+        )
+    except sqlite3.Error:
+        return False
+
+
 def award_daily_jackcoin(
     conn: sqlite3.Connection,
     *,
@@ -290,7 +309,9 @@ def award_daily_jackcoin(
         current_date=issue_day,
     )
     best_streak = max(streak, int(progress["best_streak"]) if progress else 0)
-    streak_bonus = JACKCOIN_STREAK_BONUSES.get(streak, 0)
+    # Launch economy pays streak milestones as their own auditable ledger rows.
+    # Legacy/test databases without the extension keep the historic inline bonus.
+    streak_bonus = 0 if _launch_economy_enabled(conn) else JACKCOIN_STREAK_BONUSES.get(streak, 0)
     per_correct = max(0, int(jackcoin_per_correct))
     completion_amount = max(0, int(jackcoin_completion_bonus))
     perfect_bonus = max(0, int(jackcoin_perfect_bonus))
