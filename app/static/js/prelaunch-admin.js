@@ -245,10 +245,26 @@
     });
   };
 
+  const installQuizExportAction = () => {
+    const builder = document.querySelector('[data-quiz-builder]');
+    if (!builder || !location.pathname.startsWith('/master/quiz-builder/')) return;
+    const actions = builder.querySelector('.hj-hero-actions');
+    const campaignId = builder.dataset.campaignId;
+    if (!actions || !campaignId || actions.querySelector('[data-quiz-export]')) return;
+
+    const link = document.createElement('a');
+    link.className = 'button';
+    link.dataset.quizExport = 'true';
+    link.href = `/api/master/quiz-campaigns/${encodeURIComponent(campaignId)}/export.zip`;
+    link.textContent = 'Экспортировать ZIP';
+    actions.appendChild(link);
+  };
+
   const run = () => {
     ensureHotfixStyle();
     centralizeCampaignEconomy();
     keepQuizManagerScoped();
+    installQuizExportAction();
     installGenericReloadFreeActions();
   };
 
