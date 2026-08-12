@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Пользователи — Hi Jack Club{% endblock %}
+{% block content %}
+<div class="page-head"><div><p class="eyebrow">Поддержка пользователей</p><h1>Доступ к личному кабинету</h1><p class="muted">Поиск зарегистрированного пользователя и безопасный сброс пароля. Старый пароль не отображается.</p></div></div>
+{% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<form class="hero-search" method="get" action="/staff-users">
+  <input name="q" value="{{ q }}" placeholder="Имя, ник, телефон, email или ID" autocomplete="off">
+  <button class="primary" type="submit">Найти</button>
+</form>
+<div class="master-list">
+{% for item in rows %}
+<article class="card master-item">
+  <div class="master-item-head"><div><h3>{{ item.first_name or item.nickname or ('@' ~ item.username if item.username else 'Игрок #' ~ item.id) }}</h3><p class="muted">{{ item.email }}{% if item.phone_local %} · {{ item.phone_local }}{% endif %}</p></div><span class="type-pill">{{ 'Активен' if item.is_active else 'Отключён' }}</span></div>
+  <p class="muted">Последний вход: {{ item.last_login_at or 'ещё не входил' }}</p>
+  {% if item.is_active %}
+  <details>
+    <summary>Сбросить пароль</summary>
+    <form class="pin-reset" action="/api/staff-users/{{ item.id }}/reset-password" method="post" onsubmit="return confirm('Сменить пароль и закрыть все прежние сессии пользователя?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input name="new_password" type="password" minlength="8" maxlength="128" placeholder="Новый пароль" autocomplete="new-password" required>
+      <input name="new_password_confirmation" type="password" minlength="8" maxlength="128" placeholder="Повторите пароль" autocomplete="new-password" required>
+      <button class="danger-outline" type="submit">Сменить пароль</button>
+    </form>
+  </details>
+  {% endif %}
+</article>
+{% else %}<div class="card empty">Пользователи не найдены.</div>{% endfor %}
+</div>
+{% endblock %}
