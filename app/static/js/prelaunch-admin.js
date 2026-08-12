@@ -1,4 +1,13 @@
 (() => {
+  const ensureHotfixStyle = () => {
+    if (document.querySelector('link[data-prelaunch-ui-hotfix]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/static/css/prelaunch-ui-hotfix.css?v=1';
+    link.dataset.prelaunchUiHotfix = 'true';
+    document.head.appendChild(link);
+  };
+
   const toast = (message, kind = 'success') => {
     let node = document.querySelector('[data-admin-toast]');
     if (!node) {
@@ -111,6 +120,7 @@
 
   const centralizeCampaignEconomy = () => {
     if (location.pathname !== '/master') return;
+    ensureHotfixStyle();
 
     const createForm = document.querySelector('form.campaign-create');
     const typeSelect = createForm?.querySelector('select[name="campaign_type"]');
