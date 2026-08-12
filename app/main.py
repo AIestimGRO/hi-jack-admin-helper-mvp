@@ -11,6 +11,7 @@ from app.hijack_rating_baseline import install_hijack_rating_baseline
 from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.hijack_rating_transfer import install_hijack_rating_transfer
+from app.jackside_rating_freshness import install_jackside_rating_freshness
 from app.legal_registration import install_legal_registration
 from app.main_impl import *  # noqa: F403
 from app.main_impl import app as _base_app
@@ -68,6 +69,7 @@ def _install_extensions(application):
     application = install_prelaunch_profile_sharing(application)
     application = install_prelaunch_profile_privacy(application)
     application = install_prelaunch_data_integrity(application)
+    application = install_jackside_rating_freshness(application)
     return _session_middleware_outermost(application)
 
 
