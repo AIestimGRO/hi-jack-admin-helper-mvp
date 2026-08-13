@@ -10,6 +10,10 @@ from app.jackside_multi_schema import ensure_multi_issue_schema
 import app.jackside_multi_runtime  # noqa: E402,F401
 import app.jackside_runtime_compat  # noqa: E402,F401
 import app.jackside_reschedule_snapshot  # noqa: E402,F401
+from app.referral_status_policy import apply_referral_status_policy
+
+# main_impl imports this service function by name; bind policy first.
+apply_referral_status_policy()
 
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
@@ -27,9 +31,9 @@ from app.hijack_rating_transfer import install_hijack_rating_transfer
 from app.jackside_rating_freshness import install_jackside_rating_freshness
 from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
-from app.main_impl import *  # noqa: F403
-from app.main_impl import app as _base_app
-from app.main_impl import create_app as _base_create_app
+from app.main_impl import *  # noqa: F403,E402
+from app.main_impl import app as _base_app  # noqa: E402
+from app.main_impl import create_app as _base_create_app  # noqa: E402
 from app.member_account_management import install_member_account_management
 from app.prelaunch_data_integrity import install_prelaunch_data_integrity
 from app.prelaunch_economy_compat import install_prelaunch_economy_compat
