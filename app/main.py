@@ -3,10 +3,11 @@
 from starlette.middleware.sessions import SessionMiddleware
 
 # Import these before extensions/main_impl bind JACKSIDE service functions.
-# Base multi-release overrides must load first; runtime handoff rules extend
-# them second. The schema migration itself runs only after base DB init below.
+# Base multi-release overrides load first; runtime handoff and reschedule
+# cleanup extend them next. Schema migration runs only after base DB init.
 from app.jackside_multi_issue import ensure_multi_issue_schema, install_jackside_multi_issue
 import app.jackside_multi_runtime  # noqa: E402,F401
+import app.jackside_reschedule_snapshot  # noqa: E402,F401
 
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
