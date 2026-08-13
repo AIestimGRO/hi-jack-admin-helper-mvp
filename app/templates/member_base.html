@@ -53,7 +53,7 @@
     </a>
   </nav>
 
-  {% if current_tab|default('') == 'profile' %}
+  {% if current_tab|default('') == 'profile' and engagement is defined %}
   <template id="profile-rich-blocks">
     {% set permanent_titles = engagement.permanent_titles|default([]) %}
     {% set temporary_titles = engagement.temporary_titles|default([]) %}
