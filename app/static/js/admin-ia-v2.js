@@ -2,6 +2,19 @@
   const qs = (selector, root = document) => root.querySelector(selector);
   const qsa = (selector, root = document) => [...root.querySelectorAll(selector)];
 
+  const syncReleaseAction = (dialog) => {
+    if (!dialog) return;
+    const source = qs('[data-release-source]', dialog)?.value || '';
+    const submit = qs('[data-release-submit]', dialog);
+    const hint = qs('[data-release-hint]', dialog);
+    if (submit) submit.textContent = source ? 'Создать и запланировать' : 'Создать черновик';
+    if (hint) {
+      hint.textContent = source
+        ? 'Вопросы будут скопированы, проверены и выпуск сразу станет доступен по расписанию.'
+        : 'Пустой выпуск сохраняется черновиком: сначала добавьте вопросы, затем запланируйте его.';
+    }
+  };
+
   const openReleaseDialog = (source = '') => {
     const dialog = qs('[data-release-dialog]');
     if (!dialog) {
@@ -11,6 +24,7 @@
     }
     const sourceSelect = qs('[data-release-source]', dialog);
     if (sourceSelect && source) sourceSelect.value = source;
+    syncReleaseAction(dialog);
     if (typeof dialog.showModal === 'function') dialog.showModal();
     else dialog.setAttribute('open', '');
   };
@@ -30,7 +44,10 @@
     dialog.addEventListener('click', (event) => {
       if (event.target === dialog) dialog.close();
     });
-    const selected = qs('[data-release-source]', dialog)?.value;
+    const sourceSelect = qs('[data-release-source]', dialog);
+    sourceSelect?.addEventListener('change', () => syncReleaseAction(dialog));
+    syncReleaseAction(dialog);
+    const selected = sourceSelect?.value;
     if (selected && new URL(location.href).searchParams.get('source')) openReleaseDialog(selected);
   };
 
@@ -126,7 +143,7 @@
           headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
         if (!response.ok) throw new Error(`Ошибка ${response.status}`);
-        window.HJAdminToast?.('Настройки квалифицированных рефералов сохранены');
+        window.HJAdminToast?.('Настройки дополнительной реферальной награды сохранены');
       } catch (error) {
         window.HJAdminToast?.(error.message || 'Не удалось сохранить настройки', 'error');
       } finally {
@@ -157,12 +174,12 @@
       section.className = 'card ia-referral-economy';
       section.dataset.referralEconomy = 'true';
       section.innerHTML = `
-        <div class="section-head"><div><p class="eyebrow">Реферальная экономика</p><h2>Квалифицированный реферал</h2></div></div>
-        <p class="muted">Квалификация: 3 завершённых выпуска JACKSIDE в 3 разные календарные даты. Здесь задаётся материальная награда; JC-суммы уровней сети находятся выше в общей экономике.</p>
+        <div class="section-head"><div><p class="eyebrow">Дополнительная механика</p><h2>Активный реферал · 3 дня</h2></div></div>
+        <p class="muted">Это отдельная опциональная материальная награда после 3 завершённых JACKSIDE в 3 разные даты. Она не заменяет и не задерживает базовые JC-награды L1/L2/L3 за первый и повторные JACKSIDE — они настраиваются выше.</p>
         <form method="post" action="/api/master/jackside-referrals/settings">
           <input type="hidden" name="csrf_token" value="${payload.csrf_token || ''}">
           <div class="ia-referral-grid"></div>
-          <button class="primary" type="submit">Сохранить квалификацию</button>
+          <button class="primary" type="submit">Сохранить дополнительную награду</button>
         </form>`;
       const grid = qs('.ia-referral-grid', section);
       const delivery = (name, value) => {
