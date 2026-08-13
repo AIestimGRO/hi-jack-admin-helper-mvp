@@ -1,4 +1,5 @@
 """Stable application entry point for ``uvicorn app.main:app``."""
+# ruff: noqa: E402
 
 from starlette.middleware.sessions import SessionMiddleware
 
