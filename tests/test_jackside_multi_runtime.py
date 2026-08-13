@@ -10,8 +10,8 @@ from app.jackside_multi_issue import create_issue_multi, ensure_multi_issue_sche
 from app.jackside_multi_runtime import (
     current_featured_issue_runtime,
     effective_campaign_schedule_multi,
-    reschedule_future_issue_runtime,
 )
+from app.jackside_reschedule_snapshot import reschedule_with_snapshot_cleanup
 from app.prelaunch_experience import ensure_prelaunch_schema
 from app.services.jackside_issues import ensure_issue_campaign
 
@@ -121,7 +121,7 @@ def test_featured_release_hands_off_after_previous_final_window(tmp_path: Path) 
     assert featured["title"] == "Evening"
 
 
-def test_reschedule_creates_missing_streak_snapshot_for_new_day(tmp_path: Path) -> None:
+def test_reschedule_moves_streak_snapshot_and_cleans_empty_old_day(tmp_path: Path) -> None:
     path = _db(tmp_path)
     first_day = (datetime.now(MOSCOW) + timedelta(days=5)).date()
     next_day = first_day + timedelta(days=1)
@@ -149,13 +149,22 @@ def test_reschedule_creates_missing_streak_snapshot_for_new_day(tmp_path: Path) 
                 (first_day.isoformat(),),
             ).fetchone()[0]
         )
-        reschedule_future_issue_runtime(
+        reschedule_with_snapshot_cleanup(
             conn,
             issue_id=int(issue["id"]),
             issue_date_value=next_day,
             starts_at=next_start,
             title="Moved",
             timezone_name="Europe/Moscow",
+        )
+        old_count = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM jackcoin_economy_snapshots
+                WHERE entity_type='jackside_day' AND entity_id=?
+                """,
+                (first_day.isoformat(),),
+            ).fetchone()[0]
         )
         moved_count = int(
             conn.execute(
@@ -169,6 +178,7 @@ def test_reschedule_creates_missing_streak_snapshot_for_new_day(tmp_path: Path) 
         )
 
     assert original_count > 0
+    assert old_count == 0
     assert moved_count == original_count
 
 
