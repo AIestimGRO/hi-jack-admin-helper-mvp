@@ -119,9 +119,6 @@ def test_referral_entry_keeps_code_in_signed_session_until_member_exists() -> No
     source = (ROOT / "app/referral_registration_integrity.py").read_text(encoding="utf-8")
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
     base = (ROOT / "app/templates/base.html").read_text(encoding="utf-8")
-    clients = (ROOT / "app/templates/admin_clients_workspace.html").read_text(
-        encoding="utf-8"
-    )
 
     assert 'request.session[PENDING_REFERRAL_KEY] = clean_code' in source
     assert "pending_referral_binding_middleware" in source
@@ -129,5 +126,5 @@ def test_referral_entry_keeps_code_in_signed_session_until_member_exists() -> No
     assert 'request.session.pop(PENDING_REFERRAL_KEY, None)' in source
     assert PENDING_REFERRAL_KEY == "pending_jackside_referral_code"
     assert "install_referral_registration_integrity" in main
-    assert 'href="/master/referrals"' in clients
+    assert 'href="/master/referrals"' in base
     assert "Реферальные связи</strong>" not in base
