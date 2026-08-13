@@ -10,7 +10,9 @@ from app.jackside_multi_issue import create_issue_multi, ensure_multi_issue_sche
 from app.jackside_multi_runtime import (
     current_featured_issue_runtime,
     effective_campaign_schedule_multi,
+    reschedule_future_issue_runtime,
 )
+from app.prelaunch_experience import ensure_prelaunch_schema
 from app.services.jackside_issues import ensure_issue_campaign
 
 
@@ -117,6 +119,57 @@ def test_featured_release_hands_off_after_previous_final_window(tmp_path: Path) 
     assert featured is not None
     assert featured["campaign_code"] == second["campaign_code"]
     assert featured["title"] == "Evening"
+
+
+def test_reschedule_creates_missing_streak_snapshot_for_new_day(tmp_path: Path) -> None:
+    path = _db(tmp_path)
+    first_day = (datetime.now(MOSCOW) + timedelta(days=5)).date()
+    next_day = first_day + timedelta(days=1)
+    first_start = datetime.combine(first_day, datetime.min.time(), tzinfo=MOSCOW).replace(
+        hour=18, minute=14
+    )
+    next_start = datetime.combine(next_day, datetime.min.time(), tzinfo=MOSCOW).replace(
+        hour=20, minute=0
+    )
+    with transaction(path) as conn:
+        ensure_prelaunch_schema(conn)
+        issue = create_issue_multi(
+            conn,
+            issue_date_value=first_day,
+            starts_at=first_start,
+            title="Move me",
+        )
+        original_count = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM jackcoin_economy_snapshots
+                WHERE entity_type='jackside_day' AND entity_id=?
+                  AND setting_key LIKE 'streak_%'
+                """,
+                (first_day.isoformat(),),
+            ).fetchone()[0]
+        )
+        reschedule_future_issue_runtime(
+            conn,
+            issue_id=int(issue["id"]),
+            issue_date_value=next_day,
+            starts_at=next_start,
+            title="Moved",
+            timezone_name="Europe/Moscow",
+        )
+        moved_count = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM jackcoin_economy_snapshots
+                WHERE entity_type='jackside_day' AND entity_id=?
+                  AND setting_key LIKE 'streak_%'
+                """,
+                (next_day.isoformat(),),
+            ).fetchone()[0]
+        )
+
+    assert original_count > 0
+    assert moved_count == original_count
 
 
 def test_multi_issue_runtime_busts_admin_ia_asset_cache() -> None:
