@@ -5,7 +5,7 @@
   {% if profile.restricted %}
   <div class="public-profile-restricted member-card">
     <div class="public-profile-avatar placeholder">HJ</div>
-    <div><p class="member-eyebrow">Профиль игрока</p><h1>Игрок ограничил просмотр профиля</h1><p class="member-muted">Личные данные и игровая статистика доступны только в объёме добровольно разрешённых категорий.</p></div>
+    <div><p class="member-eyebrow">Профиль игрока</p><h1>Игрок ограничил просмотр профиля</h1><p class="member-muted">Игрок скрыл все доступные категории публичного игрового профиля.</p></div>
   </div>
   {% else %}
   <header class="public-profile-hero">
@@ -13,25 +13,37 @@
     <div><p class="member-eyebrow">Игрок Hi, Jack</p><h1>{{ profile.display_name }}</h1>{% if profile.selected_title %}<p class="public-profile-title">{{ profile.selected_title.icon or '★' }} {{ profile.selected_title.name }}</p>{% endif %}</div>
   </header>
 
-  {% if profile.categories.result or profile.categories.participation_stats %}
+  {% if profile.categories.result %}
   <section class="public-profile-stats">
-    <div class="app-section-head"><div><p class="member-eyebrow">JACKSIDE</p><h2>Игра в цифрах</h2></div></div>
+    <div class="app-section-head"><div><p class="member-eyebrow">Результаты</p><h2>Главное в игре</h2></div></div>
     <div class="public-stat-grid">
-      <article><small>Игр</small><strong>{{ profile.jackside.games }}</strong></article>
-      <article><small>Точность</small><strong>{{ profile.jackside.accuracy }}%</strong></article>
-      <article><small>10/10</small><strong>{{ profile.jackside.perfect }}</strong></article>
-      <article><small>Финалов</small><strong>{{ profile.jackside.finals }}</strong></article>
-      <article><small>Побед</small><strong>{{ profile.jackside.wins }}</strong></article>
-      <article><small>Лучшая серия</small><strong>{{ profile.jackside.best_streak }}</strong></article>
+      <article><small>Точность JACKSIDE</small><strong>{{ profile.jackside.accuracy }}%</strong></article>
+      <article><small>Финалов JACKSIDE</small><strong>{{ profile.jackside.finals }}</strong></article>
+      <article><small>Побед JACKSIDE</small><strong>{{ profile.jackside.wins }}</strong></article>
+      <article><small>Рейтинг HI JACK</small><strong>{{ profile.hijack.rating_points }}</strong></article>
     </div>
   </section>
+  {% endif %}
 
+  {% if profile.categories.game_stats %}
   <section class="public-profile-stats">
-    <div class="app-section-head"><div><p class="member-eyebrow">HI JACK!</p><h2>Турнирная статистика</h2></div></div>
+    <div class="app-section-head"><div><p class="member-eyebrow">Статистика</p><h2>Игра в цифрах</h2></div></div>
+    <div class="public-stat-grid">
+      <article><small>Игр JACKSIDE</small><strong>{{ profile.jackside.games }}</strong></article>
+      <article><small>10/10</small><strong>{{ profile.jackside.perfect }}</strong></article>
+      <article><small>Лучшая серия</small><strong>{{ profile.jackside.best_streak }}</strong></article>
+      <article><small>Турниров HI JACK</small><strong>{{ profile.hijack.tournaments }}</strong></article>
+      <article><small>Kills HI JACK</small><strong>{{ profile.hijack.kills }}</strong></article>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if profile.categories.place and (profile.jackside.place is defined or profile.hijack.place is defined) %}
+  <section class="public-profile-stats">
+    <div class="app-section-head"><div><p class="member-eyebrow">Рейтинг</p><h2>Место игрока</h2></div></div>
     <div class="public-stat-grid three">
-      <article><small>Турниров</small><strong>{{ profile.hijack.tournaments }}</strong></article>
-      <article><small>Рейтинг</small><strong>{{ profile.hijack.rating_points }}</strong></article>
-      <article><small>Kills</small><strong>{{ profile.hijack.kills }}</strong></article>
+      {% if profile.jackside.place is defined and profile.jackside.place %}<article><small>JACKSIDE</small><strong>#{{ profile.jackside.place }}</strong></article>{% endif %}
+      {% if profile.hijack.place is defined and profile.hijack.place %}<article><small>HI JACK</small><strong>#{{ profile.hijack.place }}</strong></article>{% endif %}
     </div>
   </section>
   {% endif %}
@@ -46,7 +58,7 @@
   </section>
   {% endif %}
 
-  {% if profile.categories.participation_stats %}
+  {% if profile.categories.game_history %}
   <section class="public-history-section">
     <div class="app-section-head"><div><p class="member-eyebrow">История</p><h2>Квизы и турниры</h2></div><span>{{ profile.history|length }}</span></div>
     <div class="public-history-list">

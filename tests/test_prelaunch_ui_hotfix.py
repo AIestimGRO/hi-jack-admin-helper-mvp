@@ -282,11 +282,13 @@ def test_prelaunch_ui_hotfix_keeps_campaign_save_in_place() -> None:
     assert "active_from" in script
 
 
-def test_prelaunch_ui_hotfix_uses_exact_rating_client_ids() -> None:
+def test_prelaunch_ui_hotfix_uses_opaque_rating_profile_refs() -> None:
     script = (ROOT / "app/static/js/prelaunch-member.js").read_text(encoding="utf-8")
     assert "/api/account/rating-profile-links" in script
-    assert "client_ids" in script
-    assert "`/players/${clientId}`" in script
+    assert "profile_refs" in script
+    assert "`/players/p/${encodeURIComponent(profileRef)}`" in script
+    assert "payload.client_ids" not in script
+    assert "`/players/${clientId}`" not in script
     assert "MutationObserver" in script
 
 

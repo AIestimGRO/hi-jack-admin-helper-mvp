@@ -96,19 +96,15 @@
 
     const player = document.createElement('span');
     player.className = 'leaderboard-player';
-    const link = document.createElement('a');
-    link.className = 'player-profile-link';
-    link.href = `/players/${Number(row.client_id)}`;
     const name = document.createElement('strong');
     name.textContent = row.display_name || 'Игрок';
-    link.append(name);
     const details = document.createElement('small');
     if (period === 'month') {
       details.textContent = `${Number(row.accuracy || 0)}% · ${Number(row.completed_count || 0)} игр · ${Number(row.active_days || 0)} активных дней`;
     } else {
       details.textContent = `${Number(row.accuracy || 0)}% · ${formatDuration(row.average_answer_time_ms)}/ответ · ${Number(row.completed_count || 0)} игр`;
     }
-    player.append(link, details);
+    player.append(name, details);
 
     const score = document.createElement('strong');
     if (period === 'month' && !row.place) {
@@ -199,16 +195,16 @@
     let payload;
     try { payload = await json(`/api/account/rating-profile-links?${query}`); } catch (_) { return; }
     if (serial !== ratingLinkSerial) return;
-    const clientIds = Array.isArray(payload.client_ids) ? payload.client_ids : [];
+    const profileRefs = Array.isArray(payload.profile_refs) ? payload.profile_refs : [];
 
-    rows.slice(0, clientIds.length).forEach((article, index) => {
+    rows.slice(0, profileRefs.length).forEach((article, index) => {
       const strong = article.querySelector('.leaderboard-player strong');
       if (!strong || strong.closest('a.player-profile-link')) return;
-      const clientId = Number(clientIds[index]);
-      if (!Number.isInteger(clientId) || clientId <= 0) return;
+      const profileRef = String(profileRefs[index] || '').trim();
+      if (!profileRef) return;
       const link = document.createElement('a');
       link.className = 'player-profile-link';
-      link.href = `/players/${clientId}`;
+      link.href = `/players/p/${encodeURIComponent(profileRef)}`;
       link.setAttribute('aria-label', `Открыть профиль ${String(strong.textContent || 'игрока').trim()}`);
       strong.replaceWith(link);
       link.appendChild(strong);

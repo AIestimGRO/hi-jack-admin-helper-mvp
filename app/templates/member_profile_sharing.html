@@ -1,14 +1,14 @@
 {% extends "member_base.html" %}
-{% block title %}Профиль для игроков — Hi, Jack Club{% endblock %}
+{% block title %}Видимость профиля — Hi, Jack Club{% endblock %}
 {% block content %}
 <style>
-.profile-sharing-form{display:grid;gap:14px;padding:18px}.profile-sharing-check{display:flex;gap:12px;align-items:flex-start;padding:13px;border:1px solid rgba(113,225,208,.15);border-radius:16px;background:rgba(113,225,208,.04)}.profile-sharing-check input{margin-top:4px}.profile-sharing-check span{display:block;line-height:1.35}.profile-sharing-check small{display:inline-block;margin-top:6px;opacity:.62}.profile-sharing-actions{display:flex;gap:10px;flex-wrap:wrap}
+.profile-sharing-form{display:grid;gap:12px;padding:18px}.profile-sharing-check{display:flex;gap:12px;align-items:flex-start;padding:13px;border:1px solid rgba(113,225,208,.15);border-radius:16px;background:rgba(113,225,208,.04)}.profile-sharing-check input{margin-top:4px}.profile-sharing-check span{display:block;line-height:1.35}.profile-sharing-check small{display:inline-block;margin-top:6px;opacity:.62}.profile-sharing-actions{display:flex;gap:10px;flex-wrap:wrap}.profile-sharing-note{padding:14px 16px;border-radius:16px;background:rgba(223,177,86,.07);border:1px solid rgba(223,177,86,.18)}
 </style>
 <section class="prelaunch-member-page">
   <header class="prelaunch-member-hero">
-    <p class="member-eyebrow">Приватность профиля</p>
-    <h1>Профиль для игроков клуба</h1>
-    <p class="member-muted">Этот доступ работает только между зарегистрированными и авторизованными участниками Hi, Jack Club.</p>
+    <p class="member-eyebrow">Приватность</p>
+    <h1>Видимость профиля</h1>
+    <p class="member-muted">Игровой профиль открыт другим зарегистрированным участникам Hi, Jack Club по умолчанию. Отключи только то, что хочешь скрыть.</p>
   </header>
 
   {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
@@ -16,17 +16,49 @@
 
   <form class="member-card profile-sharing-form" method="post" action="/account/profile-sharing">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
     <label class="profile-sharing-check">
-      <input type="checkbox" name="share_game_profile" value="true" {{ 'checked' if granted else '' }}>
-      <span><strong>Показывать мою игровую статистику и историю участия другим зарегистрированным игрокам</strong><br><small>JACKSIDE: количество игр, точность, 10/10, серии, финалы и победы. HI JACK: турниры, рейтинг, kills. Также показывается хронология квизов и турниров.</small></span>
+      <input type="checkbox" name="nickname" value="true" {{ 'checked' if visibility.nickname else '' }}>
+      <span><strong>Показывать никнейм</strong><br><small>Имя игрока в публичном игровом профиле и каталоге участников.</small></span>
     </label>
-    <p class="member-muted">Никнейм, аватар, звания и достижения по-прежнему управляются отдельно в настройках согласия на отображение в рейтинге. Телефон, email, дата рождения, Telegram ID, баланс JACKCOIN, покупки, награды, реферальное дерево и технические данные другим игрокам не показываются.</p>
-    <button class="member-primary" type="submit">Сохранить</button>
+    <label class="profile-sharing-check">
+      <input type="checkbox" name="avatar" value="true" {{ 'checked' if visibility.avatar else '' }}>
+      <span><strong>Показывать аватар</strong><br><small>Только публичный аватар профиля.</small></span>
+    </label>
+    <label class="profile-sharing-check">
+      <input type="checkbox" name="result" value="true" {{ 'checked' if visibility.result else '' }}>
+      <span><strong>Показывать результаты</strong><br><small>Игровые показатели JACKSIDE и HI JACK, относящиеся к результатам.</small></span>
+    </label>
+    <label class="profile-sharing-check">
+      <input type="checkbox" name="place" value="true" {{ 'checked' if visibility.place else '' }}>
+      <span><strong>Показывать место в рейтинге</strong><br><small>Позиция игрока в клубных рейтингах, где она доступна.</small></span>
+    </label>
+    <label class="profile-sharing-check">
+      <input type="checkbox" name="titles" value="true" {{ 'checked' if visibility.titles else '' }}>
+      <span><strong>Показывать звания</strong><br><small>Активные публичные звания и выбранное основное звание.</small></span>
+    </label>
+    <label class="profile-sharing-check">
+      <input type="checkbox" name="achievements" value="true" {{ 'checked' if visibility.achievements else '' }}>
+      <span><strong>Показывать достижения</strong><br><small>Полученные игровые достижения.</small></span>
+    </label>
+    <label class="profile-sharing-check">
+      <input type="checkbox" name="game_stats" value="true" {{ 'checked' if visibility.game_stats else '' }}>
+      <span><strong>Показывать игровую статистику</strong><br><small>JACKSIDE: игры, точность, 10/10, серии, финалы и победы. HI JACK: турниры, рейтинг и kills.</small></span>
+    </label>
+    <label class="profile-sharing-check">
+      <input type="checkbox" name="game_history" value="true" {{ 'checked' if visibility.game_history else '' }}>
+      <span><strong>Показывать историю игр</strong><br><small>Хронология завершённых JACKSIDE и турниров HI JACK.</small></span>
+    </label>
+
+    <div class="profile-sharing-note member-muted">
+      Никогда не публикуются телефон, email, дата рождения, Telegram ID, внутренние ID, данные безопасности, баланс и история JACKCOIN, купленные или активированные награды, коды, QR, технические данные, записи согласий и приватная реферальная структура.
+    </div>
+    <button class="member-primary" type="submit">Сохранить видимость</button>
   </form>
 
   <div class="profile-sharing-actions">
-    <a class="member-secondary" href="/account/legal">Настройки рейтинга и согласий</a>
     <a class="member-secondary" href="/account?tab=profile">Вернуться в профиль</a>
+    <a class="member-secondary" href="/account/legal">Документы и юридические согласия</a>
   </div>
 </section>
 {% endblock %}

@@ -11,9 +11,11 @@ from app.jackside_multi_schema import ensure_multi_issue_schema
 import app.jackside_multi_runtime  # noqa: E402,F401
 import app.jackside_runtime_compat  # noqa: E402,F401
 import app.jackside_reschedule_snapshot  # noqa: E402,F401
+from app.jackside_poker_story_cleanup import apply_jackside_poker_story_cleanup
 from app.referral_status_policy import apply_referral_status_policy
 
-# main_impl imports this service function by name; bind policy first.
+# main_impl imports these service functions by name; bind product policies first.
+apply_jackside_poker_story_cleanup()
 apply_referral_status_policy()
 
 from app.account_links_hotfix import install_account_links_hotfix
