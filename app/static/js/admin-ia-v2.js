@@ -31,9 +31,7 @@
       if (event.target === dialog) dialog.close();
     });
     const selected = qs('[data-release-source]', dialog)?.value;
-    if (selected && new URL(location.href).searchParams.get('source')) {
-      openReleaseDialog(selected);
-    }
+    if (selected && new URL(location.href).searchParams.get('source')) openReleaseDialog(selected);
   };
 
   const fetchLegacySources = async () => {
@@ -97,7 +95,7 @@
         actions.prepend(link);
       });
     } catch (_) {
-      // Old campaign editing remains fully usable when the helper request fails.
+      // Campaign editing remains usable if this convenience request fails.
     }
   };
 
@@ -110,9 +108,41 @@
     return select;
   };
 
+  const ajaxSaveReferralQualification = (form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = qs('button[type="submit"]', form);
+      const original = button?.textContent || 'Сохранить';
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Сохраняю…';
+      }
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST',
+          body: new FormData(form),
+          credentials: 'same-origin',
+          redirect: 'follow',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        if (!response.ok) throw new Error(`Ошибка ${response.status}`);
+        window.HJAdminToast?.('Настройки квалифицированных рефералов сохранены');
+      } catch (error) {
+        window.HJAdminToast?.(error.message || 'Не удалось сохранить настройки', 'error');
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = original;
+        }
+      }
+    });
+  };
+
   const injectReferralQualificationIntoEconomy = async () => {
     if (location.pathname !== '/master/economy' || qs('[data-referral-economy]')) return;
-    const anchor = qs('.prelaunch-audit') || qs('.prelaunch-quick-issue');
+    const oldQuickIssue = qs('.prelaunch-quick-issue');
+    if (oldQuickIssue) oldQuickIssue.hidden = true;
+    const anchor = qs('.prelaunch-audit') || oldQuickIssue;
     if (!anchor) return;
     try {
       const response = await fetch('/api/master/referral-qualification-settings', {
@@ -135,19 +165,30 @@
           <button class="primary" type="submit">Сохранить квалификацию</button>
         </form>`;
       const grid = qs('.ia-referral-grid', section);
+      const delivery = (name, value) => {
+        const select = document.createElement('select');
+        select.name = name;
+        select.append(new Option('Автоматически', 'automatic'), new Option('Кодом', 'code'));
+        select.value = value || 'automatic';
+        return select;
+      };
+      const amount = (name, value) => Object.assign(document.createElement('input'), {
+        name, type: 'number', min: '0', max: '1000', value: String(value || 0),
+      });
       const fields = [
         ['Награда рефоводу', buildPreferenceSelect('referrer_preference_code', data.referrer_preference_code, preferences)],
-        ['Количество рефоводу', Object.assign(document.createElement('input'), { name: 'referrer_amount', type: 'number', min: '0', max: '1000', value: String(data.referrer_amount || 0) })],
-        ['Выдача рефоводу', (() => { const s = document.createElement('select'); s.name='referrer_delivery_mode'; s.append(new Option('Автоматически','automatic'),new Option('Кодом','code')); s.value=data.referrer_delivery_mode || 'automatic'; return s; })()],
+        ['Количество рефоводу', amount('referrer_amount', data.referrer_amount)],
+        ['Выдача рефоводу', delivery('referrer_delivery_mode', data.referrer_delivery_mode)],
         ['Награда приглашённому', buildPreferenceSelect('invited_preference_code', data.invited_preference_code, preferences)],
-        ['Количество приглашённому', Object.assign(document.createElement('input'), { name: 'invited_amount', type: 'number', min: '0', max: '1000', value: String(data.invited_amount || 0) })],
-        ['Выдача приглашённому', (() => { const s = document.createElement('select'); s.name='invited_delivery_mode'; s.append(new Option('Автоматически','automatic'),new Option('Кодом','code')); s.value=data.invited_delivery_mode || 'automatic'; return s; })()],
+        ['Количество приглашённому', amount('invited_amount', data.invited_amount)],
+        ['Выдача приглашённому', delivery('invited_delivery_mode', data.invited_delivery_mode)],
       ];
       fields.forEach(([title, input]) => {
         const label = document.createElement('label');
         label.append(document.createTextNode(title), input);
         grid.append(label);
       });
+      ajaxSaveReferralQualification(qs('form', section));
       anchor.before(section);
     } catch (_) {
       // Economy remains usable even if the secondary settings block cannot load.
@@ -166,20 +207,14 @@
     if (note && note.matches('p')) note.hidden = true;
     const tabs = qs('.master-tabs');
     if (tabs) tabs.hidden = true;
+    const pageHeading = qs('.page-head h1');
+    if (pageHeading) pageHeading.textContent = 'Звания и достижения';
     if (!qs('.ia-subsection-tools', panel)) {
       const tools = document.createElement('nav');
       tools.className = 'ia-subsection-tools';
-      tools.innerHTML = '<strong>Звания и достижения</strong><a class="button" href="/master/engagement-icons">Иконки коллекции</a><a href="/master/economy">Реферальная экономика →</a>';
+      tools.innerHTML = '<strong>Коллекция игрока</strong><a class="button" href="/master/engagement-icons">Иконки коллекции</a><a href="/master/economy">Реферальная экономика →</a>';
       panel.prepend(tools);
     }
-  };
-
-  const simplifyHijackRating = () => {
-    if (location.pathname !== '/master/hijack-rating') return;
-    document.body.classList.add('hj-rating-clean');
-    qsa('.hj-rating-import-card').forEach((card) => {
-      if (card.textContent.includes('Новые условия HI, JACK!')) card.classList.add('hj-rating-conditions-panel');
-    });
   };
 
   const run = () => {
@@ -188,7 +223,6 @@
     addLegacyCopyToCampaignCards();
     injectReferralQualificationIntoEconomy();
     simplifyEngagementPage();
-    simplifyHijackRating();
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
