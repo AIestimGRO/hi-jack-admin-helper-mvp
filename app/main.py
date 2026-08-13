@@ -5,7 +5,8 @@ from starlette.middleware.sessions import SessionMiddleware
 # Import these before extensions/main_impl bind JACKSIDE service functions.
 # Base multi-release overrides load first; runtime handoff, legacy compatibility
 # and reschedule cleanup extend them next. Schema migration runs after DB init.
-from app.jackside_multi_issue import ensure_multi_issue_schema, install_jackside_multi_issue
+from app.jackside_multi_issue import install_jackside_multi_issue
+from app.jackside_multi_schema import ensure_multi_issue_schema
 import app.jackside_multi_runtime  # noqa: E402,F401
 import app.jackside_runtime_compat  # noqa: E402,F401
 import app.jackside_reschedule_snapshot  # noqa: E402,F401
