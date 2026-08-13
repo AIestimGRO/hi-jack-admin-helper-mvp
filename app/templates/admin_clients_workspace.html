@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Клиенты — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="ia-page">
+  <header class="ia-page-head">
+    <div>
+      <p class="eyebrow">База клуба</p>
+      <h1>Клиенты</h1>
+      <p class="muted">Поиск, ключевые показатели игрока и быстрый переход к учётным данным.</p>
+    </div>
+    <a class="button ia-secondary-action" href="/clients/import">Импорт</a>
+  </header>
+
+  <nav class="ia-local-nav" aria-label="Разделы клиентов">
+    <a class="active" href="/master/clients">База клиентов</a>
+    <a href="/master/member-accounts">Учётные данные</a>
+    <a href="/master/referrals">Реферальные связи</a>
+  </nav>
+
+  <form class="ia-search" method="get" action="/master/clients">
+    <input name="q" value="{{ q }}" placeholder="Телефон, имя, ник, username, email или ID" autocomplete="off">
+    <button class="primary" type="submit">Найти</button>
+    {% if q %}<a class="button" href="/master/clients">Сбросить</a>{% endif %}
+  </form>
+
+  <div class="ia-list-head">
+    <strong>{{ total }} клиентов</strong>
+    <span class="muted">Показаны последние обновлённые{% if q %} по запросу «{{ q }}»{% endif %}</span>
+  </div>
+
+  <div class="ia-client-list">
+    {% for client in clients %}
+    <a class="card ia-client-row" href="/clients/{{ client.id }}">
+      <div class="ia-avatar">{{ (client.first_name or client.nickname or client.username or '?')[:1]|upper }}</div>
+      <div class="ia-client-identity">
+        <strong>{{ client.first_name or client.nickname or ('Client #' ~ client.id) }}</strong>
+        <span>{% if client.nickname %}{{ client.nickname }}{% endif %}{% if client.username %} · @{{ client.username.lstrip('@') }}{% endif %}</span>
+        <small>{{ display_phone(client.phone_local, client.phone_raw) }} · ID {{ client.id }}</small>
+      </div>
+      <div class="ia-client-metric"><small>HI, JACK! рейтинг</small><strong>{{ client.hijack_rating|round(1) }}</strong></div>
+      <div class="ia-client-metric"><small>Баланс</small><strong>{{ client.jc_balance }} JC</strong><span>заработано {{ client.jc_earned }}</span></div>
+      <div class="ia-client-metric ia-client-last"><small>Последняя операция JC</small><strong>{{ display_datetime(client.jc_last_at) if client.jc_last_at else '—' }}</strong></div>
+      <span class="chevron">›</span>
+    </a>
+    {% else %}
+    <div class="card smart-empty">Клиенты не найдены. Измените запрос или импортируйте базу.</div>
+    {% endfor %}
+  </div>
+
+  {% set pages = ((total + page_size - 1) // page_size) %}
+  {% if pages > 1 %}
+  <nav class="ia-pagination" aria-label="Страницы клиентов">
+    {% if page > 1 %}<a class="button" href="/master/clients?page={{ page-1 }}&q={{ q|urlencode }}">← Назад</a>{% endif %}
+    <span>{{ page }} / {{ pages }}</span>
+    {% if page < pages %}<a class="button" href="/master/clients?page={{ page+1 }}&q={{ q|urlencode }}">Далее →</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}
