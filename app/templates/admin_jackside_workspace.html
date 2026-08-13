@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}JACKSIDE — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="ia-page" data-jackside-workspace>
+  <header class="ia-page-head">
+    <div>
+      <p class="eyebrow">Игра</p>
+      <h1>JACKSIDE</h1>
+      <p class="muted">Квизы, выпуски и повторный запуск — в одном месте. Старые результаты при копировании не меняются.</p>
+    </div>
+    <button class="primary ia-primary-action" type="button" data-open-release>Новый выпуск</button>
+  </header>
+
+  {% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+  <nav class="ia-local-nav" aria-label="JACKSIDE">
+    <a class="active" href="/master/jackside">Квизы и выпуски</a>
+    <a href="/master/reports">Результаты и аналитика</a>
+    <a href="/master/economy">Экономика JC</a>
+    <a href="/master/jackside-issues">Расширенный режим</a>
+  </nav>
+
+  <div class="ia-list-head"><div><strong>JACKSIDE-квизы</strong><span class="muted">{{ campaigns|length }} кампаний</span></div></div>
+  <div class="ia-campaign-grid">
+    {% for campaign in campaigns %}
+    <article class="card ia-campaign-card" data-campaign-id="{{ campaign.id }}" data-campaign-code="{{ campaign.code }}">
+      <div class="ia-card-head">
+        <div><small>{{ campaign.issue_date or (campaign.active_from[:10] if campaign.active_from else 'Без даты') }}</small><h2>{{ campaign.title }}</h2><code>{{ campaign.code }}</code></div>
+        {% if campaign.issue_id %}<span class="type-pill">{{ campaign.issue_status }}</span>{% else %}<span class="type-pill ia-legacy-pill">старый формат</span>{% endif %}
+      </div>
+      <div class="ia-card-stats"><span><b>{{ campaign.main_count }}</b> осн.</span><span><b>{{ campaign.final_count }}</b> финал</span><span><b>{{ campaign.submissions }}</b> прохожд.</span></div>
+      {% if campaign.active_from %}<p class="muted ia-card-schedule">Старт: {{ display_datetime(campaign.active_from) }}</p>{% endif %}
+      <div class="ia-card-actions">
+        <a class="button" href="/master/quiz-builder/{{ campaign.id }}">Вопросы</a>
+        {% if campaign.issue_id %}
+          <button class="button" type="button" data-repeat-source="issue:{{ campaign.issue_id }}">Повторить выпуск</button>
+        {% else %}
+          <button class="button" type="button" data-repeat-source="legacy:{{ campaign.id }}">Новый выпуск из этого квиза</button>
+        {% endif %}
+      </div>
+    </article>
+    {% else %}<div class="card smart-empty">JACKSIDE-квизов пока нет.</div>{% endfor %}
+  </div>
+
+  <details class="card ia-archive" {% if issues|length <= 8 %}open{% endif %}>
+    <summary>История выпусков · {{ issues|length }}</summary>
+    <div class="ia-release-list">
+      {% for issue in issues %}
+      <article class="ia-release-row">
+        <div><strong>{{ issue.issue_date }}</strong><span>{{ issue.title }}</span></div>
+        <span class="type-pill">{{ issue.status }}</span>
+        <span>{{ issue.main_question_count }}/10 · финал {{ issue.final_question_count }}</span>
+        <div class="ia-row-actions">
+          {% if issue.campaign_id %}<a href="/master/quiz-builder/{{ issue.campaign_id }}">Вопросы</a>{% endif %}
+          <button type="button" class="ia-link-button" data-repeat-source="issue:{{ issue.id }}">Повторить</button>
+        </div>
+      </article>
+      {% else %}<p class="muted">Выпусков ещё нет.</p>{% endfor %}
+    </div>
+  </details>
+
+  <dialog class="ia-dialog" data-release-dialog>
+    <form method="post" action="/api/master/jackside/create-release" data-release-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="ia-dialog-head"><div><p class="eyebrow">JACKSIDE</p><h2>Новый выпуск</h2></div><button type="button" class="ia-dialog-close" data-close-release aria-label="Закрыть">×</button></div>
+      <p class="muted">Общий таймер 4:14 и правила игры остаются системными. Вы задаёте только выпуск и при желании выбираете основу.</p>
+      <label>Новая дата<input type="date" name="issue_date" required></label>
+      <label>Старт <small>Europe/Moscow</small><input type="datetime-local" name="starts_at" required></label>
+      <label>Название <small>необязательно</small><input name="title" maxlength="100" placeholder="JACKSIDE"></label>
+      <label>Взять вопросы из
+        <select name="source" data-release-source>
+          <option value="">Пустой новый выпуск</option>
+          <optgroup label="Готовые выпуски">
+            {% for issue in issues %}{% if issue.main_question_count or issue.final_question_count %}<option value="issue:{{ issue.id }}" {% if selected_source == 'issue:' ~ issue.id %}selected{% endif %}>{{ issue.issue_date }} · {{ issue.title }} · {{ issue.main_question_count }}/10 + финал {{ issue.final_question_count }}</option>{% endif %}{% endfor %}
+          </optgroup>
+          <optgroup label="Старые квизы — можно использовать как шаблон повторно">
+            {% for item in legacy %}<option value="legacy:{{ item.id }}" {% if selected_source == 'legacy:' ~ item.id %}selected{% endif %}>{{ item.title }} · {{ item.main_question_count }} осн. · финал {{ item.final_question_count }} · {{ item.submission_count }} прохожд.</option>{% endfor %}
+          </optgroup>
+        </select>
+      </label>
+      <div class="ia-dialog-actions"><button class="button" type="button" data-close-release>Отмена</button><button class="primary" type="submit">Создать draft</button></div>
+    </form>
+  </dialog>
+</section>
+{% endblock %}
