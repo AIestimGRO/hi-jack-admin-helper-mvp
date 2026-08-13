@@ -1,15 +1,25 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import sqlite3
 
+from app import jackside_multi_issue as multi_issue
 from app.services import jackside_issues as issue_service
 from app.services.daily_414 import DAILY_414_FINAL_TABLE_DELAY_SECONDS
 
 
 _ORIGINAL_EFFECTIVE_CAMPAIGN_SCHEDULE = issue_service.effective_campaign_schedule
+_ORIGINAL_RESCHEDULE_FUTURE_ISSUE = multi_issue.reschedule_future_issue
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+    )
 
 
 def _final_window_end(
@@ -70,9 +80,7 @@ def _runtime_status(
         final_table=final_table,
         timezone_name=timezone_name,
     )
-    final_end = _final_window_end(
-        conn, issue=issue, campaign_code=code
-    )
+    final_end = _final_window_end(conn, issue=issue, campaign_code=code)
     if final_end and issue_service._as_utc(now) >= final_end:
         if runtime in {"waiting_final", "final_live"}:
             return "closed"
@@ -225,9 +233,45 @@ def current_featured_issue_runtime(
     return None
 
 
+def reschedule_future_issue_runtime(
+    conn: sqlite3.Connection,
+    *,
+    issue_id: int,
+    issue_date_value: date,
+    starts_at: datetime,
+    title: str | None,
+    timezone_name: str,
+) -> sqlite3.Row:
+    """Reschedule while keeping the per-day streak economy snapshotted."""
+    updated = _ORIGINAL_RESCHEDULE_FUTURE_ISSUE(
+        conn,
+        issue_id=issue_id,
+        issue_date_value=issue_date_value,
+        starts_at=starts_at,
+        title=title,
+        timezone_name=timezone_name,
+    )
+    if _table_exists(conn, "jackcoin_economy_snapshots") and _table_exists(
+        conn, "jackcoin_economy_settings"
+    ):
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO jackcoin_economy_snapshots(
+                entity_type, entity_id, setting_key, amount
+            )
+            SELECT 'jackside_day', ?, setting_key, amount
+            FROM jackcoin_economy_settings
+            WHERE setting_key LIKE 'streak_%'
+            """,
+            (issue_date_value.isoformat(),),
+        )
+    return updated
+
+
 def apply_runtime_overrides() -> None:
     issue_service.effective_campaign_schedule = effective_campaign_schedule_multi
     issue_service.current_featured_issue = current_featured_issue_runtime
+    multi_issue.reschedule_future_issue = reschedule_future_issue_runtime
 
 
 apply_runtime_overrides()
@@ -246,4 +290,5 @@ __all__ = [
     "apply_runtime_overrides",
     "current_featured_issue_runtime",
     "effective_campaign_schedule_multi",
+    "reschedule_future_issue_runtime",
 ]
