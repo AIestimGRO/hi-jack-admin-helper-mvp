@@ -15,6 +15,61 @@
     }
   };
 
+  const fetchDateConflicts = async (issueDate, excludeIssueId = '') => {
+    const params = new URLSearchParams({ issue_date: issueDate });
+    if (excludeIssueId) params.set('exclude_issue_id', excludeIssueId);
+    const response = await fetch(`/api/master/jackside/date-conflicts?${params.toString()}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    return Array.isArray(payload.issues) ? payload.issues : [];
+  };
+
+  const confirmSameDayIfNeeded = async (form, excludeIssueId = '') => {
+    const issueDate = qs('[name="issue_date"]', form)?.value || '';
+    const confirmed = qs('[data-same-day-confirm]', form);
+    if (!issueDate || confirmed?.value === '1') return true;
+    const conflicts = await fetchDateConflicts(issueDate, excludeIssueId);
+    if (!conflicts.length) return true;
+    const rows = conflicts.map((item) => {
+      const time = String(item.starts_at_local || '').slice(11, 16) || 'без времени';
+      return `• ${time} — ${item.title || 'JACKSIDE'} (${item.status || '—'})`;
+    });
+    const message = [
+      `На ${issueDate.split('-').reverse().join('.')} уже есть JACKSIDE:`,
+      '',
+      ...rows,
+      '',
+      'Создать/перенести ещё один выпуск на эту дату?',
+    ].join('\n');
+    if (!window.confirm(message)) return false;
+    if (confirmed) confirmed.value = '1';
+    return true;
+  };
+
+  const installSameDayGuard = (form, excludeIssueId = '') => {
+    if (!form || form.dataset.sameDayGuard === 'true') return;
+    form.dataset.sameDayGuard = 'true';
+    const dateInput = qs('[name="issue_date"]', form);
+    dateInput?.addEventListener('change', () => {
+      const confirmed = qs('[data-same-day-confirm]', form);
+      if (confirmed) confirmed.value = '0';
+    });
+    form.addEventListener('submit', async (event) => {
+      const confirmed = qs('[data-same-day-confirm]', form);
+      if (confirmed?.value === '1') return;
+      event.preventDefault();
+      try {
+        const allowed = await confirmSameDayIfNeeded(form, excludeIssueId);
+        if (allowed) form.requestSubmit();
+      } catch (error) {
+        window.HJAdminToast?.(`Не удалось проверить расписание: ${error.message}`, 'error');
+      }
+    });
+  };
+
   const openReleaseDialog = (source = '') => {
     const dialog = qs('[data-release-dialog]');
     if (!dialog) {
@@ -24,6 +79,8 @@
     }
     const sourceSelect = qs('[data-release-source]', dialog);
     if (sourceSelect && source) sourceSelect.value = source;
+    const confirmed = qs('[data-same-day-confirm]', dialog);
+    if (confirmed) confirmed.value = '0';
     syncReleaseAction(dialog);
     if (typeof dialog.showModal === 'function') dialog.showModal();
     else dialog.setAttribute('open', '');
@@ -47,8 +104,79 @@
     const sourceSelect = qs('[data-release-source]', dialog);
     sourceSelect?.addEventListener('change', () => syncReleaseAction(dialog));
     syncReleaseAction(dialog);
+    installSameDayGuard(qs('[data-release-form]', dialog));
     const selected = sourceSelect?.value;
     if (selected && new URL(location.href).searchParams.get('source')) openReleaseDialog(selected);
+  };
+
+  const openEditReleaseDialog = async (issueId) => {
+    const dialog = qs('[data-edit-release-dialog]');
+    const form = qs('[data-edit-release-form]', dialog);
+    if (!dialog || !form) return;
+    try {
+      const response = await fetch(`/api/master/jackside/issues/${issueId}/schedule`, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const issue = payload.issue || {};
+      if (!issue.editable) {
+        window.HJAdminToast?.('Старт этого выпуска уже наступил — расписание заблокировано', 'error');
+        return;
+      }
+      form.action = `/api/master/jackside/issues/${issueId}/reschedule`;
+      qs('[data-edit-issue-id]', form).value = String(issueId);
+      qs('[data-edit-date]', form).value = issue.issue_date || '';
+      qs('[data-edit-start]', form).value = issue.starts_at_local || '';
+      qs('[data-edit-title]', form).value = issue.title || '';
+      const confirmed = qs('[data-same-day-confirm]', form);
+      if (confirmed) confirmed.value = '0';
+      const note = qs('[data-edit-release-note]', dialog);
+      if (note) {
+        note.textContent = Number(issue.participants || 0) > 0
+          ? `До старта расписание можно изменить. Выпуск уже видели/заняли место: ${Number(issue.participants)} участн. После сохранения им будет показываться новое время.`
+          : 'До фактического старта можно изменить дату, время и название. Вопросы, призы и история выпуска не теряются.';
+      }
+      form.dataset.excludeIssueId = String(issueId);
+      if (typeof dialog.showModal === 'function') dialog.showModal();
+      else dialog.setAttribute('open', '');
+    } catch (error) {
+      window.HJAdminToast?.(`Не удалось открыть расписание: ${error.message}`, 'error');
+    }
+  };
+
+  const installEditReleaseDialog = () => {
+    const dialog = qs('[data-edit-release-dialog]');
+    const form = qs('[data-edit-release-form]', dialog);
+    qsa('[data-edit-issue]').forEach((button) => {
+      button.addEventListener('click', () => openEditReleaseDialog(button.dataset.editIssue || ''));
+    });
+    if (!dialog || !form) return;
+    qsa('[data-close-edit-release]', dialog).forEach((button) => {
+      button.addEventListener('click', () => dialog.close());
+    });
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    if (form.dataset.sameDayGuard !== 'true') {
+      form.dataset.sameDayGuard = 'true';
+      qs('[name="issue_date"]', form)?.addEventListener('change', () => {
+        const confirmed = qs('[data-same-day-confirm]', form);
+        if (confirmed) confirmed.value = '0';
+      });
+      form.addEventListener('submit', async (event) => {
+        const confirmed = qs('[data-same-day-confirm]', form);
+        if (confirmed?.value === '1') return;
+        event.preventDefault();
+        try {
+          const allowed = await confirmSameDayIfNeeded(form, form.dataset.excludeIssueId || '');
+          if (allowed) form.requestSubmit();
+        } catch (error) {
+          window.HJAdminToast?.(`Не удалось проверить расписание: ${error.message}`, 'error');
+        }
+      });
+    }
   };
 
   const fetchLegacySources = async () => {
@@ -234,12 +362,34 @@
     }
   };
 
+  const simplifyJacksideBuilder = () => {
+    const builder = qs('[data-quiz-builder][data-campaign-type="daily_414"]');
+    if (!builder) return;
+    const publishForm = qs('form[action$="/publish-version"]', builder);
+    if (publishForm) publishForm.remove();
+    const back = qs('.back', builder);
+    if (back) {
+      back.href = '/master/jackside';
+      back.textContent = '← JACKSIDE';
+    }
+    qsa('.hj-create-section .hj-section-heading span', builder).forEach((node) => {
+      if ((node.textContent || '').includes('Новая версия')) {
+        node.textContent = 'Изменения относятся к этому выпуску JACKSIDE';
+      }
+    });
+    qsa('.hj-quiz-summary > span', builder).forEach((node) => {
+      if ((node.textContent || '').trim().startsWith('Версия')) node.hidden = true;
+    });
+  };
+
   const run = () => {
     installReleaseDialog();
+    installEditReleaseDialog();
     fixLegacyIssueSelect();
     addLegacyCopyToCampaignCards();
     injectReferralQualificationIntoEconomy();
     simplifyEngagementPage();
+    simplifyJacksideBuilder();
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
