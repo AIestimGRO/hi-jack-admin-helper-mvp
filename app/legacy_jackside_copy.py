@@ -124,9 +124,6 @@ def copy_legacy_campaign_to_issue(
         issue_date_value=issue_date_value,
         starts_at=starts_at,
         admin_id=admin_id,
-        final_prize_type=str(source["final_prize_type"] or "none"),
-        final_prize_catalog_reward_id=source["final_prize_catalog_reward_id"],
-        final_prize_jackcoin_amount=int(source["final_prize_jackcoin_amount"] or 0),
         final_question_time_seconds=int(source["final_question_time_seconds"] or 30),
         timezone_name=timezone_name,
     )
