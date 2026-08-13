@@ -6,6 +6,7 @@ from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
 from app.admin_access_control import install_admin_access_control
 from app.admin_account_lifecycle import install_admin_account_lifecycle
+from app.admin_information_architecture import install_admin_information_architecture
 from app.admin_telegram_unlink import install_admin_telegram_unlink
 from app.club_links_hotfix import install_club_links_hotfix
 from app.db import init_db
@@ -87,6 +88,7 @@ def _install_extensions(application):
     application = install_referral_entry_hotfix(application)
     application = install_legacy_jackside_copy(application)
     application = install_staff_quiz_admin(application)
+    application = install_admin_information_architecture(application)
     application = install_admin_access_control(application)
     return _session_middleware_outermost(application)
 
