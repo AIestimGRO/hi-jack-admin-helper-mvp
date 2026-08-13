@@ -67,6 +67,481 @@
   display: none !important;
 }
 
+/* Premium members-club tuning: keep the existing IA and navigation, quiet the content layer. */
+.member-app-body {
+  --app-bg: #090a0b;
+  --app-surface: #111214;
+  --app-surface-2: #17181b;
+  --app-line: rgba(242, 240, 237, .08);
+  --app-text: #f2f0ed;
+  --app-muted: #9b999b;
+  --app-accent: #d52b42;
+  --app-accent-strong: #e43b51;
+  --app-accent-dark: #8a1d30;
+  --app-ocean: #8e2638;
+  --app-ocean-dark: #4a151f;
+  --app-copper: #9b6943;
+  --app-gold: #b89b68;
+  --app-graphite: #3b3c40;
+  --app-black: #090a0b;
+  --hj-shell-accent: #d52b42;
+  --hj-shell-accent-soft: rgba(213, 43, 66, .12);
+  --hj-shell-gold: #b89b68;
+  --hj-shell-panel: rgba(17, 18, 20, .96);
+  --hj-shell-line: rgba(242, 240, 237, .08);
+  background:
+    radial-gradient(circle at 50% -13rem, rgba(101, 23, 37, .22), transparent 31rem),
+    #090a0b;
+  color: #f2f0ed;
+}
+
+/* Explicitly preserve the navigation palette and its existing gold shimmer. */
+.member-bottom-nav {
+  --app-accent: #31dbc5;
+}
+
+.member-app-body .member-topbar {
+  border-bottom-color: rgba(242, 240, 237, .06);
+  background: rgba(9, 10, 11, .88);
+}
+
+.member-app-body .member-brand small {
+  color: rgba(242, 240, 237, .52);
+}
+
+.member-profile-button,
+.profile-avatar-large {
+  border-color: rgba(213, 43, 66, .28);
+  background: linear-gradient(145deg, rgba(101, 23, 37, .72), rgba(31, 19, 23, .94));
+  color: #f2f0ed;
+}
+
+.member-app-body a:focus-visible,
+.member-app-body button:focus-visible,
+.member-app-body summary:focus-visible {
+  outline-color: rgba(228, 59, 81, .72);
+}
+
+.member-app-page .member-eyebrow {
+  color: #b89b68;
+  letter-spacing: 1.55px;
+}
+
+.member-app-page .member-muted,
+.member-app-page .document-version {
+  color: #9b999b;
+}
+
+.app-page-heading h1,
+.app-section-head h2,
+.profile-heading h1,
+.vault-page-heading h1 {
+  color: #f2f0ed;
+  font-weight: 800;
+}
+
+.app-page-heading h1 {
+  letter-spacing: -1.8px;
+}
+
+.app-section-head h2 {
+  letter-spacing: -.6px;
+}
+
+.member-app-page .member-card,
+.member-app-page .account-panel,
+.member-app-page .account-details,
+.member-app-page .stat-chip-grid article,
+.member-app-page .profile-metric-grid article,
+.member-app-page .home-reward-card,
+.member-app-page .smart-empty {
+  border-color: rgba(242, 240, 237, .075);
+  background: #111214;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .18);
+}
+
+.member-app-page .profile-data div {
+  border-color: rgba(242, 240, 237, .075);
+  background: #0e0f11;
+}
+
+/* Buttons: one clear action red, neutral secondary actions, restrained motion. */
+.member-app-page .member-primary,
+.member-app-page .app-primary-action,
+.member-app-page .vault-buy-button,
+.member-app-page .reward-activate-button,
+.member-app-page .product-profile-actions button:not(.secondary),
+.member-app-page .profile-title-select {
+  border-color: #d52b42;
+  background: #d52b42;
+  color: #fff7f5;
+  box-shadow: none;
+  transition: background-color .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+.member-app-page .member-primary:hover,
+.member-app-page .app-primary-action:hover,
+.member-app-page .vault-buy-button:hover,
+.member-app-page .reward-activate-button:hover,
+.member-app-page .product-profile-actions button:not(.secondary):hover,
+.member-app-page .profile-title-select:hover {
+  border-color: #e43b51;
+  background: #e43b51;
+}
+
+.member-app-page .member-primary:active,
+.member-app-page .app-primary-action:active,
+.member-app-page .vault-buy-button:active,
+.member-app-page .reward-activate-button:active,
+.member-app-page .product-profile-actions button:not(.secondary):active,
+.member-app-page .profile-title-select:active {
+  transform: scale(.985);
+}
+
+.member-app-page .app-secondary-action,
+.member-app-page .product-profile-actions .secondary {
+  border-color: rgba(242, 240, 237, .13);
+  background: rgba(242, 240, 237, .025);
+  color: #c8c5c3;
+  box-shadow: none;
+}
+
+/* JACKCOIN becomes a dark club card instead of a bright fintech card. */
+.member-app-page .jc-wallet-card {
+  border-color: rgba(184, 155, 104, .24);
+  background:
+    radial-gradient(circle at 91% 7%, rgba(214, 189, 139, .14), transparent 30%),
+    radial-gradient(circle at 8% 100%, rgba(101, 23, 37, .27), transparent 42%),
+    linear-gradient(145deg, #211418 0%, #171316 48%, #101113 100%);
+  box-shadow: 0 24px 62px rgba(0, 0, 0, .28);
+  color: #f2f0ed;
+}
+
+.member-app-page .jc-wallet-card::before,
+.member-app-page .jc-wallet-card::after {
+  border-color: rgba(214, 189, 139, .09);
+}
+
+.member-app-page .jc-wallet-card::before {
+  box-shadow: 0 0 0 34px rgba(184, 155, 104, .025), 0 0 0 72px rgba(101, 23, 37, .035);
+}
+
+.member-app-page .jc-wallet-chip {
+  border-color: rgba(214, 189, 139, .22);
+  background: rgba(184, 155, 104, .09);
+  color: #d6bd8b;
+}
+
+.member-app-page .jc-wallet-balance strong {
+  color: #f2f0ed;
+  text-shadow: none;
+}
+
+.member-app-page .jc-wallet-bottom p {
+  color: #9b999b;
+  font-weight: 650;
+}
+
+.member-app-page .jc-wallet-bottom a {
+  background: #d52b42;
+  color: #fff7f5;
+  box-shadow: none;
+}
+
+.member-app-page .mini-balance {
+  border-color: rgba(184, 155, 104, .22);
+  background: rgba(184, 155, 104, .055);
+}
+
+.member-app-page .mini-balance strong {
+  color: #d6bd8b;
+}
+
+/* Home and JACKSIDE cards: wine atmosphere, less decorative glow. */
+.member-app-page .account-nudge,
+.member-app-page .active-card-preview {
+  border-color: rgba(242, 240, 237, .075);
+  background: rgba(242, 240, 237, .025);
+}
+
+.member-app-page .account-nudge-icon {
+  background: rgba(101, 23, 37, .22);
+  color: #e16779;
+}
+
+.member-app-page .account-nudge > span:last-child,
+.member-app-page .active-card-preview > span:last-child,
+.member-app-page .app-section-head > a {
+  color: #d95767;
+}
+
+.member-app-page .app-section-head > span {
+  background: rgba(101, 23, 37, .2);
+  color: #d6bd8b;
+}
+
+.member-app-page .quiz-feature-card {
+  border-color: rgba(242, 240, 237, .075);
+  background:
+    radial-gradient(circle at 7% 18%, rgba(101, 23, 37, .25), transparent 34%),
+    linear-gradient(145deg, #151416, #0d0e10);
+}
+
+.member-app-page .quiz-feature-card::after {
+  border-color: rgba(242, 240, 237, .035);
+}
+
+.member-app-page .quiz-feature-art {
+  background:
+    repeating-linear-gradient(135deg, rgba(242, 240, 237, .018) 0 1px, transparent 1px 12px),
+    rgba(101, 23, 37, .12);
+  color: #d95767;
+}
+
+.member-app-page .quiz-feature-art i {
+  color: rgba(214, 189, 139, .38);
+}
+
+.member-app-page .member-countdown {
+  color: #e16779;
+}
+
+.member-app-page .live-status.active {
+  background: rgba(73, 185, 130, .1);
+  color: #71cfa0;
+}
+
+.member-app-page .live-status.active::before {
+  background: #71cfa0;
+  box-shadow: 0 0 0 4px rgba(73, 185, 130, .09);
+}
+
+.member-app-page .live-status.upcoming {
+  background: rgba(184, 155, 104, .09);
+  color: #cbb17e;
+}
+
+.member-app-page .quiz-empty {
+  border-color: rgba(184, 155, 104, .13);
+  background: linear-gradient(135deg, rgba(101, 23, 37, .12), rgba(242, 240, 237, .018));
+}
+
+/* Rewards and metrics: neutral canvas so artwork and numbers carry the hierarchy. */
+.member-app-page .reward-visual {
+  background:
+    radial-gradient(circle at 70% 20%, rgba(214, 189, 139, .09), transparent 30%),
+    linear-gradient(145deg, #181719, #101113);
+}
+
+.member-app-page .home-reward-card.affordable {
+  border-color: rgba(184, 155, 104, .28);
+  box-shadow: inset 0 0 0 1px rgba(184, 155, 104, .035);
+}
+
+.member-app-page .home-reward-card.affordable small {
+  color: #cbb17e;
+}
+
+.member-app-page .stat-chip-grid strong,
+.member-app-page .profile-metric-grid strong {
+  color: #f2f0ed;
+}
+
+/* Schedule, campaigns and store use the same quiet graphite/wine surfaces. */
+.member-app-page .campaign-card,
+.member-app-page .campaign-card.upcoming,
+.member-app-page .vault-catalog-card {
+  border-color: rgba(242, 240, 237, .075);
+  background:
+    radial-gradient(circle at 96% 0, rgba(101, 23, 37, .16), transparent 38%),
+    #111214;
+}
+
+.member-app-page .campaign-card-symbol,
+.member-app-page .campaign-card.upcoming .campaign-card-symbol {
+  border-color: rgba(184, 155, 104, .18);
+  background: rgba(101, 23, 37, .16);
+  color: #d6bd8b;
+}
+
+.member-app-page .campaign-rewards span {
+  background: rgba(184, 155, 104, .06);
+  color: #b7a17c;
+}
+
+.member-app-page .vault-buy-button:disabled {
+  border-color: rgba(242, 240, 237, .08);
+  background: rgba(242, 240, 237, .035);
+  color: #67676c;
+}
+
+.member-app-page .store-tabs,
+.member-app-page .schedule-tabs {
+  border-color: rgba(242, 240, 237, .07);
+  background: rgba(242, 240, 237, .025);
+}
+
+.member-app-page .store-tabs button,
+.member-app-page .schedule-tabs button {
+  color: #868589;
+}
+
+.member-app-page .store-tabs button.active,
+.member-app-page .schedule-tabs button.active {
+  background: linear-gradient(145deg, rgba(101, 23, 37, .24), rgba(184, 155, 104, .045));
+  color: #f2f0ed;
+  box-shadow: inset 0 0 0 1px rgba(184, 155, 104, .12);
+}
+
+.member-app-page .tournament-shell-card {
+  border-color: rgba(184, 155, 104, .16);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(184, 155, 104, .08), transparent 42%),
+    linear-gradient(145deg, #151416, #0e0f11);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .18);
+}
+
+/* Rating: champagne denotes rank/value; teal is removed from the content area. */
+.member-app-page[data-account-tab="rating"] .hijack-rating-head,
+.member-app-page[data-account-tab="rating"] .hijack-rating-head.hijack-rating-head-compact {
+  border-color: rgba(184, 155, 104, .16);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(184, 155, 104, .08), transparent 42%),
+    radial-gradient(circle at 0% 100%, rgba(101, 23, 37, .12), transparent 45%),
+    linear-gradient(145deg, #151416, #0e0f11);
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-head-compact .hijack-rating-me small {
+  color: #d4d0cc;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-head-compact .hijack-rating-me strong,
+.member-app-page[data-account-tab="rating"] .hijack-rating-me strong {
+  color: #d6bd8b;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-periods {
+  border-color: rgba(242, 240, 237, .075);
+  background: rgba(242, 240, 237, .025);
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-periods button {
+  color: #858487;
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-periods button.active {
+  background: linear-gradient(145deg, rgba(101, 23, 37, .24), rgba(184, 155, 104, .055));
+  color: #d6bd8b;
+  box-shadow: inset 0 0 0 1px rgba(184, 155, 104, .12);
+}
+
+.member-app-page[data-account-tab="rating"] .hijack-rating-list article {
+  border-color: rgba(184, 155, 104, .09);
+}
+
+/* Referral tree: preserve structure, remove blue/teal visual noise. */
+.member-app-page .referral-tree-head small,
+.member-app-page .referral-tree-copy small {
+  color: #77767a;
+}
+
+.member-app-page .referral-tree-stats span {
+  background: rgba(184, 155, 104, .055);
+  color: #9c9180;
+}
+
+.member-app-page .referral-tree-stats b {
+  color: #d6bd8b;
+}
+
+.member-app-page .referral-tree-root {
+  border-color: rgba(184, 155, 104, .18);
+  background: rgba(101, 23, 37, .13);
+}
+
+.member-app-page .referral-tree-root::after,
+.member-app-page .referral-tree-children,
+.member-app-page .referral-tree-children > .referral-tree-node::before {
+  border-color: rgba(184, 155, 104, .12);
+  background-color: rgba(184, 155, 104, .12);
+}
+
+.member-app-page .referral-tree-root-badge,
+.member-app-page .referral-tree-avatar {
+  background: linear-gradient(145deg, rgba(101, 23, 37, .26), rgba(184, 155, 104, .055));
+  color: #d6bd8b;
+}
+
+.member-app-page .referral-tree-person {
+  border-color: rgba(242, 240, 237, .075);
+  background: #111214;
+}
+
+.member-app-page .referral-tree-node[open] > .referral-tree-person {
+  border-color: rgba(184, 155, 104, .16);
+}
+
+/* Achievements keep their collectible character, but use wine/champagne instead of neon teal. */
+.member-app-page .profile-account-settings-button:hover,
+.member-app-page .profile-account-settings-button:focus-visible {
+  border-color: rgba(213, 43, 66, .24);
+  color: #e16779;
+}
+
+.member-app-page .profile-emblem-grid[data-two-row-titles="1"] .profile-emblem-detail {
+  border-color: rgba(184, 155, 104, .18);
+  background: #151416;
+}
+
+.member-app-page .profile-emblem-card.is-active-title,
+.member-app-page .profile-emblem-card.is-achievement:not(.is-locked) {
+  border-color: rgba(184, 155, 104, .3) !important;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(101, 23, 37, .3), transparent 50%),
+    linear-gradient(145deg, #181416, #101113) !important;
+  box-shadow:
+    0 0 0 1px rgba(184, 155, 104, .025),
+    0 0 18px rgba(184, 155, 104, .075),
+    inset 0 0 22px rgba(101, 23, 37, .06) !important;
+}
+
+.member-app-page .profile-emblem-card.is-active-title .profile-emblem-icon,
+.member-app-page .profile-emblem-card.is-achievement:not(.is-locked) .profile-emblem-icon {
+  border-color: rgba(214, 189, 139, .4) !important;
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, .12), transparent 34%),
+    rgba(101, 23, 37, .2) !important;
+  color: #d6bd8b !important;
+  box-shadow: 0 0 18px rgba(184, 155, 104, .11), inset 0 0 14px rgba(101, 23, 37, .08) !important;
+}
+
+.member-app-page .profile-emblem-card.is-selected,
+.member-app-page .profile-emblem-card.is-temporary {
+  border-color: rgba(214, 189, 139, .36) !important;
+  box-shadow: 0 0 18px rgba(184, 155, 104, .1), inset 0 0 18px rgba(184, 155, 104, .025) !important;
+}
+
+.member-app-page .profile-emblem-card.is-selected .profile-emblem-icon,
+.member-app-page .profile-emblem-card.is-temporary .profile-emblem-icon {
+  border-color: rgba(214, 189, 139, .46) !important;
+  background: rgba(184, 155, 104, .1) !important;
+  color: #d6bd8b !important;
+  box-shadow: 0 0 16px rgba(184, 155, 104, .11) !important;
+}
+
+/* Floating chat stays useful, but reads as a club control instead of a neon widget. */
+.member-app-body .member-chat-launcher {
+  border-color: rgba(213, 43, 66, .25);
+  background: linear-gradient(145deg, #211418, #101113);
+  color: #f2f0ed;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .34), 0 0 18px rgba(101, 23, 37, .09);
+}
+
+.member-app-body .member-chat-launcher .member-chat-unread {
+  background: #d52b42;
+  border-color: #090a0b;
+}
+
 @media (max-width: 430px) {
   .member-app-page[data-account-tab="rating"] .hijack-rating-periods {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
