@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Управление — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="ia-page">
+  <header class="ia-page-head"><div><p class="eyebrow">Система</p><h1>Управление</h1><p class="muted">Редко используемые настройки собраны здесь и больше не перегружают основное меню.</p></div></header>
+
+  <div class="ia-settings-grid">
+    <section class="card ia-settings-card"><div><small>Пользователи</small><h2>Учётные данные</h2><p>Регистрации, контакты, архив аккаунтов и обслуживание доступа.</p></div><div class="ia-card-actions"><a class="button" href="/master/member-accounts">Открыть</a><a href="/master/referrals">Реферальные связи</a></div></section>
+    <section class="card ia-settings-card"><div><small>Команда</small><h2>Доступы сотрудников</h2><p>Мастер, квиз-менеджеры, бармены и права доступа.</p></div><a class="button" href="/staff-access">Открыть</a></section>
+    <section class="card ia-settings-card"><div><small>Клуб</small><h2>Hi, Jack в сети</h2><p>Telegram, Mini App, карты и внешние ссылки.</p></div><a class="button" href="/master/club-links">Открыть</a></section>
+    <section class="card ia-settings-card"><div><small>Право</small><h2>Юридические документы</h2><p>Редакции документов, согласия и регистрационный gate.</p></div><a class="button" href="/master/legal-documents">Открыть</a></section>
+    <section class="card ia-settings-card"><div><small>Клубные бонусы</small><h2>Преференции</h2><p>Типы бонусов и служебные настройки старых механик.</p></div><a class="button" href="/master?tab=preferences">Открыть</a></section>
+    <section class="card ia-settings-card"><div><small>История</small><h2>Журналы</h2><p>Аудит мастер-админки и клиентские операции.</p></div><div class="ia-card-actions"><a class="button" href="/master?tab=audit">Аудит</a><a href="/logs">Операции</a></div></section>
+    <section class="card ia-settings-card"><div><small>Квизы</small><h2>Коды наград</h2><p>Служебный реестр кодов классических квизов.</p></div><a class="button" href="/admin/rewards">Открыть</a></section>
+  </div>
+</section>
+{% endblock %}
