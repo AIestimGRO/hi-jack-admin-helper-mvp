@@ -2,10 +2,13 @@
 
 from starlette.middleware.sessions import SessionMiddleware
 
-# Import this before extensions/main_impl bind JACKSIDE service functions.
-# The module installs compatibility overrides at import time; the schema
+# Import these before extensions/main_impl bind JACKSIDE service functions.
+# They install compatibility/runtime overrides at import time; the schema
 # migration itself runs only after the base DB has been initialized below.
 from app.jackside_multi_issue import ensure_multi_issue_schema, install_jackside_multi_issue
+from app.jackside_multi_runtime import apply_runtime_overrides
+
+apply_runtime_overrides()
 
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
