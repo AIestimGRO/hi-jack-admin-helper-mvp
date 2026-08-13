@@ -25,6 +25,7 @@
         <span><strong data-countdown-seconds>00</strong><small>секунд</small></span>
       </div>
       <p class="quiz-schedule-time"></p>
+      {% if campaign_type == 'daily_414' %}<a class="quiz-secondary quiz-account-return" href="/account">Вернуться в приложение</a>{% endif %}
     </section>
 
     <section class="quiz-screen quiz-schedule-screen" data-screen="ended">
@@ -54,10 +55,11 @@
         <li>10 вопросов · 4 минуты 14 секунд · одна попытка · без возврата к ответам</li>
         <li>Данный квиз прошли: <strong data-role="completed-count">{{ jackside.completed_count if jackside else 0 }}</strong></li>
         <li>Онлайн сейчас: <strong data-role="online-count">{{ jackside.online_count if jackside else 0 }}</strong></li>
-        <li data-role="welcome-prize">{{ jackside.prize_headline if jackside else daily_prize_title }}</li>
+        <li data-role="welcome-prize">414 JACKCOIN победителю</li>
         <li data-role="welcome-award">{{ jackside.base_award_hint if jackside else 'JACKCOIN за правильные ответы' }}</li>
       </ul>
       <p class="quiz-rules-link"><a href="/jackside/rules">Полные правила</a></p>
+      {% if schedule_state == 'upcoming' %}<a class="quiz-secondary quiz-account-return" href="/account">Вернуться в приложение</a>{% endif %}
       {% endif %}
       {% if telegram_error %}<p class="quiz-validation">{{ telegram_error }}</p>{% endif %}
       <button class="quiz-primary" type="button" data-action="identify">Начать</button>
@@ -66,13 +68,12 @@
     {% if campaign_type == 'daily_414' %}
     <section class="quiz-screen daily-414-screen" data-screen="daily-prize">
       <p class="quiz-kicker">Сегодня на кону</p>
-      <h2>Главный приз дня</h2>
+      <h2>Главный приз</h2>
       <div class="daily-prize-card">
         <span>♠</span>
-        <strong>{{ daily_prize_title }}</strong>
-        <small>{{ daily_prize_note }}</small>
+        <strong>414 JACKCOIN</strong>
+        <small>Начисление победителю сразу после завершения финала</small>
       </div>
-      <p class="quiz-lead small">Топ-10: сначала точность, затем скорость<br>Отбор открыт первые 5 минут</p>
       <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
     </section>
 
@@ -85,7 +86,7 @@
         <span>Одна попытка</span>
       </div>
       <button class="quiz-primary" type="button" data-action="daily-start">СЕСТЬ ЗА СТОЛ</button>
-      <small class="daily-start-time">Игра проходит каждый день в 18:14</small>
+      <small class="daily-start-time">Старт — по расписанию текущего выпуска</small>
     </section>
 
     <section class="quiz-screen daily-414-screen river-screen" data-screen="river">
