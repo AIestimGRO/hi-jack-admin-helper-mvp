@@ -24,11 +24,12 @@ from app.services.jackside_issues import (
     create_issue,
     ensure_issue_campaign,
     list_issues,
+    schedule_issue,
 )
 from app.services.phone import display_phone
 
 
-ASSET_VERSION = "admin-ia-v2"
+ASSET_VERSION = "admin-ia-v3"
 
 
 def _csrf(request: Request) -> str:
@@ -49,6 +50,20 @@ def _display_datetime(value: Any, timezone_name: str = "Europe/Moscow") -> str:
         return raw
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(ZoneInfo(timezone_name)).strftime("%d.%m.%Y %H:%M")
+
+
+def _display_local_datetime(value: Any, timezone_name: str = "Europe/Moscow") -> str:
+    """Display a campaign wall-clock timestamp without adding a second UTC offset."""
+    if value is None or not str(value).strip():
+        return "—"
+    raw = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw
+    if parsed.tzinfo is None:
+        return parsed.strftime("%d.%m.%Y %H:%M")
     return parsed.astimezone(ZoneInfo(timezone_name)).strftime("%d.%m.%Y %H:%M")
 
 
@@ -139,6 +154,7 @@ def _jackside_campaign_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
             SELECT qc.id,qc.code,qc.title,qc.is_active,qc.active_from,qc.active_until,
                    qc.archived_at,qc.created_at,
                    ji.id AS issue_id,ji.issue_date,ji.status AS issue_status,
+                   ji.starts_at AS issue_starts_at,
                    (SELECT COUNT(*) FROM quiz_questions qq
                     WHERE qq.campaign_code=qc.code AND IFNULL(qq.is_active,1)=1
                       AND IFNULL(qq.game_round,'main')='main') AS main_count,
@@ -157,6 +173,25 @@ def _jackside_campaign_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
+def _schedule_error_text(exc: ValueError) -> str:
+    raw = str(exc)
+    if not raw.startswith("issue_invalid:"):
+        return raw
+    reasons = raw.split(":", 1)[1].split(",")
+    labels = {
+        "main_questions_must_be_ten": "нужно ровно 10 основных вопросов",
+        "final_questions_required": "нужен хотя бы один финальный вопрос",
+        "invalid_schedule_start": "неверно задан старт",
+        "invalid_schedule_end": "неверно задан конец выпуска",
+        "invalid_jackcoin_prize": "неверно задан главный приз JACKCOIN",
+        "missing_card_prize": "не выбрана карточка главного приза",
+        "invalid_card_prize": "карточка главного приза недоступна",
+        "missing_rules_version": "не найдена версия правил",
+    }
+    readable = [labels.get(reason, reason) for reason in reasons]
+    return "; ".join(readable)
+
+
 def install_admin_information_architecture(app: FastAPI) -> FastAPI:
     if getattr(app.state, "admin_information_architecture_installed", False):
         return app
@@ -166,6 +201,9 @@ def install_admin_information_architecture(app: FastAPI) -> FastAPI:
     templates.env.globals["display_phone"] = display_phone
     templates.env.globals["display_datetime"] = lambda value: _display_datetime(
         value, settings.timezone_name
+    )
+    templates.env.globals["display_local_datetime"] = (
+        lambda value: _display_local_datetime(value, settings.timezone_name)
     )
 
     @app.get("/master/clients", response_class=HTMLResponse)
@@ -322,6 +360,8 @@ def install_admin_information_architecture(app: FastAPI) -> FastAPI:
                 error=True,
             )
         source = str(source or "").strip()
+        scheduled = False
+        schedule_warning = ""
         try:
             with transaction(settings.db_path) as conn:
                 if source.startswith("issue:"):
@@ -369,6 +409,16 @@ def install_admin_information_architecture(app: FastAPI) -> FastAPI:
                         "UPDATE quiz_campaigns SET title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                         (title.strip()[:100], int(campaign_row["id"])),
                     )
+                if source:
+                    try:
+                        schedule_issue(
+                            conn,
+                            issue_id=int(issue["id"]),
+                            timezone_name=settings.timezone_name,
+                        )
+                        scheduled = True
+                    except ValueError as exc:
+                        schedule_warning = _schedule_error_text(exc)
         except (ValueError, sqlite3.IntegrityError) as exc:
             messages = {
                 "issue_date_exists": "На эту дату выпуск JACKSIDE уже существует",
@@ -380,9 +430,20 @@ def install_admin_information_architecture(app: FastAPI) -> FastAPI:
             return _redirect(
                 "/master/jackside", messages.get(str(exc), str(exc)), error=True
             )
+        if scheduled:
+            return _redirect(
+                "/master/jackside",
+                f"Создан и запланирован JACKSIDE на {day.strftime('%d.%m.%Y')}",
+            )
+        if source and schedule_warning:
+            return _redirect(
+                "/master/jackside",
+                "Черновик создан, но не запланирован: " + schedule_warning,
+                error=True,
+            )
         return _redirect(
             "/master/jackside",
-            f"Создан draft JACKSIDE на {day.strftime('%d.%m.%Y')}",
+            f"Создан черновик JACKSIDE на {day.strftime('%d.%m.%Y')}",
         )
 
     @app.get("/api/master/referral-qualification-settings")
