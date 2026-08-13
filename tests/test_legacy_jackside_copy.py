@@ -49,10 +49,7 @@ def _seed_legacy_daily(conn, *, code: str = "friday_legacy") -> int:
         INSERT INTO quiz_options(question_id, code, text, is_correct, position)
         VALUES (?, ?, ?, ?, ?)
         """,
-        [
-            (main_id, "a", "Неверно", 0, 10),
-            (main_id, "b", "Верно", 1, 20),
-        ],
+        [(main_id, "a", "Неверно", 0, 10), (main_id, "b", "Верно", 1, 20)],
     )
     final_id = int(
         conn.execute(
@@ -71,10 +68,7 @@ def _seed_legacy_daily(conn, *, code: str = "friday_legacy") -> int:
         INSERT INTO quiz_options(question_id, code, text, is_correct, position)
         VALUES (?, ?, ?, ?, ?)
         """,
-        [
-            (final_id, "a", "Мимо", 0, 10),
-            (final_id, "b", "Точно", 1, 20),
-        ],
+        [(final_id, "a", "Мимо", 0, 10), (final_id, "b", "Точно", 1, 20)],
     )
     return campaign_id
 
@@ -85,10 +79,7 @@ def test_legacy_daily_campaign_is_offered_as_copy_source(tmp_path) -> None:
     with transaction(db_path) as conn:
         campaign_id = _seed_legacy_daily(conn)
         conn.execute(
-            """
-            INSERT INTO quiz_campaigns(code, title, campaign_type)
-            VALUES ('classic_old', 'Обычный квиз', 'classic')
-            """
+            "INSERT INTO quiz_campaigns(code, title, campaign_type) VALUES ('classic_old', 'Обычный квиз', 'classic')"
         )
         rows = list_legacy_daily_campaigns(conn)
 
@@ -155,7 +146,6 @@ def test_copy_legacy_daily_creates_new_issue_without_mutating_source(tmp_path) -
                 (source_before["code"],),
             ).fetchall()
         ]
-
         remaining_sources = list_legacy_daily_campaigns(conn)
 
     assert issue["campaign_code"] == "jackside_20260813"
@@ -163,9 +153,9 @@ def test_copy_legacy_daily_creates_new_issue_without_mutating_source(tmp_path) -
     assert int(issue["final_question_count"]) == 1
     assert target_campaign is not None
     assert target_campaign["campaign_type"] == "daily_414"
-    assert int(target_campaign["final_prize_jackcoin_amount"]) == 777
+    assert target_campaign["final_prize_type"] == "none"
+    assert int(target_campaign["final_prize_jackcoin_amount"]) == 0
     assert int(target_campaign["final_question_time_seconds"]) == 25
-
     assert [(row["code"], row["game_round"]) for row in copied_questions] == [
         ("q1", "main"),
         ("final1", "final"),
@@ -177,7 +167,6 @@ def test_copy_legacy_daily_creates_new_issue_without_mutating_source(tmp_path) -
         ("Мимо", 0),
         ("Точно", 1),
     ]
-
     assert dict(source_after) == dict(source_before)
     assert source_question_ids_after == source_question_ids_before
     assert campaign_id in [int(row["id"]) for row in remaining_sources]
