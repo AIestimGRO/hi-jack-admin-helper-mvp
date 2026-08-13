@@ -69,7 +69,16 @@
   </aside>
   {% endif %}
 
-  <main class="container">{% block content %}{% endblock %}</main>
+  <main class="container">
+    {% if is_master and admin_section == 'clients' %}
+    <nav class="ia-local-nav ia-shell-subnav" aria-label="Разделы клиентов">
+      <a class="{{ 'active' if current_path.startswith('/master/clients') or current_path.startswith('/clients') else '' }}" href="/master/clients">База клиентов</a>
+      <a class="{{ 'active' if current_path.startswith('/master/member-accounts') else '' }}" href="/master/member-accounts">Учётные данные</a>
+      <a class="{{ 'active' if current_path.startswith('/master/referrals') else '' }}" href="/master/referrals">Реферальные связи</a>
+    </nav>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
 
   {% if request.session.get('authenticated') %}
   <nav class="admin-bottom-nav" aria-label="Быстрые разделы">
