@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Результаты и аналитика — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="ia-page">
+  <header class="ia-page-head">
+    <div>
+      <p class="eyebrow">Игра · отчёты</p>
+      <h1>Результаты и аналитика</h1>
+      <p class="muted">Один рабочий раздел вместо отдельных экранов результатов и JACKSIDE-аналитики.</p>
+    </div>
+    <span class="ia-sync-note">Расчёт: {{ display_datetime(analytics_generated_at) }}</span>
+  </header>
+
+  <nav class="ia-local-nav" aria-label="Отчёты">
+    <a class="{{ 'active' if report=='overview' else '' }}" href="/master/reports?report=overview">Обзор</a>
+    <a class="{{ 'active' if report=='results' else '' }}" href="/master/reports?report=results">Результаты игроков</a>
+    <a class="{{ 'active' if report=='issues' else '' }}" href="/master/reports?report=issues">По выпускам</a>
+  </nav>
+
+  {% if report == 'overview' %}
+    {% set p = analytics.get('participants', {}) %}
+    {% set e = analytics.get('economy', {}) %}
+    <div class="ia-stat-grid">
+      <article class="card ia-stat"><small>Зарегистрированные</small><strong>{{ p.get('registered',0) }}</strong><span>активные аккаунты</span></article>
+      <article class="card ia-stat"><small>Сегодня завершили</small><strong>{{ p.get('completed_today',0) }}</strong><span>уникальных игроков</span></article>
+      <article class="card ia-stat"><small>Средний результат</small><strong>{{ p.get('average_result',0) }}/10</strong><span>последние 30 дней</span></article>
+      <article class="card ia-stat"><small>Completion rate</small><strong>{{ p.get('completion_rate',0) }}%</strong><span>завершили начатую игру</span></article>
+      <article class="card ia-stat"><small>Попадание в финал</small><strong>{{ p.get('final_rate',0) }}%</strong><span>от завершивших</span></article>
+      <article class="card ia-stat"><small>Квалифицированные рефералы</small><strong>{{ p.get('qualified_referrals',0) }}</strong><span>за всё время</span></article>
+      <article class="card ia-stat"><small>Начислено</small><strong>{{ e.get('accrued',0) }} JC</strong><span>без возвратов</span></article>
+      <article class="card ia-stat"><small>Общий баланс</small><strong>{{ e.get('current_balance',0) }} JC</strong><span>у участников</span></article>
+    </div>
+
+    <div class="ia-two-col">
+      <section class="card ia-report-card">
+        <div class="section-head"><h2>Активность</h2><span class="muted">уникальные игроки</span></div>
+        {% for days in ['3','7','14','30'] %}<div class="ia-kv"><span>За {{ days }} дней</span><strong>{{ p.get('activity',{}).get(days,0) }}</strong></div>{% endfor %}
+      </section>
+      <section class="card ia-report-card">
+        <div class="section-head"><h2>Экономика</h2><a href="/master/economy">Настройки →</a></div>
+        <div class="ia-kv"><span>Потрачено</span><strong>{{ e.get('spent',0) }} JC</strong></div>
+        <div class="ia-kv"><span>Возвращено</span><strong>{{ e.get('refunded',0) }} JC</strong></div>
+        <div class="ia-kv"><span>Активные карты</span><strong>{{ e.get('unused',0) }}</strong></div>
+        <div class="ia-kv"><span>Погашенные карты</span><strong>{{ e.get('redeemed',0) }}</strong></div>
+      </section>
+    </div>
+  {% elif report == 'results' %}
+    <form class="ia-filter-bar" method="get" action="/master/reports">
+      <input type="hidden" name="report" value="results">
+      <select name="campaign"><option value="">Все квизы</option>{% for item in campaigns %}<option value="{{ item.code }}" {% if campaign==item.code %}selected{% endif %}>{{ item.title }}</option>{% endfor %}</select>
+      <button class="primary" type="submit">Показать</button>
+      <a class="button" href="/api/quiz/results.csv{% if campaign %}?campaign={{ campaign }}{% endif %}">CSV</a>
+    </form>
+    <div class="card table-wrap">
+      <table class="admin-card-table ia-data-table"><thead><tr><th>Игрок</th><th>Квиз</th><th>Результат</th><th>Время</th><th>JACKCOIN</th><th>Когда</th><th></th></tr></thead><tbody>
+      {% for row in results %}<tr>
+        <td data-label="Игрок"><strong>{{ row.first_name or row.nickname or ('@' ~ row.username if row.username else ('ID ' ~ row.client_id)) }}</strong></td>
+        <td data-label="Квиз">{{ row.campaign_title or row.campaign_code }}</td>
+        <td data-label="Результат"><strong>{{ row.correct_count }}/{{ row.max_correct_count }}</strong></td>
+        <td data-label="Время">{{ ((row.completion_time_ms or 0)/1000)|round(1) }} сек.</td>
+        <td data-label="JACKCOIN">{{ row.jackcoin_awarded or 0 }} JC</td>
+        <td data-label="Когда">{{ display_datetime(row.created_at) }}</td>
+        <td><a href="/admin/quiz-results/{{ row.id }}">Открыть →</a></td>
+      </tr>{% else %}<tr><td colspan="7" class="empty">Нет результатов</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  {% else %}
+    <div class="card table-wrap">
+      <table class="admin-card-table ia-data-table"><thead><tr><th>Выпуск</th><th>Игроков</th><th>Прохождений</th><th>Средний результат</th><th>Среднее время</th><th>Начислено</th></tr></thead><tbody>
+      {% for row in issues %}<tr>
+        <td data-label="Выпуск"><strong>{{ row.title }}</strong><small>{{ row.issue_date or row.code }}</small></td>
+        <td data-label="Игроков">{{ row.players }}</td><td data-label="Прохождений">{{ row.submissions }}</td>
+        <td data-label="Средний результат">{{ row.avg_correct or 0 }}/10</td>
+        <td data-label="Среднее время">{{ row.avg_seconds or 0 }} сек.</td>
+        <td data-label="Начислено">{{ row.awarded_jc }} JC</td>
+      </tr>{% else %}<tr><td colspan="6" class="empty">Выпусков пока нет</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}
