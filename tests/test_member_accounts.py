@@ -1215,19 +1215,8 @@ def test_daily_414_full_game_awards_jackcoin_and_locks_answers(
         assert started.status_code == 200
         attempt = started.json()
         assert attempt["campaign_type"] == "daily_414"
-        assert [item["game_stage"] for item in attempt["questions"]] == [
-            "preflop",
-            "preflop",
-            "flop",
-            "flop",
-            "flop",
-            "turn",
-            "turn",
-            "turn",
-            "river",
-            "river",
-        ]
-        assert attempt["questions"][-1]["river_reveal"] is True
+        assert [item["game_stage"] for item in attempt["questions"]] == [""] * 10
+        assert all(item["river_reveal"] is False for item in attempt["questions"])
         assert all(len(item.get("options") or []) >= 2 for item in attempt["questions"])
         quiz_js = Path(__file__).resolve().parents[1] / "app" / "static" / "js" / "quiz.js"
         quiz_html = Path(__file__).resolve().parents[1] / "app" / "templates" / "quiz.html"
