@@ -32,3 +32,12 @@ def test_member_ui_cleanup_covers_requested_shell_changes() -> None:
     assert ".store-balance-chip" in css
     assert ".is-stable-chat.chat-collapsed" in css
     assert "min-height: 164px" in css
+
+
+def test_profile_rich_blocks_require_engagement_context() -> None:
+    base = (ROOT / "app/templates/member_base.html").read_text(encoding="utf-8")
+
+    assert (
+        "{% if current_tab|default('') == 'profile' and engagement is defined %}"
+        in base
+    )
