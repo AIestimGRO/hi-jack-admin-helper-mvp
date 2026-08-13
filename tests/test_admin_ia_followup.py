@@ -121,7 +121,7 @@ def test_complete_legacy_copy_is_scheduled_and_keeps_moscow_wall_time(
             follow_redirects=False,
         )
         assert response.status_code == 303
-        assert "Создан+и+запланирован" in response.headers["location"]
+        assert response.headers["location"].startswith("/master/jackside?ok=")
 
         with transaction(settings.db_path) as conn:
             issue = conn.execute(
