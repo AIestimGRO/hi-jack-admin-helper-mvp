@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from app.db import init_db, transaction
+from app.referral_status_policy import update_referral_activity_status
 from app.services.jackside_engagement import (
     effective_title,
     ensure_jackside_referral_code,
@@ -203,7 +204,7 @@ def test_classic_referral_schema_and_scope_remain_compatible(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM referral_qualification_progress").fetchone()[0] == 0
 
 
-def test_referrer_and_invited_rewards_are_configured_separately(tmp_path):
+def test_three_day_referral_status_does_not_issue_material_rewards(tmp_path):
     path = setup_db(tmp_path)
     with transaction(path) as conn:
         seed_daily_campaign(conn)
@@ -216,25 +217,31 @@ def test_referrer_and_invited_rewards_are_configured_separately(tmp_path):
                WHERE id=1"""
         )
         code = ensure_jackside_referral_code(conn, referrer)
-        fix_jackside_referral(conn, invited_client_id=invited, referral_code=code["code"], campaign_code="jackside_test")
+        fix_jackside_referral(
+            conn,
+            invited_client_id=invited,
+            referral_code=code["code"],
+            campaign_code="jackside_test",
+        )
         last = None
         for day in (1, 2, 3):
             last = add_completion(conn, invited, f"2026-08-{day:02d}T12:00:00+00:00")
-        process_referral_qualification(conn, invited_client_id=invited, submission_id=last, timezone_name="Europe/Moscow")
-        progress = conn.execute("SELECT * FROM referral_qualification_progress WHERE invited_client_id=?", (invited,)).fetchone()
-        assert progress["referrer_reward_id"] is not None
-        assert progress["invited_reward_id"] is not None
-        balances = {}
-        for client_id, key in ((referrer, "referrer"), (invited, "invited")):
-            balances[key] = conn.execute(
-                """SELECT cp.balance_int FROM client_preferences cp JOIN preference_types pt ON pt.id=cp.preference_type_id
-                   WHERE cp.client_id=? AND pt.code='free_entry'""", (client_id,)
-            ).fetchone()[0]
-        assert balances == {"referrer": 2, "invited": 1}
-        reward_count = conn.execute(
-            "SELECT COUNT(*) FROM quiz_reward_codes WHERE campaign_code LIKE 'jackside_referral_%'"
-        ).fetchone()[0]
-        process_referral_qualification(conn, invited_client_id=invited, submission_id=last, timezone_name="Europe/Moscow")
+
+        progress = update_referral_activity_status(
+            conn,
+            invited_client_id=invited,
+            submission_id=last,
+            timezone_name="Europe/Moscow",
+        )
+
+        assert progress is not None
+        assert progress["qualified_at"] is not None
+        assert progress["referrer_reward_id"] is None
+        assert progress["invited_reward_id"] is None
         assert conn.execute(
             "SELECT COUNT(*) FROM quiz_reward_codes WHERE campaign_code LIKE 'jackside_referral_%'"
-        ).fetchone()[0] == reward_count
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM client_preferences WHERE client_id IN (?,?) AND balance_int>0",
+            (referrer, invited),
+        ).fetchone()[0] == 0
