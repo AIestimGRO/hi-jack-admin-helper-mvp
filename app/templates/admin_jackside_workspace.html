@@ -6,7 +6,7 @@
     <div>
       <p class="eyebrow">Игра</p>
       <h1>JACKSIDE</h1>
-      <p class="muted">Квизы, выпуски и повторный запуск — в одном месте. Старые результаты при копировании не меняются.</p>
+      <p class="muted">Квизы, выпуски и повторный запуск — в одном месте. В один день можно запланировать несколько независимых выпусков.</p>
     </div>
     <div class="ia-page-actions">
       <a class="ia-quiet-link" href="/master/jackside-issues">Расширенный режим</a>
@@ -34,6 +34,7 @@
       <div class="ia-card-actions">
         <a class="button" href="/master/quiz-builder/{{ campaign.id }}">Вопросы</a>
         {% if campaign.issue_id %}
+          {% if campaign.issue_status in ['draft','scheduled','lobby'] %}<button class="button" type="button" data-edit-issue="{{ campaign.issue_id }}">Изменить выпуск</button>{% endif %}
           <button class="button" type="button" data-repeat-source="issue:{{ campaign.issue_id }}">Повторить выпуск</button>
         {% else %}
           <button class="button" type="button" data-repeat-source="legacy:{{ campaign.id }}">Новый выпуск из этого квиза</button>
@@ -53,6 +54,7 @@
         <span>{{ issue.main_question_count }}/10 · финал {{ issue.final_question_count }}</span>
         <div class="ia-row-actions">
           {% if issue.campaign_id %}<a href="/master/quiz-builder/{{ issue.campaign_id }}">Вопросы</a>{% endif %}
+          {% if issue.status in ['draft','scheduled','lobby'] %}<button type="button" class="ia-link-button" data-edit-issue="{{ issue.id }}">Изменить</button>{% endif %}
           <button type="button" class="ia-link-button" data-repeat-source="issue:{{ issue.id }}">Повторить</button>
         </div>
       </article>
@@ -61,10 +63,11 @@
   </details>
 
   <dialog class="ia-dialog" data-release-dialog>
-    <form method="post" action="/api/master/jackside/create-release" data-release-form>
+    <form method="post" action="/api/master/jackside/create-release-v2" data-release-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="confirm_same_day" value="0" data-same-day-confirm>
       <div class="ia-dialog-head"><div><p class="eyebrow">JACKSIDE</p><h2>Новый выпуск</h2></div><button type="button" class="ia-dialog-close" data-close-release aria-label="Закрыть">×</button></div>
-      <p class="muted">Общий таймер 4:14 и правила игры остаются системными. Вы задаёте только выпуск и при желании выбираете основу.</p>
+      <p class="muted">Общий таймер 4:14 и правила игры остаются системными. Если в этот день уже есть JACKSIDE, перед созданием потребуется отдельное подтверждение.</p>
       <label>Новая дата<input type="date" name="issue_date" required></label>
       <label>Старт <small>по Москве</small><input type="datetime-local" name="starts_at" required></label>
       <label>Название <small>необязательно</small><input name="title" maxlength="100" placeholder="JACKSIDE"></label>
@@ -81,6 +84,20 @@
         <small data-release-hint>Пустой выпуск сохранится черновиком. Готовый источник будет проверен и сразу запланирован.</small>
       </label>
       <div class="ia-dialog-actions"><button class="button" type="button" data-close-release>Отмена</button><button class="primary" type="submit" data-release-submit>Создать черновик</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="ia-dialog" data-edit-release-dialog>
+    <form method="post" data-edit-release-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="confirm_same_day" value="0" data-same-day-confirm>
+      <input type="hidden" name="issue_id" value="" data-edit-issue-id>
+      <div class="ia-dialog-head"><div><p class="eyebrow">JACKSIDE</p><h2>Изменить выпуск</h2></div><button type="button" class="ia-dialog-close" data-close-edit-release aria-label="Закрыть">×</button></div>
+      <p class="muted" data-edit-release-note>До фактического старта можно изменить дату, время и название. Вопросы, призы и история выпуска не теряются.</p>
+      <label>Дата<input type="date" name="issue_date" required data-edit-date></label>
+      <label>Старт <small>по Москве</small><input type="datetime-local" name="starts_at" required data-edit-start></label>
+      <label>Название<input name="title" maxlength="100" required data-edit-title></label>
+      <div class="ia-dialog-actions"><button class="button" type="button" data-close-edit-release>Отмена</button><button class="primary" type="submit">Сохранить расписание</button></div>
     </form>
   </dialog>
 </section>
