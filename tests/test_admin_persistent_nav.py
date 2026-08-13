@@ -4,19 +4,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_admin_uses_only_one_persistent_navigation_shell() -> None:
+def test_admin_uses_only_one_task_oriented_persistent_navigation_shell() -> None:
     template = (ROOT / "app/templates/base.html").read_text(encoding="utf-8")
     css = (ROOT / "app/static/css/admin-persistent-nav.css").read_text(encoding="utf-8")
     admin_js = (ROOT / "app/static/js/product-shell-admin.js").read_text(encoding="utf-8")
 
     assert "admin-persistent-nav.css" in template
     assert 'class="admin-menu-panel admin-persistent-nav"' in template
-    assert "/master?tab=campaigns" in template
-    assert "/master?tab=analytics" in template
+    assert "/master/clients" in template
+    assert "/master/jackside" in template
+    assert "/master/reports" in template
+    assert "/master/economy" in template
     assert "/master?tab=engagement" in template
-    assert "/master?tab=preferences" in template
     assert "/staff-access" in template
-    assert "/master?tab=audit" in template
+    assert "/master/settings" in template
+
+    assert "Выпуски JACKSIDE" not in template
+    assert "Аналитика JACKSIDE" not in template
+    assert "Реферальные связи</strong>" not in template
+    assert "Иконки коллекции</strong>" not in template
 
     assert ".admin-persistent-nav[hidden]" in css
     assert ".admin-app-body .master-tabs" in css
