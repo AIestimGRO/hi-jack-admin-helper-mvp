@@ -150,15 +150,15 @@ def test_quiz_manager_campaign_validation_keeps_safe_limits() -> None:
     assert values == ("Test quiz", 7, 20, 120, 2, 1)
 
 
-def test_scoped_navigation_does_not_send_manager_to_generic_master() -> None:
+def test_scoped_navigation_does_not_send_manager_to_master_workspaces() -> None:
     base = (ROOT / "app/templates/base.html").read_text(encoding="utf-8")
     dashboard = (ROOT / "app/templates/dashboard.html").read_text(encoding="utf-8")
     client = (ROOT / "app/templates/client_detail.html").read_text(encoding="utf-8")
     script = (ROOT / "app/static/js/prelaunch-admin.js").read_text(encoding="utf-8")
 
     assert "data-admin-access-role" in base
-    assert "'/master?tab=campaigns' if is_master else '/staff/quizzes'" in base
-    assert "href=\"/staff-users\"" in base
+    assert "'/master/jackside' if is_master else '/staff/quizzes'" in base
+    assert "'/master/reports' if is_master else '/admin/quiz-results'" in base
     assert "href=\"/staff-access\"" in base
     assert "access_role == 'quiz_manager'" in dashboard
     assert "{% if access_role == 'master' %}" in client
