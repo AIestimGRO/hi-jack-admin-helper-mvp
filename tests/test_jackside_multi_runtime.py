@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app import admin_information_architecture as admin_ia
 from app.db import init_db, transaction
 from app.jackside_multi_issue import create_issue_multi, ensure_multi_issue_schema
-from app.jackside_multi_runtime import effective_campaign_schedule_multi
+from app.jackside_multi_runtime import (
+    current_featured_issue_runtime,
+    effective_campaign_schedule_multi,
+)
 from app.services.jackside_issues import ensure_issue_campaign
 
 
@@ -76,6 +79,44 @@ def test_scheduled_issue_remains_visible_to_member_campaign_list(tmp_path: Path)
 
     assert int(payload["is_active"]) == 1
     assert str(payload["active_from"]).endswith("18:14:00")
+
+
+def test_featured_release_hands_off_after_previous_final_window(tmp_path: Path) -> None:
+    path = _db(tmp_path)
+    day = date(2026, 8, 14)
+    first_start = datetime(2026, 8, 14, 12, 0, tzinfo=MOSCOW)
+    second_start = datetime(2026, 8, 14, 18, 0, tzinfo=MOSCOW)
+    with transaction(path) as conn:
+        first = create_issue_multi(
+            conn,
+            issue_date_value=day,
+            starts_at=first_start,
+            title="Lunch",
+        )
+        second = create_issue_multi(
+            conn,
+            issue_date_value=day,
+            starts_at=second_start,
+            title="Evening",
+        )
+        for issue in (first, second):
+            campaign = ensure_issue_campaign(conn, issue=issue)
+            conn.execute(
+                "UPDATE quiz_campaigns SET is_active=1 WHERE id=?",
+                (int(campaign["id"]),),
+            )
+            conn.execute(
+                "UPDATE jackside_issues SET status='scheduled' WHERE id=?",
+                (int(issue["id"]),),
+            )
+        featured = current_featured_issue_runtime(
+            conn,
+            now=datetime(2026, 8, 14, 12, 10, tzinfo=MOSCOW),
+        )
+
+    assert featured is not None
+    assert featured["campaign_code"] == second["campaign_code"]
+    assert featured["title"] == "Evening"
 
 
 def test_multi_issue_runtime_busts_admin_ia_asset_cache() -> None:
