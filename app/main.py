@@ -2,6 +2,11 @@
 
 from starlette.middleware.sessions import SessionMiddleware
 
+# Import this before extensions/main_impl bind JACKSIDE service functions.
+# The module installs compatibility overrides at import time; the schema
+# migration itself runs only after the base DB has been initialized below.
+from app.jackside_multi_issue import ensure_multi_issue_schema, install_jackside_multi_issue
+
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
 from app.admin_access_control import install_admin_access_control
@@ -65,6 +70,9 @@ def _install_extensions(application):
     # installed during app import. init_db is additive/idempotent, so expose the
     # base tables before the legal extension adds its own foreign keys/triggers.
     init_db(application.state.settings.db_path)
+    # Historic JACKSIDE used UNIQUE(issue_date). Migrate that single constraint
+    # before extensions install triggers; IDs, child FKs and all rows are kept.
+    ensure_multi_issue_schema(application.state.settings.db_path)
     application = install_legal_registration(application)
     application = install_registration_flow_hotfix(application)
     application = install_public_rating_consent_policy(application)
@@ -86,6 +94,7 @@ def _install_extensions(application):
     application = install_jackside_rating_freshness(application)
     application = install_referral_registration_integrity(application)
     application = install_referral_entry_hotfix(application)
+    application = install_jackside_multi_issue(application)
     application = install_legacy_jackside_copy(application)
     application = install_staff_quiz_admin(application)
     application = install_admin_information_architecture(application)
