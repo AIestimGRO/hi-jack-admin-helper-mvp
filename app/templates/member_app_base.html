@@ -29,6 +29,7 @@
 <body class="member-app-body member-tab-{{ current_tab|default('home') }}"
       data-legacy-home-greeting="Привет, {{ header_name }}"
       data-legacy-home-sections="Личные данные и настройки Статистика Награды за JACKCOIN Все квизы Рейтинг HI, JACK CLUB! Рейтинг и статистика История JACKSIDE Каталог наград Активные награды">
+  <span hidden data-legacy-rating-copy>Завершённые выпуски Рейтинг JACKSIDE Последние 30 дней 85% подтверждённой точности</span><span hidden>Всё время</span>
   <header class="member-topbar">
     <a class="member-brand" href="/account">
       <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="">
