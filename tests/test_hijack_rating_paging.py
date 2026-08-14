@@ -65,3 +65,63 @@ def test_global_rating_pages_large_leaderboard(tmp_path: Path) -> None:
     assert second["offset"] == 25
     assert len(second["rows"]) == 25
     assert second["rows"][0]["place"] == 26
+
+
+def test_global_rating_falls_back_to_latest_legacy_snapshot(tmp_path: Path) -> None:
+    db_path = tmp_path / "rating-legacy-fallback.sqlite3"
+    init_db(db_path)
+
+    with transaction(db_path) as conn:
+        client_id = int(
+            conn.execute(
+                "INSERT INTO clients(first_name,source) VALUES ('Member','test')"
+            ).lastrowid
+        )
+        old_snapshot = int(
+            conn.execute(
+                """
+                INSERT INTO club_rating_snapshots(snapshot_date,source_file)
+                VALUES ('2026-07-31','old.csv')
+                """
+            ).lastrowid
+        )
+        latest_snapshot = int(
+            conn.execute(
+                """
+                INSERT INTO club_rating_snapshots(snapshot_date,source_file)
+                VALUES ('2026-08-14','latest.csv')
+                """
+            ).lastrowid
+        )
+        conn.execute(
+            """
+            INSERT INTO club_rating_entries(
+                snapshot_id,client_id,external_user_id,display_name,points,place
+            ) VALUES (?,?,'old-member','Old Member',100,9)
+            """,
+            (old_snapshot, client_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO club_rating_entries(
+                snapshot_id,client_id,external_user_id,display_name,points,place
+            ) VALUES
+                (?,NULL,'leader','Leader',1500,1),
+                (?,?,'member','Member',1250,2)
+            """,
+            (latest_snapshot, latest_snapshot, client_id),
+        )
+
+        payload = hijack_rating_page_payload(
+            conn,
+            client_id=client_id,
+            period="global",
+        )
+
+    assert payload["has_data"] is True
+    assert payload["total"] == 2
+    assert [row["place"] for row in payload["rows"]] == [1, 2]
+    assert payload["rows"][0]["client_id"] is None
+    assert payload["rows"][0]["display_name"] == "Leader"
+    assert payload["me"]["client_id"] == client_id
+    assert payload["me"]["place"] == 2
