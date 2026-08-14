@@ -56,7 +56,9 @@ def test_canonical_theme_owns_palette_quiz_geometry_and_privacy_entry() -> None:
     assert "--hj-quiz-gradient:" in css
     assert ".jc-wallet-card" in css
     assert "linear-gradient(135deg, var(--hj-milk-bright) 0%, var(--hj-milk) 34%, var(--hj-milk-mid) 68%, var(--hj-milk-deep) 100%)" in css
-    assert "color: #17181b" in css
+    assert ".jc-wallet-balance strong" in css
+    assert ".jc-wallet-balance small" in css
+    assert "color: #17181b !important" in css
     assert '[data-account-tab="home"] .quiz-feature-card' in css
     assert "height: auto !important" in css
     assert "grid-template-columns: repeat(2, minmax(0, 1fr)) !important" in css
