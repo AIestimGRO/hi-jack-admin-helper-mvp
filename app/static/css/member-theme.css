@@ -19,8 +19,8 @@
   --hj-milk-deep: #d6c9b8;
   --hj-graphite: #111214;
   --hj-graphite-raised: #17181b;
-  --hj-red: #d52b42;
-  --hj-red-hover: #e43b51;
+  --hj-red: #9f293a;
+  --hj-red-hover: #b53246;
   --hj-gold: #b89b68;
   --hj-ivory: #f2f0ed;
 }
@@ -117,17 +117,28 @@
   color: rgba(34, 33, 30, .68);
 }
 
+/* Canonical action red: muted deep crimson rather than a bright alert red. */
 .member-app-page .jc-wallet-bottom a,
+.member-app-page .member-primary,
 .member-app-page .app-primary-action,
-.member-app-page .vault-buy-button:not(:disabled) {
-  background: var(--hj-red);
-  color: #fff;
+.member-app-page .vault-buy-button:not(:disabled),
+.member-app-page .reward-activate-button,
+.member-app-page .product-profile-actions button:not(.secondary),
+.member-app-page .profile-title-select {
+  border-color: var(--hj-red) !important;
+  background: var(--hj-red) !important;
+  color: #fff7f5 !important;
 }
 
 .member-app-page .jc-wallet-bottom a:hover,
+.member-app-page .member-primary:hover,
 .member-app-page .app-primary-action:hover,
-.member-app-page .vault-buy-button:not(:disabled):hover {
-  background: var(--hj-red-hover);
+.member-app-page .vault-buy-button:not(:disabled):hover,
+.member-app-page .reward-activate-button:hover,
+.member-app-page .product-profile-actions button:not(.secondary):hover,
+.member-app-page .profile-title-select:hover {
+  border-color: var(--hj-red-hover) !important;
+  background: var(--hj-red-hover) !important;
 }
 
 /* Shared quiz identity: the nearest game and schedule cards use the same premium fill. */
@@ -239,7 +250,7 @@
 }
 
 .member-app-page[data-account-tab="home"] .quiz-feature-actions .app-primary-action {
-  border: 1px solid rgba(239, 70, 92, .72) !important;
+  border: 1px solid var(--hj-red) !important;
   background: var(--hj-red) !important;
   color: #fff !important;
 }
