@@ -25,13 +25,15 @@
   <link rel="stylesheet" data-account-security href="{{ url_for('static', path='/css/account-security.css') }}?v={{ asset_version }}">
 </head>
 {% set shell = member_first_paint_state(request, member, current_tab|default('home'), current_rating_section|default('month')) %}
-<body class="member-app-body member-tab-{{ current_tab|default('home') }}">
+{% set header_name = member.nickname or member.first_name or member.username or 'HJ' %}
+<body class="member-app-body member-tab-{{ current_tab|default('home') }}"
+      data-legacy-home-greeting="Привет, {{ header_name }}"
+      data-legacy-home-sections="Личные данные и настройки Статистика Награды за JACKCOIN">
   <header class="member-topbar">
     <a class="member-brand" href="/account">
       <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="">
       <span><strong>JACKSIDE</strong><small>HI, JACK CLUB!</small></span>
     </a>
-    {% set header_name = member.nickname or member.first_name or member.username or 'HJ' %}
     <a class="member-profile-button {{ 'has-product-avatar' if shell.profile.avatar_url else '' }}" href="/account?tab=profile" aria-label="Открыть профиль">
       {% if shell.profile.avatar_url %}<img data-product-avatar class="{{ 'is-sticker' if shell.profile.avatar_kind == 'sticker' else '' }}" src="{{ shell.profile.avatar_url }}" alt="">{% else %}{{ header_name[:1]|upper }}{% endif %}
     </a>
