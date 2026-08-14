@@ -212,7 +212,7 @@ def _member_first_paint_state(
                 client_id=client_id,
                 period="global",
                 offset=0,
-                limit=25,
+                limit=31,
             )
             payload = dict(payload)
             payload["rows"] = _attach_profile_refs(
