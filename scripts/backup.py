@@ -14,6 +14,25 @@ def backup_database(source: Path, destination: Path) -> None:
         source_conn.backup(destination_conn)
 
 
+def copy_runtime_data(project: Path, destination: Path) -> None:
+    data_dir = project / "data"
+    if not data_dir.exists():
+        return
+
+    destination_data = destination / "data"
+    destination_data.mkdir(parents=True, exist_ok=True)
+    for source in data_dir.iterdir():
+        # The live SQLite database and its WAL/SHM/old local copies are handled
+        # separately by sqlite3.backup so the saved database is always coherent.
+        if source.name.startswith("club_tools.sqlite3"):
+            continue
+        target = destination_data / source.name
+        if source.is_dir():
+            shutil.copytree(source, target)
+        elif source.is_file():
+            shutil.copy2(source, target)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Back up Hi Jack Club Admin Helper")
     parser.add_argument("--project", default="/opt/hi-jack-admin-helper")
@@ -32,12 +51,10 @@ def main() -> None:
     db_path = Path(os.getenv("HJC_DB_PATH", str(project / "data" / "club_tools.sqlite3")))
     if db_path.exists():
         backup_database(db_path, destination / "club_tools.sqlite3")
-    uploads = project / "data" / "uploads"
-    if uploads.exists():
-        shutil.copytree(uploads, destination / "uploads")
+    copy_runtime_data(project, destination)
+
     for relative in (
         ".env",
-        "data/quiz_questions.json",
         "deploy/hi-jack-admin-helper.service",
         "deploy/club.hijackpoker.ru.nginx",
         "deploy/quiz.hijackpoker.ru.nginx",
