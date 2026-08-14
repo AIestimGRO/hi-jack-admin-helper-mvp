@@ -6,7 +6,6 @@
 
   function polishWallet() {
     if (tab !== 'home') return;
-    page.querySelector('.jc-wallet-balance small')?.remove();
     const copy = page.querySelector('.jc-wallet-bottom p');
     if (copy) copy.textContent = 'Играй. Копи. Меняй.';
   }
