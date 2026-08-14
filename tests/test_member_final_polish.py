@@ -33,3 +33,13 @@ def test_brand_refinement_uses_blue_and_sea_wave_without_nav_override() -> None:
     assert '[data-account-tab="quizzes"] .campaign-card' in css
     assert ".referral-tree-root" in css
     assert ".member-bottom-nav" not in css
+
+
+def test_legacy_prelaunch_hotfix_no_longer_restores_turquoise_wallet() -> None:
+    css = (ROOT / "app/static/css/prelaunch-ui-hotfix.css").read_text(encoding="utf-8")
+
+    assert "--app-accent:#0b88b2!important" in css
+    assert "--app-ocean:#095c57!important" in css
+    assert "linear-gradient(135deg,#095c57 0%,#075867 48%,#005b7d 100%)!important" in css
+    assert "#3ac3b0" not in css
+    assert "#2aaa97" not in css
