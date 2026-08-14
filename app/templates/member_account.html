@@ -1,34 +1,74 @@
-{% extends "member_base.html" %}
+{% extends "member_app_base.html" %}
 {% from "_reward_animation.html" import reward_animation %}
 {% block title %}JACKSIDE — Hi, Jack Club{% endblock %}
-{% set display_name = member.first_name or member.nickname or ('@' ~ member.username if member.username else 'Игрок') %}
+{% set display_name = member.nickname or member.first_name or ('@' ~ member.username if member.username else 'Игрок') %}
 {% set category_marks = {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'} %}
 {% set category_labels = {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'} %}
-{% set title_labels = {'rookie':'Новичок','participant':'Участник','regular':'Регуляр','strong_player':'Сильный игрок','final_regular':'Регуляр финального стола','legend':'Легенда JACKSIDE'} %}
+
+{% macro tournament_card(item, nearest=false) -%}
+<article class="tournament-shell-card">
+  <span class="tournament-kicker">{{ 'Ближайший турнир' if nearest else 'Турнир Hi, Jack!' }}</span>
+  <h3>{{ item.title or 'Турнир Hi, Jack!' }}</h3>
+  <p class="tournament-date">{{ item.starts_at_display }}</p>
+  {% if item.description %}<p class="tournament-description">{{ item.description }}</p>{% endif %}
+  <div class="tournament-shell-meta">
+    {% if item.format_text %}<span>{{ item.format_text }}</span>{% endif %}
+    {% if item.buy_in_text %}<span>{{ item.buy_in_text }}</span>{% endif %}
+    {% if item.max_slots %}<span>{{ item.max_slots }} мест</span>{% endif %}
+  </div>
+  <button class="tournament-shell-action" type="button" disabled>Запись скоро откроется</button>
+</article>
+{%- endmacro %}
+
+{% macro referral_node(node, depth=1) -%}
+  {% if node.children %}
+  <details class="referral-tree-node depth-{{ [depth, 6]|min }}"{% if depth <= 2 %} open{% endif %}>
+    <summary class="referral-tree-person">
+      <span class="referral-tree-avatar">{{ (node.display_name or 'HJ')[:1]|upper }}</span>
+      <span class="referral-tree-copy"><strong>{{ node.display_name or 'Игрок' }}</strong><small>{{ node.completed_days or 0 }}/3 дней{% if node.qualified %} · квалифицирован{% endif %} · +{{ node.children|length }}</small></span>
+    </summary>
+    <div class="referral-tree-children">
+      {% for child in node.children %}{{ referral_node(child, depth + 1) }}{% endfor %}
+    </div>
+  </details>
+  {% else %}
+  <div class="referral-tree-node depth-{{ [depth, 6]|min }}">
+    <div class="referral-tree-person">
+      <span class="referral-tree-avatar">{{ (node.display_name or 'HJ')[:1]|upper }}</span>
+      <span class="referral-tree-copy"><strong>{{ node.display_name or 'Игрок' }}</strong><small>{{ node.completed_days or 0 }}/3 дней{% if node.qualified %} · квалифицирован{% endif %}</small></span>
+    </div>
+  </div>
+  {% endif %}
+{%- endmacro %}
+
+{% macro social_card(links) -%}
+  {% if links %}
+  <a class="social-hub-card" href="/account/links">
+    <span class="social-hub-mark">HJ</span>
+    <span><strong>Hi, Jack в сети</strong><small>{% for item in links[:3] %}{{ item.short_label }}{% if not loop.last %} · {% endif %}{% endfor %}</small></span>
+    <b aria-hidden="true">›</b>
+  </a>
+  {% endif %}
+{%- endmacro %}
+
+{% macro profile_link(row) -%}
+  {% set ref = row.profile_ref if row.profile_ref is defined else member_profile_ref(request, row.client_id) %}
+  {% if ref %}<a class="player-profile-link" href="/players/p/{{ ref }}">{{ row.display_name }}</a>{% else %}{{ row.display_name }}{% endif %}
+{%- endmacro %}
+
 {% block content %}
-<div class="member-app-page" data-account-tab="{{ current_tab }}" data-server-now="{{ server_now_iso }}">
+<div class="member-app-page{% if current_tab == 'profile' %} {{ 'profile-settings-mode' if shell.profile_view == 'settings' else 'profile-main-mode' }}{% endif %}"
+     data-account-tab="{{ current_tab }}"
+     data-server-now="{{ server_now_iso }}"
+     {% if current_tab == 'profile' %}data-profile-view="{{ shell.profile_view }}"{% endif %}>
   {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
   {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
 
   {% if current_tab == 'home' %}
-  <header class="app-page-heading home-heading">
-    <div>
-      <p class="member-eyebrow">JACKSIDE</p>
-      <h1>Привет, {{ display_name }}</h1>
-      <p class="member-muted">Игра, награды и JACKCOIN</p>
-    </div>
-  </header>
-
   <section class="jc-wallet-card" aria-label="Баланс JACKCOIN">
-    <div class="jc-wallet-top">
-      <span>JACKCOIN</span>
-      <span class="jc-wallet-chip">JC</span>
-    </div>
-    <div class="jc-wallet-balance"><strong>{{ balance }}</strong><small>JC</small></div>
-    <div class="jc-wallet-bottom">
-      <p>Играй. Копи. Забирай награды.</p>
-      <a href="/account?tab=vault">В хранилище <span aria-hidden="true">→</span></a>
-    </div>
+    <div class="jc-wallet-top"><span>JACKCOIN</span><span class="jc-wallet-chip">JC</span></div>
+    <div class="jc-wallet-balance"><strong>{{ balance }}</strong></div>
+    <div class="jc-wallet-bottom"><p>Играй. Копи. Меняй.</p><a href="/account?tab=vault">Hi, Store <span aria-hidden="true">→</span></a></div>
   </section>
 
   {% if not member.telegram_user_id %}
@@ -39,11 +79,8 @@
   </a>
   {% endif %}
 
-  <section class="home-section">
-    <div class="app-section-head">
-      <div><p class="member-eyebrow">Игра</p><h2>{{ 'Сейчас в клубе' if featured_campaign and featured_campaign.schedule_state == 'active' else 'Ближайшая игра' }}</h2></div>
-      <a href="/account?tab=quizzes">Все квизы</a>
-    </div>
+  <section class="home-section home-nearest-clean">
+    <div class="app-section-head"><div><p class="member-eyebrow">Ближайшая игра</p></div></div>
     {% if featured_campaign %}
     <article class="quiz-feature-card {{ featured_campaign.schedule_state }}">
       <div class="quiz-feature-art" aria-hidden="true"><span>4</span><i>:</i><span>14</span></div>
@@ -57,93 +94,61 @@
               {% elif featured_campaign.issue_status == 'final_live' %}Финал
               {% elif featured_campaign.issue_status == 'scheduled' %}Скоро
               {% else %}{{ 'Можно играть' if featured_campaign.schedule_state == 'active' else 'Скоро' }}{% endif %}
-            {% else %}
-              {{ 'Можно играть' if featured_campaign.schedule_state == 'active' else 'Скоро' }}
-            {% endif %}
+            {% else %}{{ 'Можно играть' if featured_campaign.schedule_state == 'active' else 'Скоро' }}{% endif %}
           </span>
           <small>{{ 'JACKSIDE 4:14' if featured_campaign.campaign_type == 'daily_414' else 'КВИЗ HI, JACK' }}</small>
         </div>
         <h3>{{ featured_campaign.title }}</h3>
         {% if featured_campaign.campaign_type == 'daily_414' %}
-          <p>
-            {% if featured_campaign.issue_date %}{{ featured_campaign.issue_date }} · {% endif %}
-            {% if featured_campaign.schedule_state == 'upcoming' %}Старт {{ featured_campaign.active_from_display }}
-            {% elif featured_campaign.active_from_display %}Сегодня {{ featured_campaign.active_from_display }}
-            {% else %}Ежедневный стол клуба{% endif %}
-          </p>
-          {% if featured_campaign.schedule_state == 'upcoming' %}
-            <strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>
-          {% endif %}
-          {% if featured_campaign.prize_headline %}
-            <p class="quiz-feature-prize">{{ featured_campaign.prize_headline }}</p>
-          {% endif %}
-          {% if featured_campaign.base_award_hint %}
-            <p class="quiz-feature-hint">{{ featured_campaign.base_award_hint }}</p>
-          {% endif %}
+          <p>{% if featured_campaign.schedule_state == 'upcoming' %}Старт · {{ featured_campaign.active_from_display[-5:] }}{% elif featured_campaign.active_from_display %}Сегодня · {{ featured_campaign.active_from_display[-5:] }}{% else %}Ежедневный стол клуба{% endif %}</p>
+          {% if featured_campaign.schedule_state == 'upcoming' %}<strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>{% endif %}
+          {% if featured_campaign.prize_headline %}<p class="quiz-feature-prize">{{ featured_campaign.prize_headline }}</p>{% endif %}
+          {% if featured_campaign.base_award_hint %}<p class="quiz-feature-hint">{{ featured_campaign.base_award_hint }}</p>{% endif %}
           <p class="quiz-feature-seated">Данный квиз прошли: {{ featured_campaign.completed_count or 0 }}</p>
           <p class="quiz-feature-seated">Онлайн сейчас: {{ featured_campaign.online_count or 0 }}</p>
           <div class="quiz-feature-actions">
-            <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">
-              {{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}
-            </a>
+            <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">{{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}</a>
             <a class="app-secondary-action" href="/jackside/rules">Полные правила</a>
           </div>
         {% else %}
-          {% if featured_campaign.schedule_state == 'upcoming' %}
-            <p>Старт {{ featured_campaign.active_from_display }}</p>
-            <strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>
-          {% elif featured_campaign.active_until %}
-            <p>Доступен до {{ featured_campaign.active_until_display }}</p>
-          {% else %}
-            <p>Играй и забирай JACKCOIN</p>
-          {% endif %}
-          <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">
-            {{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}
-          </a>
+          {% if featured_campaign.schedule_state == 'upcoming' %}<p>Старт {{ featured_campaign.active_from_display }}</p><strong class="member-countdown" data-member-countdown="{{ featured_campaign.active_from_iso }}">Готовим стол</strong>{% elif featured_campaign.active_until %}<p>Доступен до {{ featured_campaign.active_until_display }}</p>{% else %}<p>Играй и забирай JACKCOIN</p>{% endif %}
+          <a class="app-primary-action" href="/quiz?campaign={{ featured_campaign.code }}">{{ 'Продолжить игру' if featured_campaign.has_active_attempt else ('Играть сейчас' if featured_campaign.schedule_state == 'active' else 'Открыть анонс') }}</a>
         {% endif %}
       </div>
     </article>
-    {% else %}
-    <div class="member-card smart-empty">
-      <span>♠</span><div><h3>Квиз готовится</h3><p>Скоро откроем новый стол</p></div>
-    </div>
-    {% endif %}
+    {% else %}<div class="member-card smart-empty"><span>♠</span><div><h3>Квиз готовится</h3><p>Скоро откроем новый стол</p></div></div>{% endif %}
   </section>
 
+  {% if shell.nearest_tournament %}
+  <section class="home-section home-tournament-banner">
+    <div class="app-section-head"><div><p class="member-eyebrow">Расписание</p><h2>Турниры Hi, Jack!</h2></div><a href="/account?tab=quizzes&amp;schedule=tournaments">Все турниры</a></div>
+    {{ tournament_card(shell.nearest_tournament, true) }}
+  </section>
+  {% endif %}
+
+  {{ social_card(shell.social_links) }}
+
   <section class="home-section">
-    <div class="app-section-head">
-      <div><p class="member-eyebrow">THE VAULT</p><h2>Награды за JACKCOIN</h2></div>
-      <a href="/account?tab=vault">Смотреть все</a>
-    </div>
+    <div class="app-section-head"><div><h2>Hi, Store</h2></div><a href="/account?tab=vault">Смотреть все</a></div>
     <div class="home-reward-rail">
       {% for reward in home_rewards %}
       <a class="home-reward-card {{ 'affordable' if reward.affordable else '' }}" href="/account?tab=vault#reward-{{ reward.id }}">
         <div class="reward-visual category-{{ reward.category }}">{{ reward_animation(reward, 'home-reward-animation', category_marks[reward.category]) }}</div>
-        <p>{{ category_labels[reward.category] }}</p>
-        <h3>{{ reward.title }}</h3>
-        <strong>{{ reward.price_jc }} JC</strong>
+        <p>{{ category_labels[reward.category] }}</p><h3>{{ reward.title }}</h3><strong>{{ reward.price_jc }} JC</strong>
         <small>{% if reward.sold_out %}Тираж закончился{% elif reward.affordable %}Доступно сейчас{% else %}Ещё {{ reward.price_jc - balance }} JC{% endif %}</small>
       </a>
-      {% else %}
-      <div class="member-card smart-empty compact">
-        <span>♦</span><div><h3>Каталог наполняется</h3><p>Новые награды скоро появятся.</p></div>
-      </div>
-      {% endfor %}
+      {% else %}<div class="member-card smart-empty compact"><span>♦</span><div><h3>Каталог наполняется</h3><p>Новые награды скоро появятся.</p></div></div>{% endfor %}
     </div>
   </section>
 
   {% if vault_active_rewards %}
-  <section class="home-section">
-    <div class="app-section-head">
-      <div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div>
-      <a href="/account?tab=vault">Открыть</a>
-    </div>
+  <section class="home-section home-jack-cards-clean">
+    <div class="app-section-head"><div><a class="member-eyebrow home-jack-cards-link" href="/account?tab=vault">JACK CARDS</a></div></div>
     <div class="active-card-preview-list">
       {% for reward in vault_active_rewards[:2] %}
       <a class="active-card-preview category-{{ reward.category }}" href="/account?tab=vault#card-{{ reward.id }}">
         <span class="active-card-suit">{{ reward_animation(reward, 'active-card-animation', category_marks[reward.category]) }}</span>
-        <span><strong>{{ reward.title }}</strong><small>{% if reward.activation_code %}Код активен{% else %}Готова{% endif %}{% if reward.valid_until %} · до {{ reward.valid_until[:10] }}{% endif %}</small></span>
-        <span aria-hidden="true">›</span>
+        <span><strong>{{ reward.title }}</strong><small>{% if reward.activation_code %}Код активен{% else %}Готова{% endif %}{% if reward.valid_until %} · до {{ reward.valid_until[:10] }}{% endif %}</small></span><span aria-hidden="true">›</span>
       </a>
       {% endfor %}
     </div>
@@ -151,7 +156,7 @@
   {% endif %}
 
   <section class="home-section home-stats">
-    <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p><h2>Статистика</h2></div><a href="/account?tab=rating">Подробнее</a></div>
+    <div class="app-section-head"><div><p class="member-eyebrow">Прогресс</p></div><a href="/account?tab=rating&amp;section=month">Подробнее</a></div>
     <div class="stat-chip-grid">
       <article><small>Рейтинг JACKSIDE</small>{% if jackside_home_rating %}<strong>#{{ jackside_home_rating.place }}</strong><span>{{ jackside_home_rating.points }} points · {{ jackside_home_rating.accuracy }}% точности</span>{% else %}<strong>—</strong><span>Сыграй первый выпуск</span>{% endif %}</article>
       <article><small>Серия 4:14</small><strong>{{ quiz_stats.current_streak }}</strong><span>лучшее: {{ quiz_stats.best_streak }}</span></article>
@@ -161,330 +166,157 @@
   </section>
 
   {% elif current_tab == 'quizzes' %}
-  <section class="campaign-list">
+  <nav class="schedule-tabs" aria-label="Расписание">
+    <button class="{{ 'active' if shell.schedule_tab == 'quizzes' else '' }}" type="button" data-schedule-tab="quizzes">Квизы</button>
+    <button class="{{ 'active' if shell.schedule_tab == 'tournaments' else '' }}" type="button" data-schedule-tab="tournaments">Турниры Hi, Jack!</button>
+  </nav>
+  <section class="campaign-list schedule-panel" data-schedule-panel="quizzes"{% if shell.schedule_tab != 'quizzes' %} hidden{% endif %}>
     {% for item in campaign_cards %}
     <article class="campaign-card {{ item.schedule_state }}">
-      <div class="campaign-card-top">
-        <span class="live-status {{ item.schedule_state }}">{{ 'Доступен' if item.schedule_state == 'active' else 'Скоро' }}</span>
-        {% if item.completed_count %}<span class="campaign-played">Сыграно: {{ item.completed_count }}</span>{% endif %}
-      </div>
+      <div class="campaign-card-top"><span class="live-status {{ item.schedule_state }}">{{ 'Доступен' if item.schedule_state == 'active' else 'Скоро' }}</span>{% if item.completed_count %}<span class="campaign-played">Сыграно: {{ item.completed_count }}</span>{% endif %}</div>
       <div class="campaign-card-body">
         <div class="campaign-card-symbol" aria-hidden="true">{{ '4:14' if item.campaign_type == 'daily_414' else 'HJ' }}</div>
-        <div class="campaign-card-copy">
-          <p class="member-eyebrow">{{ 'Ежедневная игра' if item.campaign_type == 'daily_414' else 'Клубный квиз' }}</p>
-          <h2>{{ item.title }}</h2>
-          <p class="campaign-time">
-            {% if item.schedule_state == 'upcoming' %}Старт {{ item.active_from_display }}
-            {% elif item.active_until %}До {{ item.active_until_display }}
-            {% else %}Доступен сейчас{% endif %}
-          </p>
-          {% if item.campaign_type == 'daily_414' %}
-          <div class="campaign-rewards"><span>+{{ item.jackcoin_per_correct }} JC за ответ</span><span>+{{ item.jackcoin_completion_bonus }} JC за игру</span></div>
-          {% endif %}
-          {% if item.schedule_state == 'upcoming' %}<strong class="member-countdown" data-member-countdown="{{ item.active_from_iso }}">Готовим стол</strong>{% endif %}
-        </div>
+        <div class="campaign-card-copy"><p class="member-eyebrow">{{ 'Ежедневная игра' if item.campaign_type == 'daily_414' else 'Клубный квиз' }}</p><h2>{{ item.title }}</h2><p class="campaign-time">{% if item.schedule_state == 'upcoming' %}Старт {{ item.active_from_display }}{% elif item.active_until %}До {{ item.active_until_display }}{% else %}Доступен сейчас{% endif %}</p>{% if item.campaign_type == 'daily_414' %}<div class="campaign-rewards"><span>+{{ item.jackcoin_per_correct }} JC за ответ</span><span>+{{ item.jackcoin_completion_bonus }} JC за игру</span></div>{% endif %}{% if item.schedule_state == 'upcoming' %}<strong class="member-countdown" data-member-countdown="{{ item.active_from_iso }}">Готовим стол</strong>{% endif %}</div>
       </div>
-      <a class="app-primary-action" href="/quiz?campaign={{ item.code }}">
-        {{ 'Продолжить' if item.has_active_attempt else ('Играть' if item.schedule_state == 'active' else 'Открыть анонс') }}
-      </a>
+      <a class="app-primary-action" href="/quiz?campaign={{ item.code }}">{{ 'Продолжить' if item.has_active_attempt else ('Играть' if item.schedule_state == 'active' else 'Открыть анонс') }}</a>
     </article>
-    {% else %}
-    <div class="member-card smart-empty quiz-empty"><h3>Квизы готовятся</h3></div>
-    {% endfor %}
+    {% else %}<div class="member-card smart-empty quiz-empty"><h3>Квизы готовятся</h3></div>{% endfor %}
+  </section>
+  <section class="schedule-panel tournament-shell-list" data-schedule-panel="tournaments"{% if shell.schedule_tab != 'tournaments' %} hidden{% endif %}>
+    {% for item in shell.tournaments %}{{ tournament_card(item) }}{% else %}<div class="tournament-shell-empty">Расписание турниров готовится.</div>{% endfor %}
   </section>
 
   {% elif current_tab == 'rating' %}
-  <header class="rating-hub-hero">
-    <div class="hj-hero-mark" aria-hidden="true"><span>HJ</span></div>
-    <div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг и статистика</h1><p class="member-muted">Только завершённые игры JACKSIDE. JACKSIDE points не являются JACKCOIN и не расходуются.</p></div>
-  </header>
-
-  <nav class="rating-section-tabs" aria-label="Раздел рейтинга">
-    <a class="{{ 'active' if current_rating_section != 'club' else '' }}" href="/account?tab=rating&amp;section=today">JACKSIDE</a>
-    <a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">HI JACK!</a>
-  </nav>
+  <header class="rating-hub-hero"><div class="hj-hero-mark" aria-hidden="true"><span>HJ</span></div><div><p class="member-eyebrow">Твоя игра</p><h1>Рейтинг</h1></div></header>
+  <nav class="rating-section-tabs" aria-label="Раздел рейтинга"><a class="{{ 'active' if current_rating_section != 'club' else '' }}" href="/account?tab=rating&amp;section=month">JACKSIDE</a><a class="{{ 'active' if current_rating_section == 'club' else '' }}" href="/account?tab=rating&amp;section=club">HI JACK!</a></nav>
 
   {% if current_rating_section != 'club' %}
-  <section class="rating-overview-card">
-    <div class="rating-overview-copy"><p class="member-eyebrow">Точность ответов</p><span>{{ quiz_stats.correct_total }} из {{ quiz_stats.question_total }} верно · {{ quiz_stats.completed_count }} завершённых выпусков</span></div>
-    <div class="rating-progress-ring" style="--rating-progress: {{ quiz_stats.accuracy }}" aria-label="Точность {{ quiz_stats.accuracy }} процентов"><span>{{ quiz_stats.accuracy }}%</span></div>
-  </section>
+  <section class="rating-overview-card"><div class="rating-overview-copy"><p class="member-eyebrow">Точность ответов</p><span>{{ quiz_stats.correct_total }} из {{ quiz_stats.question_total }} верно · {{ quiz_stats.completed_count }} завершённых выпусков</span></div><div class="rating-progress-ring" style="--rating-progress: {{ quiz_stats.accuracy }}" aria-label="Точность {{ quiz_stats.accuracy }} процентов"><span>{{ quiz_stats.accuracy }}%</span></div></section>
+  <div class="rating-period-tabs" role="navigation" aria-label="Период рейтинга JACKSIDE"><a class="{{ 'active' if current_rating_section == 'today' else '' }}" href="/account?tab=rating&amp;section=today">Сегодня</a><a class="{{ 'active' if current_rating_section == 'month' else '' }}" href="/account?tab=rating&amp;section=month">Месяц</a><a class="{{ 'active' if current_rating_section == 'all' else '' }}" href="/account?tab=rating&amp;section=all">Год</a></div>
 
-  <div class="rating-period-tabs" role="navigation" aria-label="Период рейтинга JACKSIDE">
-    <a class="{{ 'active' if current_rating_section == 'today' else '' }}" href="/account?tab=rating&amp;section=today">Сегодня</a>
-    <a class="{{ 'active' if current_rating_section == 'month' else '' }}" href="/account?tab=rating&amp;section=month">Месяц</a>
-    <a class="{{ 'active' if current_rating_section == 'all' else '' }}" href="/account?tab=rating&amp;section=all">Всё время</a>
-  </div>
-
-  <section class="personal-stat-groups" aria-label="Личная статистика JACKSIDE">
-    <details class="member-card account-details" open>
-      <summary>Основная игра <span>{{ quiz_stats.completed_count }}</span></summary>
-      <div class="quiz-stat-board compact">
-        <article><small>Завершённые выпуски</small><strong>{{ quiz_stats.completed_count }}</strong><span>незавершённые исключены</span></article>
-        <article><small>Правильные ответы</small><strong>{{ quiz_stats.correct_total }}</strong><span>из {{ quiz_stats.question_total }}</span></article>
-        <article><small>Среднее время ответа</small><strong>{{ format_duration_ms(quiz_stats.average_answer_time_ms) }}</strong><span>на один вопрос</span></article>
-        <article><small>Лучший результат</small><strong>{{ quiz_stats.best_result }}/10</strong><span>10/10: {{ quiz_stats.perfect_count }}</span></article>
-      </div>
-    </details>
-    <details class="member-card account-details">
-      <summary>Финалы и серии <span>{{ quiz_stats.finals_count }}</span></summary>
-      <div class="quiz-stat-board compact">
-        <article><small>Финальные столы</small><strong>{{ quiz_stats.finals_count }}</strong><span>участий</span></article>
-        <article><small>Победы</small><strong>{{ quiz_stats.wins_count }}</strong><span>совместных: {{ quiz_stats.co_wins_count }}</span></article>
-        <article><small>Текущая серия</small><strong>{{ quiz_stats.current_streak }}</strong><span>лучшая: {{ quiz_stats.best_streak }}</span></article>
-        <article><small>Активное звание</small><strong class="metric-title">{{ engagement.current_title.name if engagement.current_title else title_labels.get(quiz_stats.title_code, 'Новичок') }}</strong><span>{% if engagement.current_title and engagement.current_title.temporary %}временное · {% endif %}{{ quiz_stats.points }} JACKSIDE points</span></article>
-      </div>
-    </details>
-    <details class="member-card account-details">
-      <summary>Экономика и приглашения <span>{{ balance }} JC</span></summary>
-      <div class="quiz-stat-board compact">
-        <article><small>JACKCOIN</small><strong>{{ quiz_stats.jackcoin_earned }}</strong><span>заработано · {{ quiz_stats.jackcoin_spent }} потрачено</span></article>
-        <article><small>JACK CARDS</small><strong>{{ quiz_stats.active_cards }}</strong><span>активных · {{ quiz_stats.used_cards }} использовано</span></article>
-        <article><small>Квалифицированные рефералы</small><strong>{{ quiz_stats.qualified_referrals }}</strong><span>завершили JACKSIDE</span></article>
-        <article><small>Баланс</small><strong>{{ balance }}</strong><span>JACKCOIN доступно</span></article>
-      </div>
-    </details>
-  </section>
-
-  <section class="member-card engagement-panel">
-    <div class="app-section-head"><div><p class="member-eyebrow">Приглашения</p><h2>Реферальная программа JACKSIDE</h2></div><strong>{{ engagement.referrals.qualified }} квалифицировано</strong></div>
-    <p class="member-muted">Реферал квалифицируется после трёх завершённых выпусков JACKSIDE в три разные календарные даты.</p>
-    <div class="referral-link-box"><input value="{{ referral_link }}" readonly aria-label="Реферальная ссылка"><button class="button" type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">Копировать</button></div>
-    <div class="quiz-stat-board compact referral-stats">
-      <article><small>Переходы</small><strong>{{ engagement.referrals.clicks }}</strong><span>по ссылке</span></article>
-      <article><small>Регистрации</small><strong>{{ engagement.referrals.registrations }}</strong><span>связь зафиксирована</span></article>
-      <article><small>1 день</small><strong>{{ engagement.referrals.one_day }}</strong><span>завершили 1 дату</span></article>
-      <article><small>2 дня</small><strong>{{ engagement.referrals.two_days }}</strong><span>завершили 2 даты</span></article>
-      <article><small>3 дня</small><strong>{{ engagement.referrals.three_days }}</strong><span>дошли до порога</span></article>
-      <article><small>Награды</small><strong>{{ engagement.referrals.rewards_issued }}</strong><span>выдано сторонам</span></article>
-    </div>
-    {% if engagement.active_referral_titles %}<p class="member-muted">Активные реферальные звания: {% for item in engagement.active_referral_titles %}<strong>{{ item.name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-    <details class="account-details"><summary>История приглашений <span>{{ engagement.referrals.history|length }}</span></summary>
-      <div class="engagement-history">{% for row in engagement.referrals.history %}<p><strong>{{ row.display_name }}</strong><span>{{ row.distinct_completed_days }}/3 дней{% if row.qualified_at %} · квалифицирован{% endif %}</span></p>{% else %}<p class="member-muted">Приглашений пока нет.</p>{% endfor %}</div>
-    </details>
-  </section>
-
-  <section class="member-card engagement-panel">
-    <div class="app-section-head"><div><p class="member-eyebrow">Профиль игрока</p><h2>Достижения и звания</h2></div></div>
-    {% set unread = engagement.notifications|selectattr('read_at', 'equalto', none)|list %}
-    {% if unread %}<div class="engagement-notifications"><strong>Новое</strong>{% for item in unread[:5] %}<p><b>{{ item.title }}</b><span>{{ item.body }}</span></p>{% endfor %}<form action="/account/notifications/read" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button" type="submit">Отметить прочитанным</button></form></div>{% endif %}
-    <details class="account-details" open><summary>Постоянные звания <span>{{ engagement.permanent_titles|length }}</span></summary>
-      <div class="title-choice-list">{% for item in engagement.permanent_titles %}<article><span class="engagement-icon">{{ item.icon }}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }}</small></div>{% if item.selected %}<span class="type-pill">Выбрано</span>{% else %}<form action="/account/titles/{{ item.member_title_id }}/select" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button" type="submit">Выбрать</button></form>{% endif %}</article>{% else %}<p class="member-muted">Звания откроются по мере игры.</p>{% endfor %}</div>
-    </details>
-    <details class="account-details"><summary>Временные звания <span>{{ engagement.temporary_titles|length }}</span></summary><div class="title-choice-list">{% for item in engagement.temporary_titles %}<article><span class="engagement-icon">{{ item.icon }}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }} · до {{ display_datetime(item.expires_at) if item.expires_at else '—' }}</small></div></article>{% else %}<p class="member-muted">Временных званий пока нет.</p>{% endfor %}</div></details>
-    <details class="account-details"><summary>Достижения <span>{{ engagement.achievements|length }}</span></summary><div class="title-choice-list">{% for item in engagement.achievements %}<article><span class="engagement-icon">{{ item.icon }}</span><div><strong>{{ item.name }}</strong><small>{{ item.description }}</small></div></article>{% else %}<p class="member-muted">Первое достижение появится после завершённой игры.</p>{% endfor %}</div></details>
-  </section>
-
-  <section class="jackside-rating-section">
-    <div class="app-section-head">
-      <div><p class="member-eyebrow">Все игроки клуба</p><h2>Рейтинг JACKSIDE — {% if current_rating_section == 'today' %}сегодня{% elif current_rating_section == 'month' %}месяц{% else %}всё время{% endif %}</h2></div>
-      <span>{{ jackside_leaderboard|length }}</span>
-    </div>
-    {% if current_rating_section == 'today' %}
-    <p class="jackside-rating-note">Только полностью завершённые игры сегодняшнего выпуска. Больше правильных ответов выше; при равенстве выше более быстрое прохождение.</p>
-    {% elif current_rating_section == 'month' %}
-    <p class="jackside-rating-note">Последние 30 дней. Балл = 85% подтверждённой точности по нижней границе Вилсона + 15% активности. Полная активность — 8 игр; место появляется после 3 игр и 30 ответов.</p>
-    {% else %}
-    <p class="jackside-rating-note">JACKSIDE points: +1 за правильный ответ завершённой основной части, +2 за финальный стол, +5 за победу. При равенстве: точность, среднее время ответа, количество игр и внутренний ID.</p>
-    {% endif %}
-    <div class="club-leaderboard jackside-leaderboard">
-      {% for row in jackside_leaderboard %}
-      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium podium-' ~ row.place if row.place and row.place <= 3 else '' }} {{ 'is-calibrating' if current_rating_section == 'month' and not row.place else '' }}">
+  {% set rating_rows = shell.calendar_rating.rows if shell.calendar_rating else jackside_leaderboard %}
+  {% set rating_period = shell.calendar_rating.period if shell.calendar_rating else current_rating_section %}
+  <section class="jackside-rating-section is-clean-rating-list">
+    <div class="club-leaderboard jackside-leaderboard" data-calendar-rating="{{ rating_period }}">
+      {% for row in rating_rows %}
+      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium podium-' ~ row.place if row.place and row.place <= 3 else '' }} {{ 'is-calibrating' if rating_period == 'month' and not row.place else '' }}">
         <span class="leaderboard-place">{{ row.place if row.place and row.place <= 30 else '•••' }}</span>
-        <span class="leaderboard-player">
-          <strong>{{ row.display_name }}</strong>
-          {% if current_rating_section == 'today' %}
-          <small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.correct_count }}/{{ row.question_total }} · {{ format_duration_ms(row.completion_time_ms) }}{% if row.is_winner %} · {{ 'Совместная победа' if row.is_co_winner else 'Победитель' }}{% elif row.is_finalist %} · Финалист{% endif %}</small>
-          {% elif current_rating_section == 'month' %}
-          <small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% · {{ row.completed_count }} игр · {{ row.active_days }} активных дней</small>
-          {% else %}
-          <small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% · {{ format_duration_ms(row.average_answer_time_ms) }}/ответ · {{ row.completed_count }} игр</small>
-          {% endif %}
+        <span class="leaderboard-player"><strong>{{ profile_link(row) }}</strong>
+          {% if current_rating_section == 'today' %}<small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.correct_count }}/{{ row.question_total }} · {{ format_duration_ms(row.completion_time_ms) }}{% if row.is_winner %} · {{ 'Совместная победа' if row.is_co_winner else 'Победитель' }}{% elif row.is_finalist %} · Финалист{% endif %}</small>
+          {% elif rating_period == 'month' %}<small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% · {{ row.completed_count }} игр · {{ row.active_days }} активных дней</small>
+          {% else %}<small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.accuracy }}% · {{ format_duration_ms(row.average_answer_time_ms) }}/ответ · {{ row.completed_count }} игр</small>{% endif %}
         </span>
-        {% if current_rating_section == 'today' %}
-        <strong class="leaderboard-points">{{ row.correct_count }}<small>из {{ row.question_total }}</small></strong>
-        {% elif current_rating_section == 'month' and not row.place %}
-        <strong class="leaderboard-calibration">Калибровка<small>{{ row.completed_count }}/3 игр · {{ row.question_total }}/30 ответов</small></strong>
-        {% elif current_rating_section == 'month' %}
-        <strong class="leaderboard-points">{{ row.rating_score }}<small>балл</small></strong>
-        {% else %}
-        <strong class="leaderboard-points">{{ row.points }}<small>points</small></strong>
-        {% endif %}
+        {% if current_rating_section == 'today' %}<strong class="leaderboard-points">{{ row.correct_count }}<small>из {{ row.question_total }}</small></strong>
+        {% elif rating_period == 'month' and not row.place %}<strong class="leaderboard-calibration">Калибровка<small>{{ row.completed_count }}/3 игр · {{ row.question_total }}/30 ответов</small></strong>
+        {% elif rating_period == 'month' %}<strong class="leaderboard-points">{{ row.rating_score }}<small>балл</small></strong>
+        {% else %}<strong class="leaderboard-points">{{ row.points }}<small>points</small></strong>{% endif %}
       </article>
-      {% else %}
-      <div class="member-card smart-empty"><span>HJ</span><div><h3>Здесь пока нет завершённых игр</h3><p>Незавершённые попытки в рейтинг не попадают</p></div></div>
-      {% endfor %}
+      {% else %}<div class="member-card smart-empty"><span>HJ</span><div><h3>За этот период пока нет завершённых игр</h3></div></div>{% endfor %}
     </div>
     {% if jackside_analytics_generated_at %}<p class="analytics-updated">Снимок обновлён {{ display_datetime(jackside_analytics_generated_at) }}</p>{% endif %}
   </section>
   {% else %}
-  <section class="club-rating-summary">
-    <div><p class="member-eyebrow">HI JACK!</p><h2>{% if rating_snapshot %}Рейтинг на {{ rating_snapshot.snapshot_date[8:10] }}.{{ rating_snapshot.snapshot_date[5:7] }}.{{ rating_snapshot.snapshot_date[:4] }}{% else %}Рейтинг ещё не загружен{% endif %}</h2><span>{{ 'Последнее обновление рейтинга клуба' if rating_snapshot else 'После следующей синхронизации здесь появятся места игроков' }}</span></div>
-    <article class="my-club-rank"><small>Твоё место</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'Нет данных в текущем рейтинге' }}</span></article>
-  </section>
-
-  <section class="club-leaderboard">
-    {% for row in rating_leaderboard %}
-    <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium' if row.place and row.place <= 3 else '' }}">
-      {% set displayed_place = row.place or loop.index %}
-      <span class="leaderboard-place">{{ displayed_place if displayed_place <= 30 else '•••' }}</span>
-      <span class="leaderboard-player"><strong>{{ row.display_name }}</strong>{% if row.client_id == member.client_id %}<small>Это ты</small>{% endif %}</span>
-      <strong class="leaderboard-points">{{ row.points }} <small>очков</small></strong>
-    </article>
-    {% else %}
-    <div class="member-card smart-empty"><span>★</span><div><h3>Рейтинг клуба готовится</h3><p>Он появится после импорта свежего снимка из HI JACK!</p></div></div>
-    {% endfor %}
+  {% set club = shell.hijack_rating or {} %}
+  <section class="hijack-rating-hub" data-hijack-rating-hub>
+    <div class="hijack-rating-head hijack-rating-head-compact"><div class="hijack-rating-me" data-hijack-me><small>Твоё место в рейтинге</small><strong>{{ '#' ~ club.me.place if club.me and club.me.place else '—' }}</strong></div><a class="players-directory-shortcut" href="/players">Профили игроков ›</a></div>
+    <nav class="hijack-rating-periods" aria-label="Период рейтинга HI, JACK!"><button class="active" type="button" data-hijack-period="global">Глобальный</button><button type="button" data-hijack-period="month">Месяц</button><button type="button" data-hijack-period="latest">Последний турнир</button></nav>
+    <div class="hijack-rating-caption" data-hijack-caption>{{ club.label or 'Глобальный рейтинг · весь накопленный период' }}</div>
+    <div class="club-leaderboard hijack-rating-list" data-hijack-list data-hijack-loaded="{{ club.rows|length if club.rows else 0 }}">
+      {% for row in club.rows or [] %}
+      <article class="{{ 'is-you' if row.client_id == member.client_id else '' }} {{ 'podium podium-' ~ row.place if row.place and row.place <= 3 else '' }}"><span class="leaderboard-place">{{ row.place or '—' }}</span><span class="leaderboard-player"><strong>{{ profile_link(row) }}</strong><small>{% if row.client_id == member.client_id %}Это ты · {% endif %}{{ row.kills or 0 }} киллов · {{ row.tournaments or 0 }} турниров</small></span><strong class="leaderboard-points">{{ row.points or 0 }}<small>очков</small></strong></article>
+      {% else %}<div class="member-card smart-empty"><span>HJ</span><div><h3>Рейтинг пока не загружен</h3><p>После следующей загрузки рейтинга здесь появятся игроки.</p></div></div>{% endfor %}
+    </div>
+    <button class="member-secondary hijack-rating-more" type="button" data-hijack-more{% if not club.has_more %} hidden{% endif %}>Показать ещё · {{ club.rows|length if club.rows else 0 }} из {{ club.total or 0 }}</button>
   </section>
   {% endif %}
 
   {% elif current_tab == 'vault' %}
-  <header class="app-page-heading vault-page-heading">
-    <div><p class="member-eyebrow">THE VAULT</p><h1>Хранилище</h1><p class="member-muted">JACKCOIN → клубные награды</p></div>
-    <div class="mini-balance"><span>Баланс</span><strong>{{ balance }} <small>JC</small></strong></div>
-  </header>
+  <header class="app-page-heading vault-page-heading"><div><h1>Hi, Store</h1></div><div class="mini-balance store-balance-chip"><strong>{{ balance }} <small>JC</small></strong></div></header>
+  <nav class="store-tabs" aria-label="Hi, Store"><button class="{{ 'active' if shell.store_tab == 'market' else '' }}" type="button" data-store-tab="market">Market</button><button class="{{ 'active' if shell.store_tab == 'cards' else '' }}" type="button" data-store-tab="cards">My Cards</button></nav>
 
-  {% if vault_active_rewards %}
-  <section class="vault-section vault-active-section">
-    <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>{{ vault_active_rewards|length }}</span></div>
-    <div class="vault-active-grid">
-      {% for reward in vault_active_rewards %}
-      <article id="card-{{ reward.id }}" class="member-card jack-card category-{{ reward.category }} {{ 'activated' if reward.activated_at else 'awaiting-activation' }}"{% if reward.activation_expires_at %} data-reward-activation-card data-reward-id="{{ reward.id }}"{% endif %}>
-        <div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'THE VAULT' }}</small></div>
-        <div class="jack-card-main">
-          <div>
-            <div class="jack-card-label-row">
-              <p class="member-eyebrow">Цифровая карта</p>
-              {% if not reward.activated_at or not reward.activation_code %}
-              <form action="/account/rewards/{{ reward.id }}/activate" method="post">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button class="reward-activate-button" type="submit">Активировать</button>
-              </form>
-              {% endif %}
-            </div>
-            <h3>{{ reward.title }}</h3>
-            {% if reward.activated_at and reward.activation_code %}
-            <strong class="reward-activation-code" aria-label="Код активации {{ reward.activation_code }}">{{ reward.activation_code }}</strong>
-            <span class="reward-activation-timer" data-reward-activation-countdown="{{ reward.activation_expires_at }}" aria-live="polite">Код активен {{ vault_activation_minutes }}:00</span>
-            {% endif %}
-          </div>
-          <div class="jack-card-media">
-            {% if reward.activated_at and reward.activation_code %}
-            <img class="jack-card-qr" src="/account/rewards/{{ reward.id }}/qr.png" alt="QR-код активированной награды" loading="lazy">
-            {% else %}
-            {{ reward_animation(reward, 'jack-card-animation', category_marks[reward.category]) }}
-            {% endif %}
-          </div>
-        </div>
-        <p>{% if reward.activated_at %}{{ reward.redeem_instructions or 'Покажи QR или код администратору.' }}{% else %}Активируй при администраторе. QR и код действуют {{ vault_activation_minutes }} мин.{% endif %}</p>
-        <small>{% if reward.valid_until %}Действует до {{ reward.valid_until[:16]|replace('T', ' ') }}{% else %}Без срока{% endif %}</small>
-      </article>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  <section class="vault-section">
+  <section class="vault-section store-panel" data-store-panel="market"{% if shell.store_tab != 'market' %} hidden{% endif %}>
     <div class="app-section-head"><div><p class="member-eyebrow">Каталог наград</p><h2>Что можно получить</h2></div><span>{{ vault_catalog|length }}</span></div>
     <div class="vault-catalog-grid">
       {% for reward in vault_catalog %}
-        {% set sold_out = reward.inventory_total is not none and reward.allocated_count >= reward.inventory_total %}
-        <article id="reward-{{ reward.id }}" class="member-card vault-catalog-card category-{{ reward.category }} {{ 'sold-out' if sold_out else '' }}">
-          <div class="vault-card-mark">{{ reward_animation(reward, 'vault-card-animation', category_marks[reward.category]) }}</div>
-          <div class="vault-card-copy">
-            <p class="member-eyebrow">{{ category_labels[reward.category] }}</p>
-            <h3>{{ reward.title }}</h3>
-            <p>{{ reward.description or 'Награда HI JACK!' }}</p>
-            <small>{% if reward.validity_days %}Действует {{ reward.validity_days }} дн. после получения{% else %}Без срока{% endif %}{% if reward.inventory_total is not none %} · осталось {{ [reward.inventory_total - reward.allocated_count, 0]|max }}{% endif %}</small>
-          </div>
-          <form action="/account/rewards/{{ reward.id }}/purchase" method="post" onsubmit="return confirm('Обменять {{ reward.price_jc }} JC на «{{ reward.title|e }}»?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="purchase_id" value="{{ vault_purchase_tokens[reward.id] }}">
-            <input type="hidden" name="expected_price_jc" value="{{ reward.price_jc }}">
-            <button class="vault-buy-button" type="submit" {% if sold_out or balance < reward.price_jc %}disabled{% endif %}>
-              {% if sold_out %}Тираж закончился{% elif balance < reward.price_jc %}Не хватает {{ reward.price_jc - balance }} JC{% else %}Получить за {{ reward.price_jc }} JC{% endif %}
-            </button>
-          </form>
-        </article>
-      {% else %}
-        <div class="member-card smart-empty"><span>♦</span><div><h3>Скоро здесь будут награды</h3></div></div>
-      {% endfor %}
+      {% set sold_out = reward.inventory_total is not none and reward.allocated_count >= reward.inventory_total %}
+      <article id="reward-{{ reward.id }}" class="member-card vault-catalog-card category-{{ reward.category }} {{ 'sold-out' if sold_out else '' }}"><div class="vault-card-mark">{{ reward_animation(reward, 'vault-card-animation', category_marks[reward.category]) }}</div><div class="vault-card-copy"><p class="member-eyebrow">{{ category_labels[reward.category] }}</p><h3>{{ reward.title }}</h3><p>{{ reward.description or 'Награда HI JACK!' }}</p><small>{% if reward.validity_days %}Действует {{ reward.validity_days }} дн. после получения{% else %}Без срока{% endif %}{% if reward.inventory_total is not none %} · осталось {{ [reward.inventory_total - reward.allocated_count, 0]|max }}{% endif %}</small></div><form action="/account/rewards/{{ reward.id }}/purchase" method="post" onsubmit="return confirm('Обменять {{ reward.price_jc }} JC на «{{ reward.title|e }}»?');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="purchase_id" value="{{ vault_purchase_tokens[reward.id] }}"><input type="hidden" name="expected_price_jc" value="{{ reward.price_jc }}"><button class="vault-buy-button" type="submit" {% if sold_out or balance < reward.price_jc %}disabled{% endif %}>{% if sold_out %}Тираж закончился{% elif balance < reward.price_jc %}Не хватает {{ reward.price_jc - balance }} JC{% else %}Получить за {{ reward.price_jc }} JC{% endif %}</button></form></article>
+      {% else %}<div class="member-card smart-empty"><span>♦</span><div><h3>Скоро здесь будут награды</h3></div></div>{% endfor %}
     </div>
   </section>
 
-  {% if not vault_active_rewards %}
-  <section class="vault-section">
-    <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>0</span></div>
-    <div class="member-card smart-empty"><span>♠</span><div><h3>Пока пусто</h3><p>Полученные награды появятся здесь</p></div></div>
+  <section class="vault-section vault-active-section store-panel" data-store-panel="cards"{% if shell.store_tab != 'cards' %} hidden{% endif %}>
+    <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>{{ vault_active_rewards|length }}</span></div>
+    {% if vault_active_rewards %}<div class="vault-active-grid">
+      {% for reward in vault_active_rewards %}
+      <article id="card-{{ reward.id }}" class="member-card jack-card category-{{ reward.category }} {{ 'activated' if reward.activated_at else 'awaiting-activation' }}"{% if reward.activation_expires_at %} data-reward-activation-card data-reward-id="{{ reward.id }}"{% endif %}><div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'HI, STORE' }}</small></div><div class="jack-card-main"><div><div class="jack-card-label-row"><p class="member-eyebrow">Цифровая карта</p>{% if not reward.activated_at or not reward.activation_code %}<form action="/account/rewards/{{ reward.id }}/activate" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="reward-activate-button" type="submit">Активировать</button></form>{% endif %}</div><h3>{{ reward.title }}</h3>{% if reward.activated_at and reward.activation_code %}<strong class="reward-activation-code" aria-label="Код активации {{ reward.activation_code }}">{{ reward.activation_code }}</strong><span class="reward-activation-timer" data-reward-activation-countdown="{{ reward.activation_expires_at }}" aria-live="polite">Код активен {{ vault_activation_minutes }}:00</span>{% endif %}</div><div class="jack-card-media">{% if reward.activated_at and reward.activation_code %}<img class="jack-card-qr" src="/account/rewards/{{ reward.id }}/qr.png" alt="QR-код активированной награды" loading="lazy">{% else %}{{ reward_animation(reward, 'jack-card-animation', category_marks[reward.category]) }}{% endif %}</div></div><p>{% if reward.activated_at %}{{ reward.redeem_instructions or 'Покажи QR или код администратору.' }}{% else %}Активируй при администраторе. QR и код действуют {{ vault_activation_minutes }} мин.{% endif %}</p><small>{% if reward.valid_until %}Действует до {{ reward.valid_until[:16]|replace('T', ' ') }}{% else %}Без срока{% endif %}</small></article>
+      {% endfor %}</div>{% else %}<div class="member-card smart-empty"><span>♠</span><div><h3>Пока пусто</h3><p>Полученные награды появятся здесь</p></div></div>{% endif %}
   </section>
-  {% endif %}
 
-  {% if vault_reward_history %}
-  <details class="member-card account-details">
-    <summary>История JACK CARDS <span>{{ vault_reward_history|length }}</span></summary>
-    <div class="member-history">
-      {% for reward in vault_reward_history %}
-      <article><div><strong>{{ reward.title }}</strong><small>{% if reward.activation_code %}Код {{ reward.activation_code }} · {% endif %}{{ reward.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ {'redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span></article>
-      {% endfor %}
-    </div>
-  </details>
-  {% endif %}
+  {% if vault_reward_history %}<details class="member-card account-details"><summary>История JACK CARDS <span>{{ vault_reward_history|length }}</span></summary><div class="member-history">{% for reward in vault_reward_history %}<article><div><strong>{{ reward.title }}</strong><small>{% if reward.activation_code %}Код {{ reward.activation_code }} · {% endif %}{{ reward.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ {'redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span></article>{% endfor %}</div></details>{% endif %}
 
   {% else %}
   <header class="app-page-heading profile-heading">
-    <div class="profile-avatar-large">{{ display_name[:1]|upper }}</div>
-    <div><p class="member-eyebrow">Профиль игрока</p><h1>{{ display_name }}</h1><p class="member-muted">{{ '@' ~ member.username if member.username else member.email }}</p></div>
+    <div class="profile-avatar-large {{ 'has-product-avatar' if shell.profile.avatar_url else '' }}">{% if shell.profile.avatar_url %}<img data-product-avatar class="{{ 'is-sticker' if shell.profile.avatar_kind == 'sticker' else '' }}" src="{{ shell.profile.avatar_url }}" alt="">{% else %}{{ display_name[:1]|upper }}{% endif %}</div>
+    <div>
+      <a class="profile-account-settings-button" href="{{ '/account?tab=profile' if shell.profile_view == 'settings' else '/account?tab=profile&view=settings' }}">{% if shell.profile_view == 'settings' %}<span aria-hidden="true">←</span> Профиль{% else %}Настройки аккаунта <span aria-hidden="true">›</span>{% endif %}</a>
+      <h1>{{ 'Настройки аккаунта' if shell.profile_view == 'settings' else display_name }}</h1>
+      <p class="member-muted">{{ 'Профиль и личные данные' if shell.profile_view == 'settings' else ('@' ~ member.username if member.username else member.email) }}</p>
+    </div>
   </header>
 
-  <section id="activity" class="profile-section">
-    <div class="app-section-head"><div><p class="member-eyebrow">Моя игра</p><h2>Статистика</h2></div></div>
-    <div class="profile-metric-grid">
-      <article><small>Рейтинг HI, JACK CLUB!</small><strong>{{ '#' ~ rating.place if rating and rating.place else '—' }}</strong><span>{{ rating.points ~ ' очков' if rating else 'После синхронизации' }}</span></article>
-      <article><small>Баланс</small><strong>{{ balance }}</strong><span>JACKCOIN</span></article>
-      <article><small>Серия 4:14</small><strong>{{ streak.current_streak if streak else 0 }}</strong><span>лучшее: {{ streak.best_streak if streak else 0 }}</span></article>
-      <article><small>Заработано</small><strong>{{ lifetime_earned }}</strong><span>JC за всё время</span></article>
-    </div>
-  </section>
+  {% if shell.profile_view == 'main' %}
+  {{ social_card(shell.social_links) }}
+  <div class="profile-rich-stack">
+    <section class="profile-rich-section" aria-labelledby="profile-emblems-heading">
+      <div class="profile-achievement-stage">
+        <div class="profile-achievement-intro"><div><h2 id="profile-emblems-heading">Hi, Titles!</h2></div></div>
+        {% set collection = shell.title_collection %}
+        <div class="profile-emblem-grid" data-two-row-titles="1" data-unlocked-count="{{ collection.active_count }}" aria-label="Hi, Titles! · открыто {{ collection.active_count }} из {{ collection.total_count }}">
+          {% for item in collection.items %}
+          <details class="profile-emblem-card {{ 'is-locked' if item.state == 'locked' else 'is-active-title' }} {{ 'is-achievement' if item.kind == 'achievement' else '' }} {{ 'is-temporary' if item.temporary else '' }} {{ 'is-selected' if item.selected else '' }}" data-emblem-state="{{ 'locked' if item.state == 'locked' else 'unlocked' }}" data-emblem-kind="{{ item.kind }}">
+            <summary><span class="profile-emblem-icon {{ 'has-custom-art' if item.icon_path else '' }}" aria-hidden="true">{% if item.icon_path %}<img src="{{ item.icon_path }}" alt="" loading="lazy">{% else %}{{ item.icon or ('◆' if item.kind == 'achievement' else '★') }}{% endif %}</span><span class="profile-emblem-summary-copy"><strong>{{ item.name }}</strong><small>{% if item.state == 'locked' %}Не открыто · {{ 'достижение' if item.kind == 'achievement' else 'звание' }}{% elif item.kind == 'achievement' %}Достижение получено{% elif item.temporary %}Активное звание{% elif item.selected %}Основное звание{% else %}Звание получено{% endif %}</small></span></summary>
+            <div class="profile-emblem-detail"><p>{{ item.description or ('Это достижение ещё предстоит открыть.' if item.state == 'locked' else 'Награда HI, JACK CLUB!') }}</p><span class="profile-emblem-meta">{% if item.state == 'locked' %}Ещё не открыто{% elif item.kind == 'achievement' %}Открыто{% elif item.temporary and item.expires_at %}Активно до {{ item.expires_at[:16]|replace('T', ' ') }}{% elif item.selected %}Сейчас отображается как основное звание{% else %}Звание получено{% endif %}</span>{% if item.state == 'active' and item.kind == 'title' and not item.temporary and not item.selected and item.member_title_id %}<form action="/account/titles/{{ item.member_title_id }}/select" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="profile-title-select" type="submit">Сделать основным</button></form>{% endif %}</div>
+          </details>
+          {% else %}<div class="profile-empty-emblems">Коллекция появится вместе с первыми званиями и достижениями.</div>{% endfor %}
+        </div>
+      </div>
+    </section>
 
-  <section class="member-card account-panel profile-panel">
-    <div class="app-section-head"><div><p class="member-eyebrow">Аккаунт</p><h2>Личные данные</h2></div></div>
-    <dl class="profile-data">
-      <div><dt>Почта</dt><dd>{{ member.email }}</dd></div>
-      <div><dt>Telegram</dt><dd>{% if member.telegram_user_id %}{{ '@' ~ member.username if member.username else 'Подключён' }}{% else %}<a class="profile-action" href="/account/telegram">Подключить</a>{% endif %}</dd></div>
-      <div><dt>Телефон</dt><dd>{{ display_phone(member.phone_local) if member.phone_local else 'Не указан' }}</dd></div>
-    </dl>
-  </section>
+    <section class="profile-rich-section profile-stat-clean-head" aria-labelledby="profile-stats-heading"><div class="app-section-head"><div><p class="member-eyebrow">Моя игра</p></div></div><div class="profile-stat-visuals"><article class="profile-stat-visual"><div class="profile-accuracy-ring" style="--accuracy: {{ quiz_stats.accuracy|default(0) }}"><strong>{{ quiz_stats.accuracy|default(0) }}%</strong></div><small>Точность ответов</small></article><article class="profile-stat-visual"><div class="profile-streak-signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><strong>{{ quiz_stats.current_streak|default(0) }}</strong><small>Текущая серия · лучшая {{ quiz_stats.best_streak|default(0) }}</small></article><article class="profile-stat-visual"><div class="profile-games-orbit"><strong>{{ quiz_stats.completed_count|default(0) }}</strong></div><small>Завершено JACKSIDE</small></article></div></section>
 
-  <details class="member-card account-details" open>
-    <summary>История JACKSIDE <span>{{ history|length }}</span></summary>
-    <div class="member-history">
-      {% for item in history %}
-      <article><div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span><span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int if item.score is not none else 0 }} балл.{% endif %}</span></article>
-      {% else %}<p class="member-empty">Завершённых выпусков JACKSIDE пока нет.</p>{% endfor %}
-    </div>
-  </details>
-
-  {% if ledger %}
-  <details class="member-card account-details">
-    <summary>История JACKCOIN <span>{{ ledger|length }}</span></summary>
-    <div class="member-history">
-      {% for item in ledger %}
-      <article><div><strong>{{ item.comment or item.operation_type }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span class="{{ 'jc-plus' if item.amount > 0 else 'jc-minus' }}">{{ '+' if item.amount > 0 else '' }}{{ item.amount }} JC</span></article>
-      {% endfor %}
-    </div>
-  </details>
+    <section class="profile-rich-section profile-referral-clean-head" aria-labelledby="profile-referrals-heading">
+      <div class="profile-referral-card"><div class="profile-referral-top"><div><p class="member-eyebrow">Твоя команда</p></div><div class="profile-referral-qualified"><strong>{{ engagement.referrals.qualified|default(0) }}</strong><small>квалифицировано</small></div></div><div class="profile-referral-flow" aria-label="Воронка реферальной программы"><article><strong>{{ engagement.referrals.clicks|default(0) }}</strong><small>Переходы</small></article><span class="profile-referral-arrow" aria-hidden="true">›</span><article><strong>{{ engagement.referrals.registrations|default(0) }}</strong><small>Регистрации</small></article><span class="profile-referral-arrow" aria-hidden="true">›</span><article><strong>{{ engagement.referrals.qualified|default(0) }}</strong><small>Квалифицированы</small></article></div><div class="profile-referral-link"><input id="profile-referral-link" value="{{ referral_link }}" readonly aria-label="Реферальная ссылка"><button type="button" data-referral-copy="#profile-referral-link">Копировать</button></div><p class="member-muted" style="margin:10px 0 0;font-size:10px;">Квалификация — 3 завершённых выпуска JACKSIDE в 3 разные календарные даты.</p>
+        {% if engagement.active_referral_titles %}<div class="profile-referral-titles" aria-label="Реферальные звания">{% for item in engagement.active_referral_titles %}<span>{% if item.icon_path %}<img class="profile-referral-title-icon" src="{{ item.icon_path }}" alt="" loading="lazy">{% else %}{{ item.icon or '✦' }}{% endif %} {{ item.name }}</span>{% endfor %}</div>{% endif %}
+        {% set tree = shell.referral_tree %}
+        {% if tree and tree.root %}<section class="referral-tree-shell"><div class="referral-tree-head"><div><small>Структура приглашений</small><strong>Реферальное дерево</strong></div><div class="referral-tree-stats {{ 'is-empty-referral-stats' if tree.direct == 0 and tree.total == 0 and tree.max_depth == 0 else '' }}"><span><b>{{ tree.direct }}</b> 1 линия</span><span><b>{{ tree.total }}</b> всего</span><span><b>{{ tree.max_depth }}</b> глубина</span></div></div><div class="referral-tree-scroll" data-referral-tree><div class="referral-tree-root"><span class="referral-tree-root-badge">Вы</span><strong>{{ tree.root.display_name or 'Вы' }}</strong></div><div class="referral-tree-first-line">{% for child in tree.root.children %}{{ referral_node(child, 1) }}{% else %}<p class="member-muted">Приглашённых игроков пока нет.</p>{% endfor %}</div>{% if tree.truncated %}<p class="member-muted referral-tree-note">Очень глубокая или циклическая ветка была безопасно ограничена.</p>{% endif %}</div></section>{% endif %}
+        <details class="profile-referral-history"><summary>История приглашений · {{ engagement.referrals.history|default([])|length }}</summary><div class="engagement-history">{% for row in engagement.referrals.history|default([]) %}<p><strong>{{ row.display_name }}</strong><span>{{ row.distinct_completed_days }}/3 дней{% if row.qualified_at %} · готово{% endif %}</span></p>{% else %}<p><span>Приглашений пока нет.</span></p>{% endfor %}</div></details>
+      </div>
+    </section>
+  </div>
   {% endif %}
 
-  <details class="member-card account-details legal-details">
-    <summary>Принятые документы <span>{{ consents|length }}</span></summary>
-    <div class="consent-list">
-      {% for consent in consents %}<p><span>{{ consent.title }}</span><small>Редакция {{ consent.document_version }} · {{ consent.accepted_at[:10] }}</small></p>{% endfor %}
-    </div>
-  </details>
+  <section class="member-card account-panel profile-visibility-entry" aria-labelledby="profile-visibility-heading"><div class="app-section-head"><div><p class="member-eyebrow">Приватность</p><h2 id="profile-visibility-heading">Видимость профиля</h2></div><a class="profile-action" href="/account/profile-sharing">Настроить</a></div><p class="member-muted">Игровой профиль открыт участникам клуба по умолчанию. Можно скрыть отдельные категории в один шаг.</p></section>
 
-  <form class="profile-logout" action="/account/logout" method="post">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit">Выйти из аккаунта</button>
-  </form>
+  <section class="product-profile-editor"><h3>Профиль</h3><div class="product-profile-grid"><form class="product-profile-form" action="/account/profile/update" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Прозвище<input type="text" name="nickname" maxlength="40" placeholder="Как тебя показывать в клубе" value="{{ shell.profile.nickname }}"></label><div class="product-profile-actions"><button type="submit">Сохранить прозвище</button></div></form><form class="product-profile-form" action="/account/profile/avatar" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Тип аватарки<select name="avatar_kind"><option value="photo"{{ ' selected' if shell.profile.avatar_kind != 'sticker' else '' }}>Фото</option><option value="sticker"{{ ' selected' if shell.profile.avatar_kind == 'sticker' else '' }}>Стикер PNG / WEBP</option></select></label><label>Изображение<input type="file" name="avatar" accept="image/png,image/webp,image/jpeg" required></label><div class="product-profile-actions"><button type="submit">Загрузить аватарку</button></div></form><form class="product-profile-form" action="/account/profile/avatar/remove" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="product-profile-actions"><button class="secondary" type="submit">Убрать аватарку</button></div></form></div></section>
+
+  <section class="member-card account-panel profile-panel"><div class="app-section-head"><div><p class="member-eyebrow">Аккаунт</p><h2>Личные данные</h2></div></div><dl class="profile-data"><div><dt>Почта</dt><dd>{{ member.email }}</dd></div><div><dt>Telegram</dt><dd>{% if member.telegram_user_id %}{{ '@' ~ member.username if member.username else 'Подключён' }}{% else %}<a class="profile-action" href="/account/telegram">Подключить</a>{% endif %}</dd></div><div><dt>Телефон</dt><dd>{{ display_phone(member.phone_local) if member.phone_local else 'Не указан' }}</dd></div></dl></section>
+
+  <section class="account-security-panel"><header><h3>Настройки аккаунта</h3><small>Безопасность и личные данные</small></header>
+    <details class="account-security-item"><summary><span><small>Почта</small><strong>{{ shell.security.email or '—' }}</strong></span><b>Сменить</b></summary><div class="account-security-body"><p>Код подтверждения придёт на новый адрес. После подтверждения новая почта станет логином для входа.</p><form class="account-security-form" action="/account/security/email/request" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="email" name="new_email" autocomplete="email" maxlength="254" placeholder="Новая почта" required><button type="submit">Отправить код</button></form><form class="account-security-form" action="/account/security/email/confirm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6-значный код" required><button type="submit">Подтвердить</button></form></div></details>
+    <details class="account-security-item"><summary><span><small>Телефон</small><strong>{{ shell.security.phone }}</strong></span><b>Сменить</b></summary><div class="account-security-body"><p>Код придёт на текущую привязанную почту. Новый номер не может быть привязан к другому аккаунту.</p><form class="account-security-form" action="/account/security/phone/request" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="tel" name="new_phone" autocomplete="tel" maxlength="32" placeholder="Новый номер телефона" required><button type="submit">Отправить код</button></form><form class="account-security-form" action="/account/security/phone/confirm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6-значный код" required><button type="submit">Подтвердить</button></form></div></details>
+    <details class="account-security-item"><summary><span><small>Дата рождения</small><strong>{{ shell.security.birth_date.split('-')|reverse|join('.') if shell.security.birth_date else 'Не указана' }}</strong></span><b>{{ 'Сохранено' if shell.security.birth_date else 'Указать' }}</b></summary><div class="account-security-body"><p>{{ 'Для исправления даты рождения обратитесь к мастер-администратору клуба.' if shell.security.birth_date else 'Дата рождения указывается один раз. Если нужно исправление, обратитесь к администратору клуба.' }}</p>{% if not shell.security.birth_date %}<a class="account-security-link" href="/account/birthday">Указать дату рождения</a>{% endif %}</div></details>
+    <details class="account-security-item"><summary><span><small>Пароль</small><strong>Сменить пароль</strong></span><b>Сменить</b></summary><div class="account-security-body"><p>После смены пароля все остальные активные сессии аккаунта будут закрыты.</p><form class="account-security-form" action="/account/security/password/change" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="password" name="current_password" autocomplete="current-password" minlength="6" maxlength="128" placeholder="Текущий пароль" required><input type="password" name="new_password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="Новый пароль" required><input type="password" name="new_password_confirmation" autocomplete="new-password" minlength="6" maxlength="128" placeholder="Повторите новый пароль" required><button type="submit">Сменить пароль</button></form></div></details>
+    <details class="account-security-item"><summary><span><small>Правила и приватность</small><strong>Документы и согласия</strong></span><b>Открыть</b></summary><div class="account-security-body"><p>Пользовательское соглашение, Политика персональных данных и отдельные добровольные согласия.</p><a class="account-security-link" href="/account/legal">Управлять документами и согласиями</a></div></details>
+    <details class="account-security-item is-danger"><summary><span><small>Аккаунт</small><strong>Удаление аккаунта</strong></span><b>Удалить</b></summary><div class="account-security-body"><p>Личные данные, привязки, аватар и активные сессии будут удалены. Игровая история и рейтинговые результаты останутся только в обезличенном виде.</p><form class="account-security-form" action="/account/security/delete/request" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="account-security-danger-button" type="submit">Получить код удаления</button></form><form class="account-security-form account-security-danger-form" action="/account/security/delete/confirm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="Код" required><input type="text" name="confirmation" autocomplete="off" placeholder="Введите УДАЛИТЬ" required><button class="account-security-danger-button" type="submit">Удалить аккаунт</button></form></div></details>
+  </section>
+
+  {% if shell.profile_view == 'main' %}
+  <details class="member-card account-details" open><summary>История JACKSIDE <span>{{ history|length }}</span></summary><div class="member-history">{% for item in history %}<article><div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span><span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int if item.score is not none else 0 }} балл.{% endif %}</span></article>{% else %}<p class="member-empty">Завершённых выпусков JACKSIDE пока нет.</p>{% endfor %}</div></details>
+  {% if ledger %}<details class="member-card account-details"><summary>История JACKCOIN <span>{{ ledger|length }}</span></summary><div class="member-history">{% for item in ledger %}<article><div><strong>{{ item.comment or item.operation_type }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span class="{{ 'jc-plus' if item.amount > 0 else 'jc-minus' }}">{{ '+' if item.amount > 0 else '' }}{{ item.amount }} JC</span></article>{% endfor %}</div></details>{% endif %}
+  <details class="member-card account-details legal-details"><summary>Принятые документы <span>{{ consents|length }}</span></summary><div class="consent-list">{% for consent in consents %}<p><span>{{ consent.title }}</span><small>Редакция {{ consent.document_version }} · {{ consent.accepted_at[:10] }}</small></p>{% endfor %}</div></details>
+  {% endif %}
+
+  <form class="profile-logout" action="/account/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Выйти из аккаунта</button></form>
   {% endif %}
 </div>
 {% endblock %}
