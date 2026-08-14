@@ -133,9 +133,12 @@
       loadScriptOnce('/static/js/account-security.js?v=2', 'data-account-security');
     }
 
+    // Compatibility first, final brand layer last. prelaunch-member.js sees the
+    // marker and will not append an older turquoise copy after this bundle.
+    loadStylesheetOnce('/static/css/prelaunch-ui-hotfix.css?v=2', 'data-prelaunch-ui-hotfix');
     loadStylesheetOnce('/static/css/member-final-polish.css?v=1', 'data-member-final-polish');
     loadScriptOnce('/static/js/member-final-polish.js?v=1', 'data-member-final-polish');
-    loadStylesheetOnce('/static/css/member-brand-refinement.css?v=1', 'data-member-brand-refinement');
+    loadStylesheetOnce('/static/css/member-brand-refinement.css?v=2', 'data-member-brand-refinement');
   }
 
   if (openMonthlyRatingByDefault()) return;
