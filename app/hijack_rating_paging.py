@@ -16,8 +16,60 @@ DEFAULT_PAGE_SIZE = 25
 MAX_PAGE_SIZE = 100
 
 
+def _table_exists(conn, table: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+    )
+
+
+def _legacy_snapshot_rows(conn) -> list[dict[str, Any]]:
+    if not _table_exists(conn, "club_rating_snapshots") or not _table_exists(
+        conn, "club_rating_entries"
+    ):
+        return []
+    snapshot = conn.execute(
+        """
+        SELECT id FROM club_rating_snapshots
+        ORDER BY snapshot_date DESC,id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if not snapshot:
+        return []
+    rows = conn.execute(
+        """
+        SELECT e.client_id,e.display_name,e.points,e.place
+        FROM club_rating_entries e
+        WHERE e.snapshot_id=?
+        ORDER BY CASE WHEN e.place IS NULL THEN 1 ELSE 0 END,e.place,e.id
+        """,
+        (int(snapshot["id"]),),
+    ).fetchall()
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        points = float(item.get("points") or 0)
+        item["points"] = int(points) if points.is_integer() else round(points, 1)
+        item["kills"] = 0
+        item["tournaments"] = 0
+        item["display_name"] = str(item.get("display_name") or "").strip() or "Игрок"
+        result.append(item)
+    return result
+
+
 def _member_row(rows: list[dict[str, Any]], client_id: int) -> dict[str, Any] | None:
-    return next((row for row in rows if int(row["client_id"]) == int(client_id)), None)
+    return next(
+        (
+            row
+            for row in rows
+            if row.get("client_id") is not None
+            and int(row["client_id"]) == int(client_id)
+        ),
+        None,
+    )
 
 
 def hijack_rating_page_payload(
@@ -41,6 +93,8 @@ def hijack_rating_page_payload(
 
     if period == "global":
         rows = _global_rows(conn)
+        if not rows:
+            rows = _legacy_snapshot_rows(conn)
         label = "весь период"
         tournament_name = ""
         tournament_date = ""
@@ -70,8 +124,14 @@ def hijack_rating_page_payload(
 
     total = len(rows)
     page_rows = rows[offset : offset + limit]
-    baseline = conn.execute("SELECT total_rows FROM hi_jack_rating_baseline WHERE id=1").fetchone()
-    has_data = bool(total or latest or (baseline and int(baseline["total_rows"] or 0) > 0))
+    baseline = conn.execute(
+        "SELECT total_rows FROM hi_jack_rating_baseline WHERE id=1"
+    ).fetchone()
+    has_data = bool(
+        total
+        or latest
+        or (baseline and int(baseline["total_rows"] or 0) > 0)
+    )
 
     return {
         "has_data": has_data,
