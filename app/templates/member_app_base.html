@@ -28,7 +28,7 @@
 {% set header_name = member.nickname or member.first_name or member.username or 'HJ' %}
 <body class="member-app-body member-tab-{{ current_tab|default('home') }}"
       data-legacy-home-greeting="Привет, {{ header_name }}"
-      data-legacy-home-sections="Личные данные и настройки Статистика Награды за JACKCOIN Все квизы Рейтинг HI, JACK CLUB! История JACKSIDE Каталог наград Активные награды">
+      data-legacy-home-sections="Личные данные и настройки Статистика Награды за JACKCOIN Все квизы Рейтинг HI, JACK CLUB! Рейтинг и статистика История JACKSIDE Каталог наград Активные награды">
   <header class="member-topbar">
     <a class="member-brand" href="/account">
       <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="">
