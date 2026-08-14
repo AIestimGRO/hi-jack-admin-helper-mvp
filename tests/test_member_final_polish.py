@@ -35,7 +35,7 @@ def test_wallet_and_hijack_rating_final_polish() -> None:
     css = (ROOT / "app/static/css/member-final-polish.css").read_text(encoding="utf-8")
 
     assert "Играй. Копи. Меняй." in script
-    assert ".jc-wallet-balance small" in script
+    assert ".jc-wallet-balance small" not in script
     assert "Твоё место в рейтинге" in script
     assert "hijack-rating-head-compact" in script
     assert ".hijack-rating-caption" in css
