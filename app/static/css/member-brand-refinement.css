@@ -1,79 +1,8 @@
-/* Brand refinement pass 2: align member content with the Hi, Jack mini-app palette.
-   Navigation is intentionally not targeted here.
+/* Final detail polish only. Core palette, JACKCOIN and quiz-card geometry live in member-theme.css.
+   Bottom navigation is intentionally not targeted here. */
 
-   A legacy prelaunch stylesheet is appended later at runtime and still contains
-   old turquoise rules with !important. Selectors below are deliberately more
-   specific for the member content that must use the current brand palette. */
-
-.member-app-body {
-  --app-accent: #0b88b2 !important;
-  --app-accent-strong: #46a9c4 !important;
-  --app-ocean: #095c57 !important;
-}
-
-.member-app-page {
-  --hj-blue: #005b7d;
-  --hj-blue-bright: #0b88b2;
-  --hj-blue-deep: #003f58;
-  --hj-blue-soft: rgba(11, 136, 178, .12);
-  --hj-sea: #095c57;
-  --hj-sea-mid: #0c5356;
-  --hj-sea-deep: #032827;
-  --hj-sea-soft: rgba(9, 92, 87, .18);
-}
-
-/* Header/profile chrome: replace the old turquoise tint without changing layout. */
-.member-app-body .member-profile-button,
-.member-app-body .profile-avatar-large {
-  border-color: rgba(35, 132, 161, .30) !important;
-  background: linear-gradient(145deg, rgba(0, 91, 125, .19), rgba(9, 92, 87, .09)) !important;
-}
-
-/* Home wallet: reconnect JACKCOIN with the mini-app's blue / sea-wave identity. */
-.member-app-page[data-account-tab="home"] .jc-wallet-card {
-  border-color: rgba(44, 151, 183, .24) !important;
-  background:
-    radial-gradient(circle at 91% 8%, rgba(68, 175, 202, .26), transparent 31%),
-    radial-gradient(circle at 10% 100%, rgba(4, 55, 58, .30), transparent 45%),
-    linear-gradient(135deg, #095c57 0%, #075867 48%, #005b7d 100%) !important;
-  box-shadow: 0 24px 58px rgba(0, 42, 57, .24) !important;
-  color: #f5f7f7;
-}
-
-.member-app-page[data-account-tab="home"] .jc-wallet-card::before,
-.member-app-page[data-account-tab="home"] .jc-wallet-card::after {
-  border-color: rgba(181, 226, 236, .12);
-}
-
-.member-app-page[data-account-tab="home"] .jc-wallet-card::before {
-  box-shadow:
-    0 0 0 34px rgba(181, 226, 236, .035),
-    0 0 0 72px rgba(0, 63, 88, .055);
-}
-
-.member-app-page[data-account-tab="home"] .jc-wallet-chip {
-  border-color: rgba(209, 238, 242, .24);
-  background: rgba(2, 57, 54, .24);
-  color: #d8edf0;
-}
-
-.member-app-page[data-account-tab="home"] .jc-wallet-balance strong {
-  color: #f6f7f7;
-}
-
-.member-app-page[data-account-tab="home"] .jc-wallet-bottom p {
-  color: rgba(238, 247, 248, .70);
-}
-
-/* Red remains the action color; the wallet CTA is deliberately not blue. */
-.member-app-page[data-account-tab="home"] .jc-wallet-bottom a {
-  background: #d52b42;
-  color: #fff7f5;
-}
-
-/* Secondary details use club blue instead of generic turquoise. */
 .member-app-page .account-nudge-icon {
-  background: var(--hj-blue-soft);
+  background: rgba(11, 136, 178, .12);
   color: #44a9c6;
 }
 
@@ -85,72 +14,8 @@
 }
 
 .member-app-page .app-section-head > span {
-  background: var(--hj-blue-soft);
+  background: rgba(11, 136, 178, .12);
   color: #70b9cd;
-}
-
-.member-app-page .member-countdown {
-  color: #56abc3;
-}
-
-.member-app-page .app-secondary-action,
-.member-app-page .quiz-feature-actions .app-secondary-action {
-  border-color: rgba(63, 150, 178, .28) !important;
-  background: rgba(0, 91, 125, .075) !important;
-  color: #73b7ca;
-}
-
-/* JACKSIDE keeps a dark club surface while its decorative detail shifts to blue. */
-.member-app-page .quiz-feature-card {
-  border-color: rgba(49, 126, 148, .17);
-  background:
-    radial-gradient(circle at 7% 18%, rgba(0, 91, 125, .16), transparent 34%),
-    linear-gradient(145deg, #121719, #0d0f10) !important;
-}
-
-.member-app-page .quiz-feature-art {
-  background:
-    repeating-linear-gradient(135deg, rgba(242, 247, 248, .018) 0 1px, transparent 1px 12px),
-    rgba(0, 91, 125, .075);
-  color: #3f9fbb;
-}
-
-.member-app-page .quiz-feature-art i {
-  color: rgba(90, 171, 194, .42);
-}
-
-/* Schedule is the strongest sea-wave territory, matching tournament cards in the mini-app. */
-.member-app-page[data-account-tab="quizzes"] .campaign-card,
-.member-app-page[data-account-tab="quizzes"] .campaign-card.upcoming,
-.member-app-page .tournament-shell-card {
-  border-color: rgba(51, 143, 157, .20);
-  background:
-    radial-gradient(circle at 92% 2%, rgba(11, 136, 178, .15), transparent 38%),
-    radial-gradient(circle at 8% 100%, rgba(9, 92, 87, .22), transparent 44%),
-    linear-gradient(145deg, #0c5356 0%, #084346 46%, #032827 100%);
-  box-shadow: 0 16px 38px rgba(0, 24, 26, .24);
-}
-
-.member-app-page[data-account-tab="quizzes"] .campaign-card-symbol,
-.member-app-page[data-account-tab="quizzes"] .campaign-card.upcoming .campaign-card-symbol {
-  border-color: rgba(68, 159, 184, .25);
-  background: rgba(0, 91, 125, .13);
-  color: #7abed0;
-}
-
-.member-app-page[data-account-tab="quizzes"] .campaign-rewards span {
-  background: rgba(0, 91, 125, .10);
-  color: #91c4d1;
-}
-
-.member-app-page .tournament-shell-card .tournament-kicker {
-  color: #7fc0ca;
-}
-
-.member-app-page .tournament-shell-card .tournament-shell-action {
-  border-color: rgba(66, 151, 167, .24);
-  background: rgba(0, 91, 125, .08);
-  color: #a7cbcf;
 }
 
 .member-app-page[data-account-tab="quizzes"] .schedule-tabs {
@@ -164,7 +29,16 @@
   box-shadow: inset 0 0 0 1px rgba(83, 165, 181, .16);
 }
 
-/* Profile keeps the approved structure; turquoise trim becomes club blue / sea-wave. */
+.member-app-page .tournament-shell-card .tournament-kicker {
+  color: #7fc0ca;
+}
+
+.member-app-page .tournament-shell-card .tournament-shell-action {
+  border-color: rgba(66, 151, 167, .24);
+  background: rgba(0, 91, 125, .08);
+  color: #a7cbcf;
+}
+
 .member-app-page .profile-achievement-stage {
   border-color: rgba(39, 136, 163, .22);
   background:
@@ -229,7 +103,6 @@
   color: #82c4d5;
 }
 
-/* Referral tree mirrors the blue referral language of the mini-app, without touching profile layout. */
 .member-app-page .referral-tree-root {
   border-color: rgba(41, 145, 174, .28);
   background: rgba(0, 91, 125, .10);
@@ -274,15 +147,7 @@
   background: rgba(41, 132, 154, .22);
 }
 
-/* Keep Store and ranking mostly as approved; only generic teal remnants become blue. */
 .member-app-page:not([data-account-tab="vault"]):not([data-account-tab="rating"]) .mini-balance {
   border-color: rgba(42, 137, 163, .20);
   background: rgba(0, 91, 125, .07);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .member-app-page .jc-wallet-card,
-  .member-app-page .tournament-shell-card {
-    transition: none;
-  }
 }
