@@ -40,6 +40,7 @@ from app.main_impl import *  # noqa: F403,E402
 from app.main_impl import app as _base_app  # noqa: E402
 from app.main_impl import create_app as _base_create_app  # noqa: E402
 from app.member_account_management import install_member_account_management
+from app.member_first_paint import install_member_first_paint
 from app.member_host_routing import install_member_host_routing
 from app.prelaunch_data_integrity import install_prelaunch_data_integrity
 from app.prelaunch_economy_compat import install_prelaunch_economy_compat
@@ -105,6 +106,9 @@ def _install_extensions(application):
     application = install_prelaunch_profile_sharing(application)
     application = install_prelaunch_profile_privacy(application)
     application = install_prelaunch_data_integrity(application)
+    # Member first paint is installed after data-integrity wrappers so its
+    # template globals see the same deduped/rating policy as the APIs.
+    application = install_member_first_paint(application)
     application = install_jackside_rating_freshness(application)
     application = install_referral_registration_integrity(application)
     application = install_referral_entry_hotfix(application)
