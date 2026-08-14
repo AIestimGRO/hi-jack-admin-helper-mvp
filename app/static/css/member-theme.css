@@ -10,6 +10,9 @@
   --hj-sea: #095c57;
   --hj-sea-mid: #0c5356;
   --hj-sea-deep: #032827;
+  --hj-forest: #0f4432;
+  --hj-forest-mid: #12523a;
+  --hj-forest-deep: #061f18;
   --hj-graphite: #111214;
   --hj-graphite-raised: #17181b;
   --hj-red: #d52b42;
@@ -66,33 +69,40 @@
   outline-color: rgba(11, 136, 178, .72);
 }
 
-/* JACKCOIN: this is the first-render source of truth, not a JS-applied recolor. */
+/* JACKCOIN: premium forest/bottle-green, preserving the existing light rings and depth. */
 .member-app-page .jc-wallet-card {
-  border-color: rgba(57, 167, 191, .26);
+  border-color: rgba(82, 151, 112, .30);
   background:
-    radial-gradient(circle at 92% 8%, rgba(118, 198, 213, .18), transparent 30%),
-    linear-gradient(135deg, var(--hj-sea) 0%, #075867 48%, var(--hj-blue) 100%);
-  box-shadow: 0 22px 56px rgba(0, 54, 70, .19);
-  color: #f7fbfa;
+    radial-gradient(ellipse at 89% 7%, rgba(118, 181, 139, .21) 0%, rgba(55, 126, 87, .09) 32%, transparent 56%),
+    radial-gradient(circle at 10% 108%, rgba(2, 18, 14, .48) 0%, transparent 48%),
+    linear-gradient(108deg, rgba(255, 255, 255, .034) 0%, transparent 29%, rgba(0, 18, 12, .10) 73%, transparent 100%),
+    linear-gradient(135deg, #124634 0%, var(--hj-forest-mid) 34%, var(--hj-forest) 66%, var(--hj-forest-deep) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .045),
+    inset 0 0 0 1px rgba(255, 255, 255, .012),
+    0 24px 58px rgba(2, 28, 20, .28);
+  color: #f7fbf8;
 }
 
 .member-app-page .jc-wallet-card::before,
 .member-app-page .jc-wallet-card::after {
-  border-color: rgba(184, 226, 235, .12);
+  border-color: rgba(191, 225, 201, .13);
 }
 
 .member-app-page .jc-wallet-card::before {
-  box-shadow: 0 0 0 34px rgba(175, 220, 229, .035), 0 0 0 72px rgba(175, 220, 229, .022);
+  box-shadow:
+    0 0 0 34px rgba(177, 218, 190, .037),
+    0 0 0 72px rgba(177, 218, 190, .022);
 }
 
 .member-app-page .jc-wallet-chip {
-  border-color: rgba(208, 235, 239, .18);
-  background: rgba(3, 61, 69, .33);
-  color: #eaf8fa;
+  border-color: rgba(203, 231, 211, .19);
+  background: rgba(6, 42, 31, .38);
+  color: #eef8f1;
 }
 
 .member-app-page .jc-wallet-bottom p {
-  color: rgba(226, 239, 239, .7);
+  color: rgba(230, 240, 233, .72);
 }
 
 .member-app-page .jc-wallet-bottom a,
