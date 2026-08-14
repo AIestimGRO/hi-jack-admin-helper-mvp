@@ -1,5 +1,15 @@
 /* Brand refinement pass 2: align member content with the Hi, Jack mini-app palette.
-   Bottom navigation is intentionally not targeted here. */
+   Navigation is intentionally not targeted here.
+
+   A legacy prelaunch stylesheet is appended later at runtime and still contains
+   old turquoise rules with !important. Selectors below are deliberately more
+   specific for the member content that must use the current brand palette. */
+
+.member-app-body {
+  --app-accent: #0b88b2 !important;
+  --app-accent-strong: #46a9c4 !important;
+  --app-ocean: #095c57 !important;
+}
 
 .member-app-page {
   --hj-blue: #005b7d;
@@ -12,14 +22,21 @@
   --hj-sea-soft: rgba(9, 92, 87, .18);
 }
 
+/* Header/profile chrome: replace the old turquoise tint without changing layout. */
+.member-app-body .member-profile-button,
+.member-app-body .profile-avatar-large {
+  border-color: rgba(35, 132, 161, .30) !important;
+  background: linear-gradient(145deg, rgba(0, 91, 125, .19), rgba(9, 92, 87, .09)) !important;
+}
+
 /* Home wallet: reconnect JACKCOIN with the mini-app's blue / sea-wave identity. */
 .member-app-page[data-account-tab="home"] .jc-wallet-card {
-  border-color: rgba(44, 151, 183, .24);
+  border-color: rgba(44, 151, 183, .24) !important;
   background:
     radial-gradient(circle at 91% 8%, rgba(68, 175, 202, .26), transparent 31%),
     radial-gradient(circle at 10% 100%, rgba(4, 55, 58, .30), transparent 45%),
-    linear-gradient(135deg, #095c57 0%, #075867 48%, #005b7d 100%);
-  box-shadow: 0 24px 58px rgba(0, 42, 57, .24);
+    linear-gradient(135deg, #095c57 0%, #075867 48%, #005b7d 100%) !important;
+  box-shadow: 0 24px 58px rgba(0, 42, 57, .24) !important;
   color: #f5f7f7;
 }
 
@@ -76,9 +93,10 @@
   color: #56abc3;
 }
 
-.member-app-page .app-secondary-action {
-  border-color: rgba(63, 150, 178, .28);
-  background: rgba(0, 91, 125, .055);
+.member-app-page .app-secondary-action,
+.member-app-page .quiz-feature-actions .app-secondary-action {
+  border-color: rgba(63, 150, 178, .28) !important;
+  background: rgba(0, 91, 125, .075) !important;
   color: #73b7ca;
 }
 
@@ -87,7 +105,7 @@
   border-color: rgba(49, 126, 148, .17);
   background:
     radial-gradient(circle at 7% 18%, rgba(0, 91, 125, .16), transparent 34%),
-    linear-gradient(145deg, #121719, #0d0f10);
+    linear-gradient(145deg, #121719, #0d0f10) !important;
 }
 
 .member-app-page .quiz-feature-art {
@@ -144,6 +162,71 @@
   background: linear-gradient(145deg, rgba(9, 92, 87, .54), rgba(0, 91, 125, .23));
   color: #f1f6f6;
   box-shadow: inset 0 0 0 1px rgba(83, 165, 181, .16);
+}
+
+/* Profile keeps the approved structure; turquoise trim becomes club blue / sea-wave. */
+.member-app-page .profile-achievement-stage {
+  border-color: rgba(39, 136, 163, .22);
+  background:
+    radial-gradient(circle at 17% 6%, rgba(0, 91, 125, .16), transparent 35%),
+    radial-gradient(circle at 92% 82%, rgba(202, 158, 61, .14), transparent 34%),
+    linear-gradient(145deg, #102022, #080d0d 72%);
+}
+
+.member-app-page .profile-achievement-stage::before {
+  background: rgba(0, 91, 125, .08);
+}
+
+.member-app-page .profile-emblem-card[open] {
+  border-color: rgba(48, 145, 173, .29);
+  background: rgba(0, 91, 125, .055);
+}
+
+.member-app-page .profile-emblem-icon {
+  border-color: rgba(43, 137, 164, .23);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, .12), transparent 32%),
+    rgba(0, 91, 125, .09);
+  color: #63b2c8;
+  filter: drop-shadow(0 9px 16px rgba(0, 91, 125, .11));
+}
+
+.member-app-page .profile-emblem-card.is-selected .profile-emblem-icon,
+.member-app-page .profile-emblem-card.is-temporary .profile-emblem-icon {
+  border-color: rgba(231, 188, 73, .3);
+  background: rgba(198, 145, 37, .1);
+  color: #f0cf70;
+}
+
+.member-app-page .profile-new-awards {
+  border-color: rgba(40, 139, 168, .22);
+  background: rgba(0, 91, 125, .065);
+}
+
+.member-app-page .profile-new-awards > span {
+  background: rgba(0, 91, 125, .13);
+  color: #68b9ce;
+}
+
+.member-app-page .profile-stat-visual {
+  background:
+    radial-gradient(circle at 50% 0, rgba(0, 91, 125, .08), transparent 55%),
+    var(--app-surface);
+}
+
+.member-app-page .profile-accuracy-ring {
+  box-shadow: 0 0 25px rgba(0, 91, 125, .10);
+}
+
+.member-app-page .profile-referral-qualified {
+  border-color: rgba(44, 142, 169, .23);
+  background: rgba(0, 91, 125, .09);
+}
+
+.member-app-page .profile-referral-link button {
+  border-color: rgba(45, 140, 169, .27);
+  background: rgba(0, 91, 125, .11);
+  color: #82c4d5;
 }
 
 /* Referral tree mirrors the blue referral language of the mini-app, without touching profile layout. */
