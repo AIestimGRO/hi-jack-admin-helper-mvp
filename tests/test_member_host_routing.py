@@ -1,4 +1,7 @@
-from app.member_host_routing import member_host_redirect_target
+from app.member_host_routing import (
+    admin_root_redirect_target,
+    member_host_redirect_target,
+)
 
 
 def test_club_hosts_send_public_entry_points_to_member_login() -> None:
@@ -77,7 +80,15 @@ def test_production_quiz_sends_member_pages_to_production_club() -> None:
     )
 
 
-def test_admin_hosts_keep_admin_and_quiz_entry_points() -> None:
+def test_admin_host_root_goes_to_login_or_workspace() -> None:
+    for host in ("quiz-v2.hijackpoker.ru", "quiz.hijackpoker.ru"):
+        assert admin_root_redirect_target(host, authenticated=False) == "/login"
+        assert admin_root_redirect_target(host, authenticated=True) == "/master/clients"
+
+    assert admin_root_redirect_target("club.hijackpoker.ru", authenticated=False) is None
+
+
+def test_admin_hosts_keep_other_admin_and_quiz_entry_points() -> None:
     for host in ("quiz-v2.hijackpoker.ru", "quiz.hijackpoker.ru"):
         assert member_host_redirect_target(host, "/") is None
         assert member_host_redirect_target(host, "/login") is None
