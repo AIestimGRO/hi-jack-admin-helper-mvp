@@ -17,7 +17,7 @@ server {
     ssl_certificate /etc/letsencrypt/live/quiz.hijackpoker.ru/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/quiz.hijackpoker.ru/privkey.pem;
 
-    client_max_body_size 1m;
+    client_max_body_size 15m;
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
@@ -27,7 +27,7 @@ server {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 
     location = / {
@@ -124,7 +124,11 @@ server {
         expires 1h;
     }
 
+    # Current architecture uses this host for the admin workspace as well as
+    # JACKSIDE/service routes. Member/account routes are redirected to club by
+    # application host routing, while admin routes remain on quiz.
     location / {
-        return 404;
+        proxy_pass http://127.0.0.1:8090;
+        proxy_read_timeout 60s;
     }
 }
