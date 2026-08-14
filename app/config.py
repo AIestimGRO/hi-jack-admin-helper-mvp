@@ -33,6 +33,10 @@ class Settings:
     timezone_name: str = os.getenv("HJC_TIMEZONE", "Europe/Moscow")
     telegram_client_id: str = os.getenv("HJC_TELEGRAM_CLIENT_ID", "").strip()
     telegram_client_secret: str = os.getenv("HJC_TELEGRAM_CLIENT_SECRET", "").strip()
+    telegram_notifications_enabled: bool = _bool_env(
+        "HJC_TELEGRAM_NOTIFICATIONS_ENABLED", False
+    )
+    telegram_bot_token: str = os.getenv("HJC_TELEGRAM_BOT_TOKEN", "").strip()
     smtp_host: str = os.getenv("HJC_SMTP_HOST", "").strip()
     smtp_port: int = int(os.getenv("HJC_SMTP_PORT", "587"))
     smtp_username: str = os.getenv("HJC_SMTP_USERNAME", "").strip()
