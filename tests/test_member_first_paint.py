@@ -80,7 +80,9 @@ def test_server_first_state_is_installed_after_data_integrity() -> None:
     assert main.index("install_prelaunch_data_integrity(application)") < main.index(
         "install_member_first_paint(application)"
     )
-    assert 'main_impl.templates.env.globals["member_first_paint_state"]' in helper
+    assert "Jinja2Templates" in helper
+    assert 'env.globals["member_first_paint_state"]' in helper
+    assert 'env.globals["member_profile_ref"]' in helper
     assert "calendar_jackside_rating_payload" in helper
     assert "hijack_rating_page_payload" in helper
     assert "referral_tree" in helper
