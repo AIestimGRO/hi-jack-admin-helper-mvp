@@ -33,10 +33,13 @@ def test_member_polish_is_restrained_and_old_referral_bonus_ui_is_hidden() -> No
         encoding="utf-8"
     )
     assert ".ia-referral-economy{display:none!important}" in css
-    assert "--app-accent:#49c4b1" in css
+    assert "--app-accent:#0b88b2" in css
+    assert "--app-ocean:#095c57" in css
     assert "--app-gold:#b49a5c" in css
     assert "backdrop-filter:blur(15px)" in css
-    assert "linear-gradient(135deg,#3ac3b0 0%,#2aaa97 56%,#1c7d71 100%)" in css
+    assert "linear-gradient(135deg,#095c57 0%,#075867 48%,#005b7d 100%)" in css
+    assert "#3ac3b0" not in css
+    assert "#2aaa97" not in css
 
 
 def test_referral_status_policy_is_bound_before_main_handlers() -> None:
