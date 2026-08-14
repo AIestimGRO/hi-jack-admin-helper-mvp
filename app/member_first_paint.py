@@ -221,17 +221,37 @@ def _member_profile_ref(request: Request, client_id: Any) -> str:
     return public_profile_ref(request.app.state.settings.secret_key, int(client_id))
 
 
+def _templates_from_app(app: FastAPI) -> Any:
+    """Return the Jinja environment captured by main_impl route closures."""
+    for route in app.routes:
+        endpoint = getattr(route, "endpoint", None)
+        code = getattr(endpoint, "__code__", None)
+        closure = getattr(endpoint, "__closure__", None)
+        if code is None or not closure:
+            continue
+        for name, cell in zip(code.co_freevars, closure, strict=False):
+            if name != "templates":
+                continue
+            try:
+                candidate = cell.cell_contents
+            except ValueError:
+                continue
+            if hasattr(candidate, "env"):
+                return candidate
+    raise RuntimeError("main_impl_templates_unavailable")
+
+
 def install_member_first_paint(app: FastAPI) -> FastAPI:
     if getattr(app.state, "member_first_paint_installed", False):
         return app
     app.state.member_first_paint_installed = True
 
-    # The base /account route is owned by main_impl. Register small Jinja globals
-    # instead of wrapping that route or rewriting its HTML after rendering.
-    from app import main_impl
-
-    main_impl.templates.env.globals["member_first_paint_state"] = _member_first_paint_state
-    main_impl.templates.env.globals["member_profile_ref"] = _member_profile_ref
+    # The base /account route is owned by main_impl. Its Jinja environment is a
+    # create_app local, so resolve the same object from a route closure instead
+    # of relying on a module-level attribute that does not exist.
+    templates = _templates_from_app(app)
+    templates.env.globals["member_first_paint_state"] = _member_first_paint_state
+    templates.env.globals["member_profile_ref"] = _member_profile_ref
     return app
 
 
