@@ -16,6 +16,11 @@ DEFAULT_PAGE_SIZE = 25
 MAX_PAGE_SIZE = 100
 
 
+class _MaskedLegacyPlace(int):
+    def __str__(self) -> str:
+        return "•••"
+
+
 def _table_exists(conn, table: str) -> bool:
     return bool(
         conn.execute(
@@ -61,7 +66,7 @@ def _legacy_snapshot_rows(conn) -> list[dict[str, Any]]:
             actual_place = int(actual_place)
         item["actual_place"] = actual_place
         if actual_place is not None and actual_place > 30:
-            item["place"] = "•••"
+            item["place"] = _MaskedLegacyPlace(actual_place)
         result.append(item)
     return result
 
