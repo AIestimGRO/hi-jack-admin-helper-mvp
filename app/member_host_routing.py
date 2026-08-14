@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 
@@ -15,6 +17,10 @@ ADMIN_HOSTS = frozenset(ADMIN_TO_MEMBER_HOST)
 
 def _normalized_host(hostname: str | None) -> str:
     return str(hostname or "").strip().lower().rstrip(".")
+
+
+def _configured_host(base_url: str | None) -> str:
+    return _normalized_host(urlsplit(str(base_url or "")).hostname)
 
 
 def admin_root_redirect_target(
@@ -65,11 +71,13 @@ def install_member_host_routing(app: FastAPI) -> FastAPI:
     if getattr(app.state, "member_host_routing_installed", False):
         return app
     app.state.member_host_routing_installed = True
+    configured_admin_host = _configured_host(app.state.settings.quiz_public_base_url)
 
     @app.middleware("http")
     async def member_host_routing_middleware(request: Request, call_next):
         if request.method in {"GET", "HEAD"}:
-            if request.url.path == "/":
+            request_host = _normalized_host(request.url.hostname)
+            if request.url.path == "/" and request_host == configured_admin_host:
                 root_target = admin_root_redirect_target(
                     request.url.hostname,
                     authenticated=bool(request.session.get("authenticated")),
