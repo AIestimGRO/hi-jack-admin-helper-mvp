@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>{% block title %}Hi, Jack Club{% endblock %}</title>
+  <meta name="theme-color" content="#07110f">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member-extra.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member-dashboard.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/member-profile-refresh.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/product-shell.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/prelaunch.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-prelaunch-ui-hotfix href="{{ url_for('static', path='/css/prelaunch-ui-hotfix.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-member-final-polish href="{{ url_for('static', path='/css/member-final-polish.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-member-theme href="{{ url_for('static', path='/css/member-theme.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-member-ui-cleanup href="{{ url_for('static', path='/css/member-ui-cleanup.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-hijack-member-extension href="{{ url_for('static', path='/css/hijack-member.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-member-brand-refinement href="{{ url_for('static', path='/css/member-brand-refinement.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-engagement-carousel href="{{ url_for('static', path='/css/member-achievement-carousel.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-account-security href="{{ url_for('static', path='/css/account-security.css') }}?v={{ asset_version }}">
+</head>
+{% set shell = member_first_paint_state(request, member, current_tab|default('home'), current_rating_section|default('month')) %}
+<body class="member-app-body member-tab-{{ current_tab|default('home') }}">
+  <header class="member-topbar">
+    <a class="member-brand" href="/account">
+      <img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt="">
+      <span><strong>JACKSIDE</strong><small>HI, JACK CLUB!</small></span>
+    </a>
+    {% set header_name = member.nickname or member.first_name or member.username or 'HJ' %}
+    <a class="member-profile-button {{ 'has-product-avatar' if shell.profile.avatar_url else '' }}" href="/account?tab=profile" aria-label="Открыть профиль">
+      {% if shell.profile.avatar_url %}<img data-product-avatar class="{{ 'is-sticker' if shell.profile.avatar_kind == 'sticker' else '' }}" src="{{ shell.profile.avatar_url }}" alt="">{% else %}{{ header_name[:1]|upper }}{% endif %}
+    </a>
+  </header>
+
+  <main class="member-shell">{% block content %}{% endblock %}</main>
+
+  <nav class="member-bottom-nav" aria-label="Основная навигация" data-legacy-nav="Квизы Хранилище">
+    <a class="{{ 'active' if current_tab|default('home') == 'home' else '' }}" href="/account">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.8 12 3l9 7.8v9.1a1.1 1.1 0 0 1-1.1 1.1H15v-6H9v6H4.1A1.1 1.1 0 0 1 3 19.9Z"/></svg>
+      <span>Главная</span>
+    </a>
+    <a class="{{ 'active' if current_tab|default('') == 'quizzes' else '' }}" href="/account?tab=quizzes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2.5 5.2h5M9.5 12h5M9.5 15.8h3"/></svg>
+      <span>Расписание</span>
+    </a>
+    <a class="member-hj-nav {{ 'active' if current_tab|default('') == 'rating' else '' }}" href="/account?tab=rating&amp;section=month" aria-label="Открыть рейтинг">
+      <span class="member-hj-shield" aria-hidden="true"><b>HJ</b></span>
+      <span>Рейтинг</span>
+    </a>
+    <a class="{{ 'active' if current_tab|default('') == 'vault' else '' }}" href="/account?tab=vault">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v12H4zM6.5 4h11v3.5h-11zM9.3 12.2h5.4M12 9.5v5.4"/></svg>
+      <span>Hi, Store</span>
+      {% if vault_active_rewards|default([])|length %}<i>{{ vault_active_rewards|length }}</i>{% endif %}
+    </a>
+    <a class="{{ 'active' if current_tab|default('') == 'profile' else '' }}" href="/account?tab=profile">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Zm-7.5 8.5c.5-4 3.3-6.2 7.5-6.2s7 2.2 7.5 6.2"/></svg>
+      <span>Профиль</span>
+    </a>
+  </nav>
+
+  <a class="member-chat-launcher is-stable-chat" data-chat-launcher href="{{ shell.chat_href }}" aria-label="Открыть Chats">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 5.4h13.6a2.2 2.2 0 0 1 2.2 2.2v7.2a2.2 2.2 0 0 1-2.2 2.2h-7.3l-4.9 3.3.9-3.3H5.2A2.2 2.2 0 0 1 3 14.8V7.6a2.2 2.2 0 0 1 2.2-2.2Z"/></svg>
+    <span class="member-chat-unread" aria-live="polite">0</span>
+  </a>
+
+  <script src="{{ url_for('static', path='/js/member.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/member-app-interactions.js') }}?v={{ asset_version }}" defer></script>
+  <script type="module" src="{{ url_for('static', path='/js/reward-animations.js') }}?v={{ asset_version }}"></script>
+  <script src="{{ url_for('static', path='/js/reward-stickers.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/pwa-install.js') }}?v={{ asset_version }}" defer></script>
+</body>
+</html>
