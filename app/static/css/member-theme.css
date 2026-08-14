@@ -88,6 +88,14 @@
   color: #17181b;
 }
 
+/* Keep wallet typography dark even if a later legacy layer sets generic balance text to white. */
+.member-app-page[data-account-tab="home"] .jc-wallet-card .jc-wallet-top > span:first-child,
+.member-app-page[data-account-tab="home"] .jc-wallet-card .jc-wallet-balance,
+.member-app-page[data-account-tab="home"] .jc-wallet-card .jc-wallet-balance strong,
+.member-app-page[data-account-tab="home"] .jc-wallet-card .jc-wallet-balance small {
+  color: #17181b !important;
+}
+
 .member-app-page .jc-wallet-card::before,
 .member-app-page .jc-wallet-card::after {
   border-color: rgba(58, 51, 43, .12);
