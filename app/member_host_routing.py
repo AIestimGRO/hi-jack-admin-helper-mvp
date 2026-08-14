@@ -4,23 +4,28 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 
 
-MEMBER_HOSTS = frozenset({"club-v2.hijackpoker.ru", "club.hijackpoker.ru"})
-ADMIN_HOSTS = frozenset({"quiz-v2.hijackpoker.ru"})
-MEMBER_CANONICAL_HOST = "club-v2.hijackpoker.ru"
-ADMIN_CANONICAL_HOST = "quiz-v2.hijackpoker.ru"
+MEMBER_TO_ADMIN_HOST = {
+    "club-v2.hijackpoker.ru": "quiz-v2.hijackpoker.ru",
+    "club.hijackpoker.ru": "quiz.hijackpoker.ru",
+}
+ADMIN_TO_MEMBER_HOST = {admin: member for member, admin in MEMBER_TO_ADMIN_HOST.items()}
+MEMBER_HOSTS = frozenset(MEMBER_TO_ADMIN_HOST)
+ADMIN_HOSTS = frozenset(ADMIN_TO_MEMBER_HOST)
 
 
 def member_host_redirect_target(hostname: str | None, path: str) -> str | None:
     host = str(hostname or "").strip().lower().rstrip(".")
 
-    if host in MEMBER_HOSTS:
+    admin_host = MEMBER_TO_ADMIN_HOST.get(host)
+    if admin_host:
         if path in {"/", "/login"}:
             return "/account/login"
         if path == "/logout" or path == "/master" or path.startswith("/master/"):
-            return f"https://{ADMIN_CANONICAL_HOST}{path}"
+            return f"https://{admin_host}{path}"
         return None
 
-    if host in ADMIN_HOSTS:
+    member_host = ADMIN_TO_MEMBER_HOST.get(host)
+    if member_host:
         if (
             path == "/account"
             or path.startswith("/account/")
@@ -28,7 +33,7 @@ def member_host_redirect_target(hostname: str | None, path: str) -> str | None:
             or path.startswith("/players/")
             or path.startswith("/legal/")
         ):
-            return f"https://{MEMBER_CANONICAL_HOST}{path}"
+            return f"https://{member_host}{path}"
 
     return None
 
@@ -62,7 +67,9 @@ def install_member_host_routing(app: FastAPI) -> FastAPI:
 
 __all__ = [
     "ADMIN_HOSTS",
+    "ADMIN_TO_MEMBER_HOST",
     "MEMBER_HOSTS",
+    "MEMBER_TO_ADMIN_HOST",
     "install_member_host_routing",
     "member_host_redirect_target",
 ]
