@@ -39,8 +39,8 @@
   --app-surface: var(--hj-graphite);
   --app-surface-2: var(--hj-graphite-raised);
   --hj-quiz-gradient:
-    linear-gradient(135deg, #0b6765 0%, #075b61 50%, #034a63 100%);
-  --hj-quiz-line: rgba(62, 169, 193, .24);
+    linear-gradient(135deg, #0c6864 0%, #086168 34%, #07536a 64%, #033e55 100%);
+  --hj-quiz-line: rgba(78, 180, 201, .30);
 }
 
 .member-app-body .member-topbar {
@@ -108,15 +108,20 @@
   background: var(--hj-red-hover);
 }
 
-/* Shared quiz identity: the nearest game and schedule cards use the same fill. */
+/* Shared quiz identity: the nearest game and schedule cards use the same premium fill. */
 .member-app-page .quiz-feature-card,
 .member-app-page .campaign-card,
 .member-app-page .campaign-card.upcoming {
   border-color: var(--hj-quiz-line);
   background:
-    radial-gradient(circle at 94% 4%, rgba(30, 148, 181, .18), transparent 38%),
+    radial-gradient(ellipse at 88% 5%, rgba(82, 192, 216, .26) 0%, rgba(30, 148, 181, .10) 31%, transparent 56%),
+    radial-gradient(circle at 8% 108%, rgba(4, 68, 66, .42) 0%, transparent 48%),
+    linear-gradient(108deg, rgba(255, 255, 255, .032) 0%, transparent 28%, rgba(0, 34, 48, .08) 72%, transparent 100%),
     var(--hj-quiz-gradient);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .018), 0 18px 42px rgba(0, 35, 43, .15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .045),
+    inset 0 0 0 1px rgba(255, 255, 255, .015),
+    0 20px 48px rgba(0, 31, 39, .24);
 }
 
 /* Home card must stay compact. Legacy styles previously allowed the feature
@@ -133,7 +138,7 @@
 
 .member-app-page[data-account-tab="home"] .quiz-feature-card::after {
   inset: 7px !important;
-  border-color: rgba(215, 238, 242, .055) !important;
+  border-color: rgba(215, 238, 242, .07) !important;
   border-radius: 18px !important;
 }
 
@@ -143,16 +148,16 @@
   height: auto !important;
   align-self: stretch !important;
   background:
-    repeating-linear-gradient(135deg, rgba(255, 255, 255, .024) 0 1px, transparent 1px 12px),
-    rgba(0, 49, 65, .24) !important;
-  color: #70bfd3 !important;
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .022) 0 1px, transparent 1px 12px),
+    linear-gradient(180deg, rgba(0, 55, 69, .14), rgba(0, 39, 52, .24)) !important;
+  color: #82c7d8 !important;
   font-size: 17px !important;
   letter-spacing: -2px !important;
 }
 
 .member-app-page[data-account-tab="home"] .quiz-feature-art i {
   margin: 0 1px !important;
-  color: rgba(112, 191, 211, .58) !important;
+  color: rgba(130, 199, 216, .60) !important;
 }
 
 .member-app-page[data-account-tab="home"] .quiz-feature-copy {
