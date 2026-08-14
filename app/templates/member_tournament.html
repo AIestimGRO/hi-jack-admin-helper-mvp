@@ -1,0 +1,68 @@
+{% extends "member_app_base.html" %}
+{% block title %}{{ tournament.title }} — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="home-section tournament-detail-page" data-tournament-detail data-tournament-id="{{ tournament.id }}">
+  <div class="app-section-head">
+    <div><p class="member-eyebrow">Турниры Hi, Jack!</p><h1>{{ tournament.title }}</h1></div>
+    <a href="/account?tab=quizzes&amp;schedule=tournaments">← Расписание</a>
+  </div>
+
+  {% if ok %}<div class="member-alert success" data-tournament-flash>{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error" data-tournament-flash>{{ error }}</div>{% endif %}
+  <div class="member-alert" data-tournament-flash hidden></div>
+
+  <article class="tournament-shell-card">
+    <span class="tournament-kicker">{{ 'Регистрация открыта' if tournament.registration_state in ['open','waitlist'] else 'Турнир Hi, Jack!' }}</span>
+    <h2>{{ tournament.title }}</h2>
+    <p class="tournament-date">{{ tournament.starts_at_display }}</p>
+    {% if tournament.description %}<p class="tournament-description">{{ tournament.description }}</p>{% endif %}
+
+    <div class="tournament-shell-meta">
+      {% if tournament.format_text %}<span>{{ tournament.format_text }}</span>{% endif %}
+      {% if tournament.buy_in_text %}<span>{{ tournament.buy_in_text }}</span>{% endif %}
+      {% if tournament.stack_text %}<span>Стек: {{ tournament.stack_text }}</span>{% endif %}
+      {% if tournament.levels_text %}<span>Уровни: {{ tournament.levels_text }}</span>{% endif %}
+      {% if tournament.guarantee_text %}<span>Гарантия: {{ tournament.guarantee_text }}</span>{% endif %}
+      {% if tournament.reentry_text %}<span>Re-entry: {{ tournament.reentry_text }}</span>{% endif %}
+      {% if tournament.addon_text %}<span>Add-on: {{ tournament.addon_text }}</span>{% endif %}
+      {% if tournament.late_registration_text %}<span>Поздняя регистрация: {{ tournament.late_registration_text }}</span>{% endif %}
+      {% if tournament.venue_text %}<span>{{ tournament.venue_text }}</span>{% endif %}
+    </div>
+  </article>
+
+  <section class="member-card" aria-label="Регистрация на турнир">
+    <div class="app-section-head"><div><p class="member-eyebrow">Участие</p><h2>Твоё место</h2></div></div>
+    <div class="stat-chip-grid">
+      <article><small>Зарегистрировано</small><strong data-registered-count>{{ tournament.registered_count }}</strong>{% if tournament.max_slots %}<span>из {{ tournament.max_slots }}</span>{% else %}<span>без лимита</span>{% endif %}</article>
+      <article><small>Лист ожидания</small><strong data-waitlist-count>{{ tournament.waitlist_count }}</strong><span>игроков</span></article>
+      <article><small>Свободно</small><strong data-seats-left>{{ tournament.seats_left if tournament.seats_left is not none else '∞' }}</strong><span>мест</span></article>
+    </div>
+
+    <p class="member-eyebrow">Статус: <strong data-my-status>
+      {% if tournament.my_registration_status == 'registered' %}Ты зарегистрирован
+      {% elif tournament.my_registration_status == 'waitlist' %}Ты в листе ожидания
+      {% elif tournament.my_registration_status == 'checked_in' %}Check-in пройден
+      {% elif tournament.my_registration_status == 'played' %}Участие завершено
+      {% elif tournament.my_registration_status == 'cancelled' %}Регистрация отменена
+      {% else %}Не зарегистрирован{% endif %}
+    </strong></p>
+
+    <form method="post" action="/api/account/tournaments/{{ tournament.id }}/register" data-tournament-register {% if not tournament.can_register %}hidden{% endif %}>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="app-primary-action" type="submit">{{ 'Встать в лист ожидания' if tournament.registration_state == 'waitlist' else 'Участвовать' }}</button>
+    </form>
+    <form method="post" action="/api/account/tournaments/{{ tournament.id }}/cancel" data-tournament-cancel {% if not tournament.can_cancel %}hidden{% endif %}>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="app-secondary-action" type="submit">Отменить регистрацию</button>
+    </form>
+
+    <p class="muted" data-registration-note>
+      {% if tournament.registration_state == 'not_open' %}Регистрация ещё не открыта{% if tournament.registration_opens_at_display %} · {{ tournament.registration_opens_at_display }}{% endif %}.
+      {% elif tournament.registration_state == 'closed' %}Регистрация закрыта{% if tournament.registration_closes_at_display %} · {{ tournament.registration_closes_at_display }}{% endif %}.
+      {% elif tournament.registration_state == 'waitlist' and not tournament.my_registration_status %}Основные места заняты. Можно встать в лист ожидания.
+      {% endif %}
+    </p>
+  </section>
+</section>
+<script src="{{ url_for('static', path='/js/tournaments.js') }}?v={{ asset_version }}" defer></script>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Турниры — Hi, Jack Club{% endblock %}
+{% block content %}
+<section class="ia-page" data-tournaments-workspace>
+  <header class="ia-page-head">
+    <div>
+      <p class="eyebrow">Игра</p>
+      <h1>Турниры Hi, Jack!</h1>
+      <p class="muted">Расписание, параметры турнира, публикация и список участников.</p>
+    </div>
+    <div class="ia-page-actions"><a class="ia-quiet-link" href="/master/jackside">JACKSIDE</a></div>
+  </header>
+
+  {% if ok %}<div class="alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+  <details class="card ia-archive" {% if not selected %}open{% endif %}>
+    <summary>Создать новый турнир</summary>
+    <form method="post" action="/api/master/tournaments" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Название<input name="title" maxlength="120" required placeholder="Hi, Jack! Main Event"></label>
+      <label>Старт <small>по Москве</small><input type="datetime-local" name="starts_at" required></label>
+      <label>Формат<input name="format_text" maxlength="160" placeholder="NLH · Freezeout"></label>
+      <label>Buy-in<input name="buy_in_text" maxlength="160" placeholder="5 000 ₽"></label>
+      <label>Стартовый стек<input name="stack_text" maxlength="160" placeholder="30 000"></label>
+      <label>Уровни<input name="levels_text" maxlength="160" placeholder="20 минут"></label>
+      <label>Re-entry<input name="reentry_text" maxlength="160" placeholder="1 re-entry"></label>
+      <label>Add-on<input name="addon_text" maxlength="160" placeholder="Нет"></label>
+      <label>Гарантия<input name="guarantee_text" maxlength="160" placeholder="500 000 ₽"></label>
+      <label>Лимит мест<input type="number" name="max_slots" min="0" max="10000" value="0"><small>0 — без лимита</small></label>
+      <label>Открытие регистрации<input type="datetime-local" name="registration_opens_at"></label>
+      <label>Закрытие регистрации<input type="datetime-local" name="registration_closes_at"></label>
+      <label>Поздняя регистрация<input name="late_registration_text" maxlength="160" placeholder="До конца 6 уровня"></label>
+      <label>Место<input name="venue_text" maxlength="200" placeholder="Hi, Jack Club"></label>
+      <label class="full">Описание<textarea name="description" rows="4" maxlength="4000" placeholder="Короткое описание и важные условия"></textarea></label>
+      <div class="full ia-dialog-actions"><button class="primary" type="submit">Создать черновик</button></div>
+    </form>
+  </details>
+
+  <div class="ia-list-head"><div><strong>Турниры</strong><span class="muted">{{ tournaments|length }}</span></div></div>
+  <div class="ia-campaign-grid">
+    {% for item in tournaments %}
+    <article class="card ia-campaign-card">
+      <div class="ia-card-head">
+        <div><small>{{ item.starts_at_display }}</small><h2>{{ item.title }}</h2></div>
+        <span class="type-pill">{{ item.status }}</span>
+      </div>
+      <div class="ia-card-stats">
+        <span><b>{{ item.registered_count }}</b> записано</span>
+        <span><b>{{ item.waitlist_count }}</b> ожидание</span>
+        <span><b>{{ item.max_slots or '∞' }}</b> мест</span>
+      </div>
+      <p class="muted">{{ item.format_text }}{% if item.buy_in_text %} · {{ item.buy_in_text }}{% endif %}</p>
+      <div class="ia-card-actions">
+        <a class="button" href="/master/tournaments?edit={{ item.id }}">Открыть</a>
+        {% if item.is_published %}<a class="button" href="/account/tournaments/{{ item.id }}" target="_blank" rel="noopener">Как у игрока</a>{% endif %}
+      </div>
+    </article>
+    {% else %}<div class="card smart-empty">Турниров пока нет.</div>{% endfor %}
+  </div>
+
+  {% if selected %}
+  <section class="card">
+    <div class="ia-card-head"><div><p class="eyebrow">Редактирование</p><h2>{{ selected.title }}</h2><small>#{{ selected.id }} · {{ selected.starts_at_display }}</small></div><span class="type-pill">{{ selected.status }}</span></div>
+    <form method="post" action="/api/master/tournaments/{{ selected.id }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Название<input name="title" maxlength="120" value="{{ selected.title }}" required></label>
+      <label>Старт <small>по Москве</small><input type="datetime-local" name="starts_at" value="{{ selected.starts_at_input }}" required></label>
+      <label>Формат<input name="format_text" maxlength="160" value="{{ selected.format_text }}"></label>
+      <label>Buy-in<input name="buy_in_text" maxlength="160" value="{{ selected.buy_in_text }}"></label>
+      <label>Стартовый стек<input name="stack_text" maxlength="160" value="{{ selected.stack_text }}"></label>
+      <label>Уровни<input name="levels_text" maxlength="160" value="{{ selected.levels_text }}"></label>
+      <label>Re-entry<input name="reentry_text" maxlength="160" value="{{ selected.reentry_text }}"></label>
+      <label>Add-on<input name="addon_text" maxlength="160" value="{{ selected.addon_text }}"></label>
+      <label>Гарантия<input name="guarantee_text" maxlength="160" value="{{ selected.guarantee_text }}"></label>
+      <label>Лимит мест<input type="number" name="max_slots" min="0" max="10000" value="{{ selected.max_slots }}"></label>
+      <label>Открытие регистрации<input type="datetime-local" name="registration_opens_at" value="{{ selected.registration_opens_at_input }}"></label>
+      <label>Закрытие регистрации<input type="datetime-local" name="registration_closes_at" value="{{ selected.registration_closes_at_input }}"></label>
+      <label>Поздняя регистрация<input name="late_registration_text" maxlength="160" value="{{ selected.late_registration_text }}"></label>
+      <label>Место<input name="venue_text" maxlength="200" value="{{ selected.venue_text }}"></label>
+      <label class="full">Описание<textarea name="description" rows="4" maxlength="4000">{{ selected.description }}</textarea></label>
+      <div class="full ia-dialog-actions"><button class="primary" type="submit">Сохранить</button></div>
+    </form>
+
+    <div class="ia-card-actions">
+      <form method="post" action="/api/master/tournaments/{{ selected.id }}/action"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% if not selected.is_published %}<input type="hidden" name="action" value="publish"><button class="primary" type="submit">Опубликовать</button>{% else %}<input type="hidden" name="action" value="unpublish"><button class="button" type="submit">Снять с публикации</button>{% endif %}</form>
+      {% if selected.status in ['scheduled','registration_closed'] %}
+      <form method="post" action="/api/master/tournaments/{{ selected.id }}/action"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="{{ 'close_registration' if selected.registration_open else 'open_registration' }}"><button class="button" type="submit">{{ 'Закрыть регистрацию' if selected.registration_open else 'Открыть регистрацию' }}</button></form>
+      <form method="post" action="/api/master/tournaments/{{ selected.id }}/action"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="complete"><button class="button" type="submit">Завершить</button></form>
+      <form method="post" action="/api/master/tournaments/{{ selected.id }}/action" onsubmit="return confirm('Отменить турнир?');"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="cancel"><button class="button" type="submit">Отменить турнир</button></form>
+      {% else %}
+      <form method="post" action="/api/master/tournaments/{{ selected.id }}/action"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="restore"><button class="button" type="submit">Вернуть в черновик</button></form>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="ia-list-head"><div><strong>Участники</strong><span class="muted">{{ participants|length }}</span></div></div>
+    <form method="post" action="/api/master/tournaments/{{ selected.id }}/registrations" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>ID клиента<input type="number" min="1" name="client_id" required></label>
+      <label>Статус<select name="status"><option value="registered">registered</option><option value="waitlist">waitlist</option><option value="checked_in">checked_in</option><option value="played">played</option><option value="no_show">no_show</option><option value="cancelled">cancelled</option></select></label>
+      <div class="ia-dialog-actions"><button class="button" type="submit">Добавить / обновить</button></div>
+    </form>
+    <div class="ia-release-list">
+      {% for row in participants %}
+      <article class="ia-release-row">
+        <div><strong>{{ row.nickname or row.first_name or ('@' ~ row.username if row.username else 'Игрок #' ~ row.client_id) }}</strong><span>ID {{ row.client_id }}{% if row.phone_local %} · {{ row.phone_local }}{% endif %}</span></div>
+        <span class="type-pill">{{ row.status }}</span>
+        <span>{{ row.source }}</span>
+        <form method="post" action="/api/master/tournaments/{{ selected.id }}/registrations">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="client_id" value="{{ row.client_id }}">
+          <select name="status" onchange="this.form.submit()"><option value="registered" {% if row.status == 'registered' %}selected{% endif %}>registered</option><option value="waitlist" {% if row.status == 'waitlist' %}selected{% endif %}>waitlist</option><option value="checked_in" {% if row.status == 'checked_in' %}selected{% endif %}>checked_in</option><option value="played" {% if row.status == 'played' %}selected{% endif %}>played</option><option value="no_show" {% if row.status == 'no_show' %}selected{% endif %}>no_show</option><option value="cancelled" {% if row.status == 'cancelled' %}selected{% endif %}>cancelled</option></select>
+        </form>
+      </article>
+      {% else %}<p class="muted">Пока никто не зарегистрирован.</p>{% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}
