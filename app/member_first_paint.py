@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -75,8 +76,11 @@ def _social_links(conn: sqlite3.Connection, tab: str) -> list[dict[str, Any]]:
     return result
 
 
-def _prioritize_collection(payload: dict[str, Any]) -> dict[str, Any]:
-    result = dict(payload)
+def _empty_collection() -> SimpleNamespace:
+    return SimpleNamespace(items=[], active_count=0, total_count=0)
+
+
+def _prioritize_collection(payload: dict[str, Any]) -> SimpleNamespace:
     indexed = list(enumerate(list(payload.get("items") or [])))
     indexed.sort(
         key=lambda pair: (
@@ -87,8 +91,11 @@ def _prioritize_collection(payload: dict[str, Any]) -> dict[str, Any]:
             pair[0],
         )
     )
-    result["items"] = [item for _, item in indexed]
-    return result
+    return SimpleNamespace(
+        items=[item for _, item in indexed],
+        active_count=int(payload.get("active_count") or 0),
+        total_count=int(payload.get("total_count") or 0),
+    )
 
 
 def _attach_profile_refs(
@@ -126,7 +133,7 @@ def _member_first_paint_state(
         "tournaments": [],
         "nearest_tournament": None,
         "social_links": [],
-        "title_collection": {"items": [], "active_count": 0, "total_count": 0},
+        "title_collection": _empty_collection(),
         "referral_tree": None,
         "calendar_rating": None,
         "hijack_rating": None,
