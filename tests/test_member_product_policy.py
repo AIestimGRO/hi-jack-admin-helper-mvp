@@ -29,17 +29,22 @@ def test_jackside_copy_and_lobby_match_current_rules() -> None:
 
 
 def test_member_polish_is_restrained_and_old_referral_bonus_ui_is_hidden() -> None:
-    css = (ROOT / "app/static/css/prelaunch-ui-hotfix.css").read_text(
+    compatibility = (ROOT / "app/static/css/prelaunch-ui-hotfix.css").read_text(
         encoding="utf-8"
     )
-    assert ".ia-referral-economy{display:none!important}" in css
-    assert "--app-accent:#0b88b2" in css
-    assert "--app-ocean:#095c57" in css
-    assert "--app-gold:#b49a5c" in css
-    assert "backdrop-filter:blur(15px)" in css
-    assert "linear-gradient(135deg,#095c57 0%,#075867 48%,#005b7d 100%)" in css
-    assert "#3ac3b0" not in css
-    assert "#2aaa97" not in css
+    theme = (ROOT / "app/static/css/member-theme.css").read_text(encoding="utf-8")
+
+    assert ".ia-referral-economy{display:none!important}" in compatibility
+    assert "--app-accent:#0b88b2" in compatibility
+    assert "--app-ocean:#095c57" in compatibility
+    assert "--app-gold:#b49a5c" in compatibility
+    assert "backdrop-filter:blur(15px)" in compatibility
+    assert ".jc-wallet-card{background:" not in compatibility
+    assert "--hj-forest: #0f4432" in theme
+    assert "--hj-forest-mid: #12523a" in theme
+    assert "--hj-forest-deep: #061f18" in theme
+    assert "#3ac3b0" not in compatibility
+    assert "#2aaa97" not in compatibility
 
 
 def test_referral_status_policy_is_bound_before_main_handlers() -> None:
