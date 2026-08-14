@@ -47,14 +47,16 @@ def test_canonical_theme_owns_palette_quiz_geometry_and_privacy_entry() -> None:
 
     assert "--hj-blue: #005b7d" in css
     assert "--hj-sea: #095c57" in css
-    assert "--hj-forest: #0f4432" in css
-    assert "--hj-forest-mid: #12523a" in css
-    assert "--hj-forest-deep: #061f18" in css
+    assert "--hj-milk-bright: #fbf8f1" in css
+    assert "--hj-milk: #f1eadf" in css
+    assert "--hj-milk-mid: #e6dccd" in css
+    assert "--hj-milk-deep: #d6c9b8" in css
     assert "--hj-red: #d52b42" in css
     assert "--hj-graphite: #111214" in css
     assert "--hj-quiz-gradient:" in css
     assert ".jc-wallet-card" in css
-    assert "linear-gradient(135deg, #124634 0%, var(--hj-forest-mid) 34%, var(--hj-forest) 66%, var(--hj-forest-deep) 100%)" in css
+    assert "linear-gradient(135deg, var(--hj-milk-bright) 0%, var(--hj-milk) 34%, var(--hj-milk-mid) 68%, var(--hj-milk-deep) 100%)" in css
+    assert "color: #17181b" in css
     assert '[data-account-tab="home"] .quiz-feature-card' in css
     assert "height: auto !important" in css
     assert "grid-template-columns: repeat(2, minmax(0, 1fr)) !important" in css
