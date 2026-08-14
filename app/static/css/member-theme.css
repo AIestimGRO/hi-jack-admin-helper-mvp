@@ -1,0 +1,333 @@
+/* Canonical HI, JACK member theme.
+   This file is render-blocking from member_base.html and owns the member-facing
+   palette and the shared quiz-card geometry. Keep the bottom navigation out of
+   this file: its existing shimmer and shield are intentionally independent. */
+
+:root {
+  --hj-blue: #005b7d;
+  --hj-blue-bright: #0b88b2;
+  --hj-blue-deep: #003f58;
+  --hj-sea: #095c57;
+  --hj-sea-mid: #0c5356;
+  --hj-sea-deep: #032827;
+  --hj-graphite: #111214;
+  --hj-graphite-raised: #17181b;
+  --hj-red: #d52b42;
+  --hj-red-hover: #e43b51;
+  --hj-gold: #b89b68;
+  --hj-ivory: #f2f0ed;
+}
+
+.member-app-body {
+  background:
+    radial-gradient(circle at 12% -11rem, rgba(11, 136, 178, .075), transparent 30rem),
+    radial-gradient(circle at 94% 30rem, rgba(9, 92, 87, .045), transparent 28rem),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .006) 0 1px, transparent 1px 17px),
+    #090c0b;
+  color: var(--hj-ivory);
+}
+
+/* Content palette is scoped to the app page so the bottom navigation keeps its
+   existing independent colors and gold active-state animation. */
+.member-app-page {
+  --app-accent: var(--hj-blue-bright);
+  --app-accent-strong: #46a9c4;
+  --app-accent-dark: var(--hj-blue-deep);
+  --app-ocean: var(--hj-sea);
+  --app-ocean-dark: var(--hj-sea-deep);
+  --app-text: var(--hj-ivory);
+  --app-surface: var(--hj-graphite);
+  --app-surface-2: var(--hj-graphite-raised);
+  --hj-quiz-gradient:
+    linear-gradient(135deg, #0b6765 0%, #075b61 50%, #034a63 100%);
+  --hj-quiz-line: rgba(62, 169, 193, .24);
+}
+
+.member-app-body .member-topbar {
+  background: rgba(9, 12, 11, .92);
+}
+
+.member-app-page .member-eyebrow,
+.member-app-page .profile-action,
+.member-app-page .member-countdown {
+  color: var(--hj-blue-bright);
+}
+
+.member-profile-button,
+.profile-avatar-large {
+  border-color: rgba(11, 136, 178, .34);
+  background: linear-gradient(145deg, rgba(9, 92, 87, .33), rgba(0, 91, 125, .12));
+  color: #d9f3fa;
+}
+
+.member-app-body a:focus-visible,
+.member-app-body button:focus-visible,
+.member-app-body summary:focus-visible {
+  outline-color: rgba(11, 136, 178, .72);
+}
+
+/* JACKCOIN: this is the first-render source of truth, not a JS-applied recolor. */
+.member-app-page .jc-wallet-card {
+  border-color: rgba(57, 167, 191, .26);
+  background:
+    radial-gradient(circle at 92% 8%, rgba(118, 198, 213, .18), transparent 30%),
+    linear-gradient(135deg, var(--hj-sea) 0%, #075867 48%, var(--hj-blue) 100%);
+  box-shadow: 0 22px 56px rgba(0, 54, 70, .19);
+  color: #f7fbfa;
+}
+
+.member-app-page .jc-wallet-card::before,
+.member-app-page .jc-wallet-card::after {
+  border-color: rgba(184, 226, 235, .12);
+}
+
+.member-app-page .jc-wallet-card::before {
+  box-shadow: 0 0 0 34px rgba(175, 220, 229, .035), 0 0 0 72px rgba(175, 220, 229, .022);
+}
+
+.member-app-page .jc-wallet-chip {
+  border-color: rgba(208, 235, 239, .18);
+  background: rgba(3, 61, 69, .33);
+  color: #eaf8fa;
+}
+
+.member-app-page .jc-wallet-bottom p {
+  color: rgba(226, 239, 239, .7);
+}
+
+.member-app-page .jc-wallet-bottom a,
+.member-app-page .app-primary-action,
+.member-app-page .vault-buy-button:not(:disabled) {
+  background: var(--hj-red);
+  color: #fff;
+}
+
+.member-app-page .jc-wallet-bottom a:hover,
+.member-app-page .app-primary-action:hover,
+.member-app-page .vault-buy-button:not(:disabled):hover {
+  background: var(--hj-red-hover);
+}
+
+/* Shared quiz identity: the nearest game and schedule cards use the same fill. */
+.member-app-page .quiz-feature-card,
+.member-app-page .campaign-card,
+.member-app-page .campaign-card.upcoming {
+  border-color: var(--hj-quiz-line);
+  background:
+    radial-gradient(circle at 94% 4%, rgba(30, 148, 181, .18), transparent 38%),
+    var(--hj-quiz-gradient);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .018), 0 18px 42px rgba(0, 35, 43, .15);
+}
+
+/* Home card must stay compact. Legacy styles previously allowed the feature
+   card to grow to poster proportions on a cold/mobile layout. */
+.member-app-page[data-account-tab="home"] .quiz-feature-card {
+  display: grid !important;
+  grid-template-columns: 72px minmax(0, 1fr) !important;
+  grid-auto-rows: auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  aspect-ratio: auto !important;
+  border-radius: 24px !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-card::after {
+  inset: 7px !important;
+  border-color: rgba(215, 238, 242, .055) !important;
+  border-radius: 18px !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-art {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  align-self: stretch !important;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .024) 0 1px, transparent 1px 12px),
+    rgba(0, 49, 65, .24) !important;
+  color: #70bfd3 !important;
+  font-size: 17px !important;
+  letter-spacing: -2px !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-art i {
+  margin: 0 1px !important;
+  color: rgba(112, 191, 211, .58) !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-copy {
+  min-height: 0 !important;
+  justify-content: center !important;
+  padding: 16px 16px 15px !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-card .status-row > small,
+.member-app-page[data-account-tab="home"] .quiz-feature-card .quiz-feature-prize,
+.member-app-page[data-account-tab="home"] .quiz-feature-card .quiz-feature-hint,
+.member-app-page[data-account-tab="home"] .quiz-feature-card .quiz-feature-seated {
+  display: none !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-copy h3 {
+  margin: 2px 0 5px !important;
+  font-size: clamp(20px, 5vw, 24px) !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-copy > p {
+  margin: 0 0 3px !important;
+  font-size: 12px !important;
+}
+
+.member-app-page[data-account-tab="home"] .member-countdown {
+  margin: 3px 0 8px !important;
+  font-size: 14px !important;
+}
+
+/* Equal visual weight for the two actions. */
+.member-app-page[data-account-tab="home"] .quiz-feature-actions {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  gap: 9px !important;
+  margin-top: 8px !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-actions .app-primary-action,
+.member-app-page[data-account-tab="home"] .quiz-feature-actions .app-secondary-action {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 44px !important;
+  margin: 0 !important;
+  padding: 10px 9px !important;
+  border-radius: 14px !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  line-height: 1.12 !important;
+  text-align: center !important;
+  white-space: normal !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-actions .app-primary-action {
+  border: 1px solid rgba(239, 70, 92, .72) !important;
+  background: var(--hj-red) !important;
+  color: #fff !important;
+}
+
+.member-app-page[data-account-tab="home"] .quiz-feature-actions .app-secondary-action {
+  border: 1px solid rgba(94, 181, 201, .34) !important;
+  background: linear-gradient(135deg, rgba(9, 92, 87, .72), rgba(0, 91, 125, .62)) !important;
+  color: #d7edf2 !important;
+}
+
+.member-app-page .campaign-card-symbol,
+.member-app-page .campaign-card.upcoming .campaign-card-symbol {
+  border-color: rgba(96, 190, 208, .3);
+  background: rgba(0, 67, 82, .22);
+  color: #83c9d9;
+}
+
+.member-app-page .campaign-rewards span {
+  background: rgba(1, 55, 68, .26);
+  color: #b4d9df;
+}
+
+.member-app-page .live-status,
+.member-app-page .live-status.upcoming {
+  background: rgba(9, 92, 87, .42);
+  color: #d7c28b;
+}
+
+/* Privacy entry: a compact settings card instead of a generic centered panel. */
+.member-app-page[data-account-tab="profile"] .profile-visibility-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 18px 19px !important;
+  border-color: rgba(75, 158, 177, .18) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(11, 136, 178, .1), transparent 42%),
+    linear-gradient(145deg, rgba(9, 92, 87, .14), #111416 74%) !important;
+}
+
+.member-app-page[data-account-tab="profile"] .profile-visibility-entry .app-section-head {
+  display: contents;
+}
+
+.member-app-page[data-account-tab="profile"] .profile-visibility-entry .app-section-head > div {
+  padding: 0 !important;
+  text-align: left !important;
+}
+
+.member-app-page[data-account-tab="profile"] .profile-visibility-entry .member-eyebrow {
+  margin: 0 0 4px;
+  color: var(--hj-gold);
+  font-size: 9px;
+}
+
+.member-app-page[data-account-tab="profile"] .profile-visibility-entry h2 {
+  margin: 0;
+  font-size: clamp(20px, 5vw, 25px);
+  letter-spacing: -.5px;
+}
+
+.member-app-page[data-account-tab="profile"] .profile-visibility-entry .app-section-head > a {
+  position: static !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 13px !important;
+  border: 1px solid rgba(74, 169, 191, .28);
+  border-radius: 13px;
+  background: rgba(0, 91, 125, .16);
+  color: #83c9d9;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.member-app-page[data-account-tab="profile"] .profile-visibility-entry > .member-muted {
+  grid-column: 1 / -1;
+  max-width: 560px;
+  margin: 1px 0 0;
+  color: #929b9d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .member-app-page[data-account-tab="home"] .quiz-feature-card {
+    grid-template-columns: 66px minmax(0, 1fr) !important;
+  }
+
+  .member-app-page[data-account-tab="home"] .quiz-feature-copy {
+    padding: 14px 13px !important;
+  }
+
+  .member-app-page[data-account-tab="home"] .quiz-feature-actions {
+    gap: 7px !important;
+  }
+
+  .member-app-page[data-account-tab="home"] .quiz-feature-actions .app-primary-action,
+  .member-app-page[data-account-tab="home"] .quiz-feature-actions .app-secondary-action {
+    min-height: 42px !important;
+    padding: 9px 7px !important;
+    font-size: 11px !important;
+  }
+
+  .member-app-page[data-account-tab="profile"] .profile-visibility-entry {
+    padding: 16px !important;
+    gap: 9px 12px;
+  }
+}
+
+@media (max-width: 350px) {
+  .member-app-page[data-account-tab="home"] .quiz-feature-actions {
+    grid-template-columns: 1fr !important;
+  }
+}
