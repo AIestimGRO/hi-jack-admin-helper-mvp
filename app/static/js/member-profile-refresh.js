@@ -135,6 +135,7 @@
 
     loadStylesheetOnce('/static/css/member-final-polish.css?v=1', 'data-member-final-polish');
     loadScriptOnce('/static/js/member-final-polish.js?v=1', 'data-member-final-polish');
+    loadStylesheetOnce('/static/css/member-brand-refinement.css?v=1', 'data-member-brand-refinement');
   }
 
   if (openMonthlyRatingByDefault()) return;
