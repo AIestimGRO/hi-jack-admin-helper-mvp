@@ -47,10 +47,14 @@ def test_canonical_theme_owns_palette_quiz_geometry_and_privacy_entry() -> None:
 
     assert "--hj-blue: #005b7d" in css
     assert "--hj-sea: #095c57" in css
+    assert "--hj-forest: #0f4432" in css
+    assert "--hj-forest-mid: #12523a" in css
+    assert "--hj-forest-deep: #061f18" in css
     assert "--hj-red: #d52b42" in css
     assert "--hj-graphite: #111214" in css
     assert "--hj-quiz-gradient:" in css
     assert ".jc-wallet-card" in css
+    assert "linear-gradient(135deg, #124634 0%, var(--hj-forest-mid) 34%, var(--hj-forest) 66%, var(--hj-forest-deep) 100%)" in css
     assert '[data-account-tab="home"] .quiz-feature-card' in css
     assert "height: auto !important" in css
     assert "grid-template-columns: repeat(2, minmax(0, 1fr)) !important" in css
@@ -70,13 +74,13 @@ def test_brand_refinement_is_detail_only_and_does_not_own_core_surfaces() -> Non
     assert ".member-bottom-nav" not in css
 
 
-def test_legacy_prelaunch_hotfix_no_longer_restores_turquoise_wallet() -> None:
+def test_legacy_prelaunch_hotfix_no_longer_owns_wallet_or_quiz_background() -> None:
     css = (ROOT / "app/static/css/prelaunch-ui-hotfix.css").read_text(encoding="utf-8")
 
     assert "--app-accent:#0b88b2!important" in css
     assert "--app-ocean:#095c57!important" in css
-    assert "linear-gradient(135deg,#095c57 0%,#075867 48%,#005b7d 100%)!important" in css
     assert "#3ac3b0" not in css
     assert "#2aaa97" not in css
+    assert ".jc-wallet-card{background:" not in css
     assert "linear-gradient(145deg,#121719,#0d0f10)!important" not in css
     assert ".quiz-feature-card{background:" not in css
