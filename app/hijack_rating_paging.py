@@ -56,12 +56,18 @@ def _legacy_snapshot_rows(conn) -> list[dict[str, Any]]:
         item["kills"] = 0
         item["tournaments"] = 0
         item["display_name"] = str(item.get("display_name") or "").strip() or "Игрок"
+        actual_place = item.get("place")
+        if actual_place is not None:
+            actual_place = int(actual_place)
+        item["actual_place"] = actual_place
+        if actual_place is not None and actual_place > 30:
+            item["place"] = "•••"
         result.append(item)
     return result
 
 
 def _member_row(rows: list[dict[str, Any]], client_id: int) -> dict[str, Any] | None:
-    return next(
+    match = next(
         (
             row
             for row in rows
@@ -70,6 +76,12 @@ def _member_row(rows: list[dict[str, Any]], client_id: int) -> dict[str, Any] | 
         ),
         None,
     )
+    if match is None:
+        return None
+    result = dict(match)
+    if result.get("actual_place") is not None:
+        result["place"] = int(result["actual_place"])
+    return result
 
 
 def hijack_rating_page_payload(
