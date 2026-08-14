@@ -78,3 +78,5 @@ def test_legacy_prelaunch_hotfix_no_longer_restores_turquoise_wallet() -> None:
     assert "linear-gradient(135deg,#095c57 0%,#075867 48%,#005b7d 100%)!important" in css
     assert "#3ac3b0" not in css
     assert "#2aaa97" not in css
+    assert "linear-gradient(145deg,#121719,#0d0f10)!important" not in css
+    assert ".quiz-feature-card{background:" not in css
