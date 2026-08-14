@@ -51,7 +51,8 @@ def test_canonical_theme_owns_palette_quiz_geometry_and_privacy_entry() -> None:
     assert "--hj-milk: #f1eadf" in css
     assert "--hj-milk-mid: #e6dccd" in css
     assert "--hj-milk-deep: #d6c9b8" in css
-    assert "--hj-red: #d52b42" in css
+    assert "--hj-red: #9f293a" in css
+    assert "--hj-red-hover: #b53246" in css
     assert "--hj-graphite: #111214" in css
     assert "--hj-quiz-gradient:" in css
     assert ".jc-wallet-card" in css
@@ -59,6 +60,9 @@ def test_canonical_theme_owns_palette_quiz_geometry_and_privacy_entry() -> None:
     assert ".jc-wallet-balance strong" in css
     assert ".jc-wallet-balance small" in css
     assert "color: #17181b !important" in css
+    assert ".member-primary" in css
+    assert ".reward-activate-button" in css
+    assert "background: var(--hj-red) !important" in css
     assert '[data-account-tab="home"] .quiz-feature-card' in css
     assert "height: auto !important" in css
     assert "grid-template-columns: repeat(2, minmax(0, 1fr)) !important" in css
