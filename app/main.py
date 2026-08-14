@@ -13,10 +13,12 @@ import app.jackside_runtime_compat  # noqa: E402,F401
 import app.jackside_reschedule_snapshot  # noqa: E402,F401
 from app.jackside_poker_story_cleanup import apply_jackside_poker_story_cleanup
 from app.referral_status_policy import apply_referral_status_policy
+from app.referral_tree_visibility import apply_referral_tree_visibility_policy
 
 # main_impl imports these service functions by name; bind product policies first.
 apply_jackside_poker_story_cleanup()
 apply_referral_status_policy()
+apply_referral_tree_visibility_policy()
 
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
