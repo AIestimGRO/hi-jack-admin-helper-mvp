@@ -13,8 +13,23 @@ MEMBER_HOSTS = frozenset(MEMBER_TO_ADMIN_HOST)
 ADMIN_HOSTS = frozenset(ADMIN_TO_MEMBER_HOST)
 
 
+def _normalized_host(hostname: str | None) -> str:
+    return str(hostname or "").strip().lower().rstrip(".")
+
+
+def admin_root_redirect_target(
+    hostname: str | None,
+    *,
+    authenticated: bool,
+) -> str | None:
+    host = _normalized_host(hostname)
+    if host not in ADMIN_HOSTS:
+        return None
+    return "/master/clients" if authenticated else "/login"
+
+
 def member_host_redirect_target(hostname: str | None, path: str) -> str | None:
-    host = str(hostname or "").strip().lower().rstrip(".")
+    host = _normalized_host(hostname)
 
     admin_host = MEMBER_TO_ADMIN_HOST.get(host)
     if admin_host:
@@ -54,6 +69,14 @@ def install_member_host_routing(app: FastAPI) -> FastAPI:
     @app.middleware("http")
     async def member_host_routing_middleware(request: Request, call_next):
         if request.method in {"GET", "HEAD"}:
+            if request.url.path == "/":
+                root_target = admin_root_redirect_target(
+                    request.url.hostname,
+                    authenticated=bool(request.session.get("authenticated")),
+                )
+                if root_target:
+                    return RedirectResponse(root_target, status_code=303)
+
             target = member_host_redirect_target(request.url.hostname, request.url.path)
             if target:
                 return RedirectResponse(
@@ -70,6 +93,7 @@ __all__ = [
     "ADMIN_TO_MEMBER_HOST",
     "MEMBER_HOSTS",
     "MEMBER_TO_ADMIN_HOST",
+    "admin_root_redirect_target",
     "install_member_host_routing",
     "member_host_redirect_target",
 ]
