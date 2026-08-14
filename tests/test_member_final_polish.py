@@ -4,7 +4,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_final_polish_bundle_is_loaded_in_stable_order() -> None:
+def test_member_theme_is_render_blocking_in_stable_order() -> None:
+    template = (ROOT / "app/templates/member_base.html").read_text(encoding="utf-8")
+
+    compatibility = template.index("prelaunch-ui-hotfix.css")
+    final_polish = template.index("member-final-polish.css")
+    theme = template.index("member-theme.css")
+    cleanup = template.index("member-ui-cleanup.css")
+    hijack = template.index("hijack-member.css")
+    refinement = template.index("member-brand-refinement.css")
+    assert compatibility < final_polish < theme < cleanup < hijack < refinement
+    assert "data-member-theme" in template
+    assert "data-prelaunch-ui-hotfix" in template
+    assert "data-member-brand-refinement" in template
+
+
+def test_dynamic_loader_remains_only_as_safe_fallback() -> None:
     loader = (ROOT / "app/static/js/member-profile-refresh.js").read_text(encoding="utf-8")
 
     compatibility = loader.index("prelaunch-ui-hotfix.css?v=2")
@@ -27,14 +42,31 @@ def test_wallet_and_hijack_rating_final_polish() -> None:
     assert "grid-template-columns: repeat(3" in css
 
 
-def test_brand_refinement_uses_blue_and_sea_wave_without_nav_override() -> None:
-    css = (ROOT / "app/static/css/member-brand-refinement.css").read_text(encoding="utf-8")
+def test_canonical_theme_owns_palette_quiz_geometry_and_privacy_entry() -> None:
+    css = (ROOT / "app/static/css/member-theme.css").read_text(encoding="utf-8")
 
     assert "--hj-blue: #005b7d" in css
     assert "--hj-sea: #095c57" in css
-    assert '[data-account-tab="home"] .jc-wallet-card' in css
-    assert '[data-account-tab="quizzes"] .campaign-card' in css
+    assert "--hj-red: #d52b42" in css
+    assert "--hj-graphite: #111214" in css
+    assert "--hj-quiz-gradient:" in css
+    assert ".jc-wallet-card" in css
+    assert '[data-account-tab="home"] .quiz-feature-card' in css
+    assert "height: auto !important" in css
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr)) !important" in css
+    assert ".campaign-card.upcoming" in css
+    assert ".profile-visibility-entry" in css
+    assert ".member-bottom-nav" not in css
+
+
+def test_brand_refinement_is_detail_only_and_does_not_own_core_surfaces() -> None:
+    css = (ROOT / "app/static/css/member-brand-refinement.css").read_text(encoding="utf-8")
+
     assert ".referral-tree-root" in css
+    assert ".profile-achievement-stage" in css
+    assert ".jc-wallet-card" not in css
+    assert ".quiz-feature-card" not in css
+    assert ".campaign-card" not in css
     assert ".member-bottom-nav" not in css
 
 
