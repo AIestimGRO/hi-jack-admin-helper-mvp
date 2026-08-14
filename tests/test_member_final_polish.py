@@ -4,12 +4,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_final_polish_bundle_is_loaded() -> None:
+def test_final_polish_bundle_is_loaded_in_stable_order() -> None:
     loader = (ROOT / "app/static/js/member-profile-refresh.js").read_text(encoding="utf-8")
 
-    assert "member-final-polish.css?v=1" in loader
+    compatibility = loader.index("prelaunch-ui-hotfix.css?v=2")
+    final_polish = loader.index("member-final-polish.css?v=1")
+    refinement = loader.index("member-brand-refinement.css?v=2")
+    assert compatibility < final_polish < refinement
     assert "member-final-polish.js?v=1" in loader
-    assert "member-brand-refinement.css?v=1" in loader
+    assert "data-prelaunch-ui-hotfix" in loader
 
 
 def test_wallet_and_hijack_rating_final_polish() -> None:
