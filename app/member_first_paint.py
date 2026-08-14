@@ -7,6 +7,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
+from fastapi.templating import Jinja2Templates
 
 from app import profile_experience
 from app.db import connect
@@ -221,17 +222,37 @@ def _member_profile_ref(request: Request, client_id: Any) -> str:
     return public_profile_ref(request.app.state.settings.secret_key, int(client_id))
 
 
+def _template_environments(app: FastAPI):
+    seen: set[int] = set()
+    for route in app.routes:
+        endpoint = getattr(route, "endpoint", None)
+        closure = getattr(endpoint, "__closure__", None) or ()
+        for cell in closure:
+            try:
+                value = cell.cell_contents
+            except ValueError:
+                continue
+            if not isinstance(value, Jinja2Templates):
+                continue
+            env_id = id(value.env)
+            if env_id in seen:
+                continue
+            seen.add(env_id)
+            yield value.env
+
+
 def install_member_first_paint(app: FastAPI) -> FastAPI:
     if getattr(app.state, "member_first_paint_installed", False):
         return app
+
+    environments = list(_template_environments(app))
+    if not environments:
+        raise RuntimeError("member template environment not found")
+    for env in environments:
+        env.globals["member_first_paint_state"] = _member_first_paint_state
+        env.globals["member_profile_ref"] = _member_profile_ref
+
     app.state.member_first_paint_installed = True
-
-    # The base /account route is owned by main_impl. Register small Jinja globals
-    # instead of wrapping that route or rewriting its HTML after rendering.
-    from app import main_impl
-
-    main_impl.templates.env.globals["member_first_paint_state"] = _member_first_paint_state
-    main_impl.templates.env.globals["member_profile_ref"] = _member_profile_ref
     return app
 
 
