@@ -1,6 +1,13 @@
 /* Final detail polish only. Core palette, JACKCOIN and quiz-card geometry live in member-theme.css.
    Bottom navigation is intentionally not targeted here. */
 
+/* Final home wallet markup includes an accessibility/legacy JC suffix. The
+   visual design does not show it beside the number. Hide it in render-blocking
+   CSS so a cold load never paints it before JavaScript is ready. */
+.member-app-page[data-account-tab="home"] .jc-wallet-balance small {
+  display: none !important;
+}
+
 .member-app-page .account-nudge-icon {
   background: rgba(11, 136, 178, .12);
   color: #44a9c6;
