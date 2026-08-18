@@ -10,10 +10,13 @@ from app.telegram_notifications import (
     queue_manual_campaign,
 )
 from app.telegram_transport import (
+    TELEGRAM_PRIVATE_USER_ID_MAX,
     TelegramPermanentError,
     TelegramRateLimitError,
     TelegramTransportError,
+    _default_send_message,
     dispatch_telegram_outbox_once,
+    validate_private_chat_id,
 )
 
 
@@ -241,3 +244,31 @@ def test_rate_limit_uses_retry_queue(db_path):
     assert row["status"] == "queued"
     assert row["next_attempt_at"] is not None
     assert row["last_error"] == "Too Many Requests"
+
+
+def test_private_chat_id_rejects_stale_oidc_subject_before_network():
+    stale_subject = "1234123412341234123"
+
+    with pytest.raises(
+        TelegramPermanentError, match="telegram_private_chat_id_invalid"
+    ):
+        validate_private_chat_id(stale_subject)
+
+    with pytest.raises(
+        TelegramPermanentError, match="telegram_private_chat_id_invalid"
+    ):
+        _default_send_message(
+            "123456:test-token",
+            stale_subject,
+            {"text": "must not leave the process"},
+            0.1,
+        )
+
+
+def test_private_chat_id_accepts_documented_user_id_range():
+    assert validate_private_chat_id("987654321") == "987654321"
+    assert validate_private_chat_id(str(TELEGRAM_PRIVATE_USER_ID_MAX)) == str(
+        TELEGRAM_PRIVATE_USER_ID_MAX
+    )
+    with pytest.raises(TelegramPermanentError):
+        validate_private_chat_id(str(TELEGRAM_PRIVATE_USER_ID_MAX + 1))
