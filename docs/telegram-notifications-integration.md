@@ -2,97 +2,82 @@
 
 ## Purpose
 
-This document fixes the service boundary for Hi, Jack Telegram notifications so tournament, JACKSIDE, rewards and member-portal work can continue in parallel without direct dependencies on Telegram availability.
+This document fixes the Telegram notification boundary for Hi, Jack so tournaments, JACKSIDE, rewards and member-portal work can continue without making product transactions depend on Telegram availability.
 
-## Ownership
+## Bot ownership
 
-### hi-jack-admin-helper-mvp
+The Telegram bot used by the new Hi, Jack account-linking flow is also the notification bot. Its current product name is JACKSIDE Bot.
 
-Owns notification product state:
+The legacy `@HJCapp_bot` used by the separate Telegram Mini App is not part of this notification transport.
+
+The notification bot is owned and operated by the Hi, Jack project. Its Bot Token is stored only in the server environment as `HJC_TELEGRAM_BOT_TOKEN` and must never be committed to Git.
+
+## Telegram Login
+
+The OIDC authorization request uses:
+
+`openid profile telegram:bot_access`
+
+`telegram:bot_access` asks the user to allow the same bot associated with Telegram Web Login to send direct messages after login.
+
+Existing accounts that linked Telegram before this scope was added may need to pass through Telegram authorization again to grant messaging access. Relinking must not create a second Hi, Jack account.
+
+## Notification Center ownership
+
+`hi-jack-admin-helper-mvp` owns:
 
 - Telegram notification preferences and category opt-outs;
 - manual campaigns and future scheduled campaigns;
 - templates and automatic notification rules;
 - audience resolution;
-- notification outbox and idempotency keys;
+- one outbox row per recipient;
+- delivery attempts and retry scheduling;
 - delivery journal shown in admin UI;
-- audit trail for admin actions.
+- audit trail for admin actions;
+- direct Telegram Bot API delivery through the JACKSIDE bot.
 
-It does not own the Telegram Bot Token and must not call the Telegram Bot API from tournament/JACKSIDE/reward transactions.
+Tournament, JACKSIDE and reward transactions do not call Telegram directly. They only create notification intents/outbox work after their own product transaction succeeds.
 
-### hi_jack_club
-
-Owns Telegram delivery transport:
-
-- the existing Telegram bot;
-- the existing Celery Telegram sender;
-- Bot Token and Telegram transport configuration;
-- Telegram callback handling;
-- Telegram identity to application-user resolution;
-- transport retries and Telegram-specific error interpretation.
-
-Existing transport entry points:
-
-- `celery_app.tasks.telegram.send_telegram`
-- `celery_app.tasks.telegram.broadcast_messages`
-
-The current bot already has an admin broadcast flow in `telegram_bot/handlers/callbacks/spamming.py`. It supports preview and mass delivery through the Celery transport. The notification project should reuse that sender rather than introduce another Telegram API client.
-
-Existing tournament registration API:
-
-`POST /api/tournaments/{id}/register/`
-
-The current public API requires an authenticated application user. A Telegram callback must therefore resolve the Telegram user to the application user and call trusted internal registration logic; it must not impersonate a user based only on an ID supplied by the callback payload.
-
-### hi-jack-timer
-
-The timer does not own Telegram delivery. It may later publish domain events, for example `tournament_started` or `tournament_level_changed`, but a Telegram failure must never affect the timer state transition.
-
-## Foundation flow
+## Delivery flow
 
 1. Admin or product event creates a notification intent.
 2. Notification rules and user preferences decide whether it is eligible.
 3. Admin Helper writes one row per recipient into `telegram_notification_outbox`.
-4. `idempotency_key` prevents duplicate delivery intent for the same event/campaign and recipient.
-5. A future transport adapter claims queued outbox rows only after both the environment feature flag and the internal sending switch are enabled.
-6. The adapter hands the payload to the existing `hi_jack_club` Celery Telegram transport.
-7. Delivery result is written to `telegram_notification_deliveries` and the outbox status becomes `sent`, `failed` or `skipped`.
+4. `idempotency_key` prevents duplicate enqueue for the same event/campaign and recipient.
+5. The dispatcher claims due queued rows only when both safety gates are enabled.
+6. The dispatcher calls Telegram Bot API `sendMessage` using `HJC_TELEGRAM_BOT_TOKEN`.
+7. A successful Bot API response immediately marks the outbox row `sent` and stores Telegram `message_id` in the delivery journal.
+8. Permanent Telegram errors are marked `failed`; transient network, 5xx and rate-limit failures are retried with backoff.
 
-No product transaction waits for steps 5-7.
+No product transaction waits for steps 5-8.
 
 ## Outbox payload v1
-
-The foundation stores JSON with this shape:
 
 ```json
 {
   "text": "Message text",
   "category": "tournaments",
-  "button_text": "Участвовать",
-  "button_url": ""
+  "button_text": "Открыть",
+  "button_url": "https://club.hijackpoker.ru/..."
 }
 ```
 
-The transport adapter may translate this to Telegram `sendMessage` parameters. New payload fields must be additive and backward-compatible.
-
-The existing Celery sender currently accepts Telegram Bot API method arguments and can already retry transient failures. The adapter should translate the outbox payload to that existing task instead of copying its retry/rate-limit logic into Admin Helper.
+For the first transport release buttons are URL buttons. Callback buttons such as tournament participation are a separate next step and require a bot update/webhook handler plus signed action tokens.
 
 ## Recipient identity
 
-Admin Helper currently supports both fields present in the existing client database:
+Admin Helper supports both Telegram fields in the existing client database:
 
-1. `telegram_user_id` — preferred when present;
-2. `telegram_id` — legacy fallback.
+1. `telegram_user_id` - preferred when present;
+2. `telegram_id` - legacy fallback.
 
-Audience selection and outbox creation must use the same fallback order. This prevents already-linked legacy users from silently disappearing from campaigns.
-
-The main `hi_jack_club` user model already uses a unique `telegram_id`, which makes Telegram callback identity resolution deterministic once the same account mapping is available across the two systems.
+Audience selection and outbox creation use the same fallback order.
 
 ## Subscription defaults
 
-When Telegram becomes linked to an account for the first time, or is linked again after a full unlink, Telegram notifications are enabled by default as required by the product flow.
+When Telegram becomes linked to an account for the first time, or is linked again after a full unlink, notification preferences are enabled by default.
 
-Foundation categories:
+Categories:
 
 - `tournaments`
 - `jackside`
@@ -100,75 +85,53 @@ Foundation categories:
 - `club_updates`
 - `marketing`
 
-The user can disable the whole Telegram channel or individual categories later.
-
-## Transactional vs promotional notifications
-
-Categories and templates must preserve enough metadata to distinguish service/transactional messages from promotional messages. The transport adapter must not collapse that distinction because consent and future frequency controls may differ.
-
-## Tournament action button
-
-The intended tournament notification action is an inline Telegram button:
-
-`Участвовать`
-
-Recommended callback contract:
-
-`hj:tournament:join:<signed-action-token>`
-
-The signed token should identify the action and tournament, be time-bounded where appropriate, and be verified server-side. Do not trust raw `user_id`, registration status or privileges from callback data.
-
-Callback flow:
-
-1. Telegram bot receives the callback query.
-2. Bot identifies the Telegram sender from Telegram's update object.
-3. Backend resolves that Telegram identity to a Hi, Jack application user.
-4. Trusted tournament registration service performs the same validation/locking used by the application registration endpoint.
-5. Bot answers the callback and updates the button/message to a state such as `✅ Вы участвуете` or shows the waitlist state.
-6. Repeated callback execution must be idempotent.
-
-A later `Отменить участие` action should use the same pattern and the existing unregister business rules.
-
-## Minimal transport patch in hi_jack_club
-
-The next implementation in the main repository should stay deliberately small:
-
-1. add a service-authenticated internal endpoint or worker ingress that accepts one normalized outbox message;
-2. validate a versioned payload and idempotency key;
-3. enqueue the existing `send_telegram` task for one recipient, or reuse `broadcast_messages` only when the upstream audience has not already been expanded;
-4. support Telegram reply markup for action buttons without replacing the existing sender;
-5. return/record a stable delivery acknowledgement so Admin Helper can update the journal;
-6. add an aiogram callback handler for signed tournament actions;
-7. resolve `call.from_user.id` to the existing `User.telegram_id` and execute trusted tournament registration logic;
-8. cover registration success, waitlist, already registered, registration closed and invalid/expired token cases with tests.
-
-Admin Helper already expands audiences into one outbox row per recipient, so the preferred transport path is the single-recipient `send_telegram` task. This preserves per-user idempotency and delivery status. The existing mass `broadcast_messages` task remains useful for legacy bot-admin broadcasts.
+The user can disable the whole Telegram channel or individual categories later. Marketing must still respect the applicable marketing-consent policy; Telegram messaging permission is not a substitute for marketing consent.
 
 ## Failure semantics
 
 Telegram failures never roll back product actions.
 
-Suggested mapping:
+Mapping:
 
-- blocked user / deactivated user / chat not found -> permanent `skipped` or `failed`, no repeated product-side retry;
-- timeout / network / 5xx / rate limit -> transient retry handled by transport;
-- duplicate notification intent -> ignored by outbox idempotency;
-- invalid campaign payload -> permanent `failed` with journal entry.
+- HTTP/API 400 or 403 for a recipient/payload -> permanent failure, no retry;
+- blocked/deactivated/chat-not-found -> permanent failure;
+- HTTP/API 429 -> retry using Telegram `retry_after` when provided;
+- timeout/network/5xx -> retry with local backoff;
+- invalid/missing Bot Token -> configuration block; stop the current dispatch pass after the first affected row;
+- duplicate notification intent -> ignored by outbox idempotency.
+
+The Telegram Bot API does not expose a general idempotency key for `sendMessage`. Local enqueue and claim are idempotent, but a rare network ambiguity after Telegram accepted a message and before the response reached the server can theoretically result in a duplicate retry. This must be considered when enabling automated high-value messages.
 
 ## Safety gates
 
-Live delivery remains OFF until all of the following are deliberately completed:
+Live delivery requires all of the following:
 
-1. isolated foundation tests are green;
-2. admin UI is manually checked in staging;
-3. a transport adapter to `hi_jack_club` is implemented with service authentication;
-4. test-to-self works end-to-end;
-5. delivery result callback/journal works;
-6. environment feature flag is enabled;
-7. internal sending switch is enabled.
+1. `HJC_TELEGRAM_NOTIFICATIONS_ENABLED=true`;
+2. internal `telegram_notification_settings.sending_enabled=1`;
+3. `HJC_TELEGRAM_BOT_TOKEN` configured on the server.
 
-Automatic notification rules remain disabled until manual delivery is proven stable.
+Until both switches are enabled, queued messages stay inside Admin Helper.
 
-## First live scenario
+Automatic rules remain disabled until manual test-to-self delivery is proven stable.
 
-The first automatic scenario should be a tournament reminder, for example two hours before start. It exercises scheduling, audience selection, template rendering and delivery without changing tournament or JACKSIDE business state.
+## Dispatcher
+
+One safe dispatch iteration is available through:
+
+`python scripts/telegram_dispatch_once.py`
+
+The first staging validation should process a campaign addressed only to the operator account. A periodic service/timer should be enabled only after test-to-self succeeds.
+
+## Tournament action button - next phase
+
+The future interactive action is:
+
+`Участвовать`
+
+Recommended callback data carries only a signed, time-bounded action token, for example:
+
+`hj:tournament:join:<signed-action-token>`
+
+The bot must identify the Telegram sender from the callback update and resolve that identity server-side. Raw user IDs or registration status from callback data must never be trusted. The registration action must reuse the same trusted tournament validation/locking rules as the application.
+
+A repeated callback must be idempotent and should update the message/button to a state such as `✅ Вы участвуете` or the waitlist state.
