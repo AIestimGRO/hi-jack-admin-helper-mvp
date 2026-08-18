@@ -59,6 +59,7 @@ from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
 from app.staff_quiz_admin import install_staff_quiz_admin
 from app.telegram_notifications import install_telegram_notifications
+from app.telegram_transport import install_telegram_transport
 
 
 def _session_middleware_outermost(application):
@@ -87,6 +88,7 @@ def _install_extensions(application):
     # base tables before extension modules add their own foreign keys/triggers.
     init_db(application.state.settings.db_path)
     application = install_telegram_notifications(application)
+    application = install_telegram_transport(application)
     # Historic JACKSIDE used UNIQUE(issue_date). Migrate that single constraint
     # before extensions install triggers; IDs, child FKs and all rows are kept.
     ensure_multi_issue_schema(application.state.settings.db_path)
