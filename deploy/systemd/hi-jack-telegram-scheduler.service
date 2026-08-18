@@ -1,0 +1,9 @@
+[Unit]
+Description=Hi Jack Club Telegram scheduler
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hi-jack-admin-helper-v2
+EnvironmentFile=/opt/hi-jack-admin-helper-v2/.env
+ExecStart=/opt/hi-jack-admin-helper-v2/.venv/bin/python scripts/telegram_scheduler_once.py
