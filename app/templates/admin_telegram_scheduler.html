@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Планировщик Telegram — Hi, Jack Club{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/telegram-notifications.css') }}?v={{ asset_version }}">
+{% endblock %}
+{% block content %}
+<section class="ia-page telegram-admin-page">
+  <header class="ia-page-head">
+    <div>
+      <p class="eyebrow">Коммуникации</p>
+      <h1>Планировщик Telegram</h1>
+      <p class="muted">Независимые рассылки на любую дату и время. Все даты и время здесь указываются по Москве.</p>
+    </div>
+    <div class="ia-page-actions"><a class="button" href="/master/telegram">К рассылкам</a></div>
+  </header>
+
+  <nav class="ia-local-nav telegram-local-nav" aria-label="Разделы Telegram">
+    <a href="/master/telegram?tab=campaigns">Рассылки</a>
+    <a href="/master/telegram?tab=new">Создать</a>
+    <a class="active" href="/master/telegram/scheduler">Планировщик</a>
+    <a href="/master/telegram?tab=automation">Автоуведомления</a>
+    <a href="/master/telegram?tab=history">История</a>
+    <a href="/master/telegram?tab=settings">Настройки</a>
+  </nav>
+
+  {% if ok %}<div class="telegram-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="telegram-alert error">{{ error }}</div>{% endif %}
+
+  <section class="telegram-composer-grid">
+    <form class="card telegram-composer" action="/master/telegram/scheduler" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="telegram-section-head">
+        <div><small>Новая запланированная рассылка</small><h2>Сообщение</h2></div>
+        <span class="telegram-safety-pill">Время по МСК</span>
+      </div>
+
+      <label>Название рассылки<input name="title" maxlength="120" required placeholder="Например: Пятничный анонс"></label>
+
+      <div class="telegram-form-grid">
+        <label>Категория
+          <select name="category">
+            {% for code,label in telegram_categories %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Аудитория
+          <select name="audience_type">
+            <option value="all">Все с подключённым Telegram</option>
+            <option value="client">Один пользователь по ID</option>
+          </select>
+        </label>
+      </div>
+
+      <label>Пользователь ID <span class="muted">только для персональной отправки</span><input name="audience_value" inputmode="numeric" placeholder="Например: 125"></label>
+
+      <label>Дата и время отправки (МСК)
+        <input type="datetime-local" name="scheduled_at_msk" min="{{ schedule_min_msk }}" required>
+        <span class="muted">Указывается именно московское время. Сервер хранит момент отправки в UTC и показывает его здесь снова по МСК.</span>
+      </label>
+
+      <label>Текст сообщения<textarea name="message_text" maxlength="4096" rows="8" required placeholder="Напишите сообщение..."></textarea></label>
+
+      <div class="telegram-form-grid">
+        <label>Текст кнопки<input name="button_text" maxlength="64" placeholder="Участвовать"></label>
+        <label>Ссылка кнопки<input name="button_url" maxlength="1000" placeholder="https://..."></label>
+      </div>
+
+      <div class="telegram-form-actions"><button class="button" type="submit">Запланировать рассылку</button></div>
+    </form>
+
+    <aside class="telegram-preview-column">
+      <div class="card telegram-settings-card">
+        <div><small>Как работает</small><h2>Независимо от квиза</h2></div>
+        <p>Рассылка не привязана к кампании квиза или турниру. На каждый день можно задать собственное время и текст, а рекламное сообщение можно запланировать вообще без игрового события.</p>
+        <p class="muted">Планировщик проверяет наступившие даты регулярно. Если глобальная отправка выключена, запланированные сообщения не выпускаются в очередь и дождутся включения канала.</p>
+      </div>
+    </aside>
+  </section>
+
+  <section class="telegram-section">
+    <div class="ia-list-head">
+      <div><h2>Запланированные и завершённые</h2><span class="muted">до 250 последних записей</span></div>
+    </div>
+
+    {% if scheduled_campaigns %}
+    <div class="telegram-campaign-list">
+      {% for item in scheduled_campaigns %}
+      <article class="card telegram-campaign-row">
+        <div class="telegram-campaign-main">
+          <div class="telegram-row-top">
+            <strong>{{ item.title }}</strong>
+            {% if item.is_planned %}
+              <span class="telegram-status is-on">Запланировано</span>
+            {% else %}
+              <span class="telegram-status status-{{ item.status }}">{{ item.status }}</span>
+            {% endif %}
+          </div>
+          <p>{{ item.message_text }}</p>
+          <small>{{ item.scheduled_msk }} · {{ item.category }} · {{ item.audience_type }}</small>
+        </div>
+        <div class="telegram-campaign-metrics">
+          <span><b>{{ item.outbox_count }}</b><small>в outbox</small></span>
+          <span><b>{{ item.sent_count }}</b><small>доставлено</small></span>
+        </div>
+        <div class="telegram-campaign-actions">
+          {% if item.is_planned %}
+          <form action="/master/telegram/scheduler/{{ item.id }}/reschedule" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="datetime-local" name="scheduled_at_msk" value="{{ item.scheduled_input }}" min="{{ schedule_min_msk }}" required>
+            <button class="button secondary" type="submit">Перенести</button>
+          </form>
+          <form action="/master/telegram/scheduler/{{ item.id }}/cancel" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button secondary" type="submit">Отменить</button>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card telegram-empty"><strong>Пока ничего не запланировано</strong><p>Создайте первую рассылку выше.</p></div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}
