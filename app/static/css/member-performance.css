@@ -1,0 +1,40 @@
+.member-app-page[data-performance-render="server"] .profile-avatar-large.has-product-avatar {
+  overflow: hidden;
+  padding: 0;
+}
+
+.member-app-page[data-performance-render="server"] .profile-avatar-large.has-product-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.member-app-page[data-performance-render="server"] .profile-avatar-large.has-product-avatar img.is-sticker {
+  object-fit: contain;
+  padding: 6px;
+}
+
+.vault-catalog-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 52px;
+  margin: 14px 0 2px;
+}
+
+.vault-catalog-pager[hidden] {
+  display: none !important;
+}
+
+.vault-catalog-pager [data-vault-load-sentinel] {
+  width: 1px;
+  height: 1px;
+}
+
+@media (max-width: 680px) {
+  .vault-catalog-pager {
+    flex-wrap: wrap;
+  }
+}
