@@ -1,0 +1,16 @@
+[Unit]
+Description=Hi Jack Club Telegram scheduler
+After=network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/hi-jack-admin-helper
+EnvironmentFile=/opt/hi-jack-admin-helper/.env
+ExecStart=/opt/hi-jack-admin-helper/.venv/bin/python scripts/telegram_scheduler_once.py
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/hi-jack-admin-helper/data

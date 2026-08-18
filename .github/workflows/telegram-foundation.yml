@@ -1,0 +1,138 @@
+name: Telegram Isolated Regression
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/telegram-foundation.yml"
+      - ".env.example"
+      - "app/config.py"
+      - "app/main.py"
+      - "app/services/telegram_oidc.py"
+      - "app/telegram_notifications.py"
+      - "app/telegram_scheduler.py"
+      - "app/telegram_transport.py"
+      - "app/templates/admin_telegram_scheduler.html"
+      - "app/templates/admin_telegram_workspace.html"
+      - "app/templates/base.html"
+      - "app/templates/member_telegram.html"
+      - "app/static/css/telegram-notifications.css"
+      - "app/static/js/telegram-notifications.js"
+      - "deploy/systemd/hi-jack-telegram-scheduler.service"
+      - "deploy/systemd/hi-jack-telegram-scheduler.timer"
+      - "scripts/telegram_dispatch_once.py"
+      - "scripts/telegram_scheduler_once.py"
+      - "scripts/telegram_test_to_self.py"
+      - "tests/test_telegram_notifications.py"
+      - "tests/test_telegram_oidc.py"
+      - "tests/test_telegram_scheduler.py"
+      - "tests/test_telegram_transport.py"
+      - "docs/telegram-notifications-integration.md"
+
+jobs:
+  telegram-isolated-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Guard Telegram isolation
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+
+          allowed = {
+              ".env.example",
+              ".github/workflows/telegram-foundation.yml",
+              "app/config.py",
+              "app/main.py",
+              "app/services/telegram_oidc.py",
+              "app/telegram_notifications.py",
+              "app/telegram_scheduler.py",
+              "app/telegram_transport.py",
+              "app/static/css/telegram-notifications.css",
+              "app/static/js/telegram-notifications.js",
+              "app/templates/admin_telegram_scheduler.html",
+              "app/templates/admin_telegram_workspace.html",
+              "app/templates/base.html",
+              "app/templates/member_telegram.html",
+              "deploy/systemd/hi-jack-telegram-scheduler.service",
+              "deploy/systemd/hi-jack-telegram-scheduler.timer",
+              "docs/telegram-notifications-integration.md",
+              "scripts/telegram_dispatch_once.py",
+              "scripts/telegram_scheduler_once.py",
+              "scripts/telegram_test_to_self.py",
+              "tests/test_telegram_notifications.py",
+              "tests/test_telegram_oidc.py",
+              "tests/test_telegram_scheduler.py",
+              "tests/test_telegram_transport.py",
+          }
+          base = os.environ["BASE_SHA"]
+          changed = set(
+              subprocess.check_output(
+                  ["git", "diff", "--name-only", f"{base}...HEAD"],
+                  text=True,
+              ).splitlines()
+          )
+          unexpected = sorted(changed - allowed)
+          if unexpected:
+              raise SystemExit(
+                  "Telegram isolation violation: " + ", ".join(unexpected)
+              )
+          print("Telegram isolation OK:", len(changed), "allowed files changed")
+          PY
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff Telegram changes
+        run: >-
+          ruff check
+          app/config.py
+          app/main.py
+          app/services/telegram_oidc.py
+          app/telegram_notifications.py
+          app/telegram_scheduler.py
+          app/telegram_transport.py
+          scripts/telegram_dispatch_once.py
+          scripts/telegram_scheduler_once.py
+          scripts/telegram_test_to_self.py
+          tests/test_telegram_notifications.py
+          tests/test_telegram_oidc.py
+          tests/test_telegram_scheduler.py
+          tests/test_telegram_transport.py
+
+      - name: Compile Telegram changes
+        run: >-
+          python -m py_compile
+          app/config.py
+          app/main.py
+          app/services/telegram_oidc.py
+          app/telegram_notifications.py
+          app/telegram_scheduler.py
+          app/telegram_transport.py
+          scripts/telegram_dispatch_once.py
+          scripts/telegram_scheduler_once.py
+          scripts/telegram_test_to_self.py
+
+      - name: Test Telegram feature
+        run: >-
+          pytest -q
+          tests/test_telegram_notifications.py
+          tests/test_telegram_oidc.py
+          tests/test_telegram_scheduler.py
+          tests/test_telegram_transport.py
+
+      - name: Full project regression
+        run: pytest -q

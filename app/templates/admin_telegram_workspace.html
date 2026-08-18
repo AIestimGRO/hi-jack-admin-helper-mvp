@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Telegram — Hi, Jack Club{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/telegram-notifications.css') }}?v={{ asset_version }}">
+{% endblock %}
+{% block content %}
+<section class="ia-page telegram-admin-page" data-telegram-admin>
+  <header class="ia-page-head">
+    <div>
+      <p class="eyebrow">Коммуникации</p>
+      <h1>Telegram</h1>
+      <p class="muted">Ручные рассылки, автоматические события и история доставки в одном контуре.</p>
+    </div>
+    <div class="ia-page-actions"><a class="button ia-primary-action" href="/master/telegram?tab=new">Создать рассылку</a></div>
+  </header>
+
+  <nav class="ia-local-nav telegram-local-nav" aria-label="Разделы Telegram">
+    <a class="{{ 'active' if tab == 'campaigns' else '' }}" href="/master/telegram?tab=campaigns">Рассылки</a>
+    <a class="{{ 'active' if tab == 'new' else '' }}" href="/master/telegram?tab=new">Создать</a>
+    <a class="{{ 'active' if tab == 'automation' else '' }}" href="/master/telegram?tab=automation">Автоуведомления</a>
+    <a class="{{ 'active' if tab == 'templates' else '' }}" href="/master/telegram?tab=templates">Шаблоны</a>
+    <a class="{{ 'active' if tab == 'history' else '' }}" href="/master/telegram?tab=history">История</a>
+    <a class="{{ 'active' if tab == 'users' else '' }}" href="/master/telegram?tab=users">Пользователи</a>
+    <a class="{{ 'active' if tab == 'settings' else '' }}" href="/master/telegram?tab=settings">Настройки</a>
+  </nav>
+
+  {% if ok %}<div class="telegram-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="telegram-alert error">{{ error }}</div>{% endif %}
+
+  <div class="ia-stat-grid telegram-stat-grid">
+    <article class="card ia-stat"><small>Telegram подключён</small><strong>{{ stats.linked }}</strong><span>учётных записей</span></article>
+    <article class="card ia-stat"><small>Уведомления включены</small><strong>{{ stats.enabled }}</strong><span>доступных получателей</span></article>
+    <article class="card ia-stat"><small>В очереди</small><strong>{{ stats.queued }}</strong><span>сообщений</span></article>
+    <article class="card ia-stat"><small>Ошибки</small><strong>{{ stats.failed }}</strong><span>требуют внимания</span></article>
+  </div>
+
+  {% if tab == 'campaigns' %}
+  <section class="telegram-section">
+    <div class="ia-list-head"><div><h2>Рассылки</h2><span class="muted">{{ campaigns|length }} последних</span></div><a class="button" href="/master/telegram?tab=new">Новая рассылка</a></div>
+    {% if campaigns %}
+    <div class="telegram-campaign-list">
+      {% for item in campaigns %}
+      <article class="card telegram-campaign-row">
+        <div class="telegram-campaign-main">
+          <div class="telegram-row-top"><strong>{{ item.title }}</strong><span class="telegram-status status-{{ item.status }}">{{ item.status }}</span></div>
+          <p>{{ item.message_text }}</p>
+          <small>{{ item.category }} · {{ item.audience_type }} · {{ display_datetime(item.created_at) }}</small>
+        </div>
+        <div class="telegram-campaign-metrics">
+          <span><b>{{ item.queued_count }}</b><small>в очереди</small></span>
+          <span><b>{{ item.sent_count }}</b><small>отправлено</small></span>
+          <span><b>{{ item.failed_count }}</b><small>ошибок</small></span>
+        </div>
+        <div class="telegram-campaign-actions">
+          {% if item.status in ['draft','failed','queued'] %}
+          <form action="/master/telegram/campaigns/{{ item.id }}/queue" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button secondary" type="submit">Поставить в очередь</button></form>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card telegram-empty"><strong>Рассылок пока нет</strong><p>Создайте первый черновик. Пока глобальная отправка выключена, он останется безопасно внутри админки.</p><a class="button" href="/master/telegram?tab=new">Создать рассылку</a></div>
+    {% endif %}
+  </section>
+
+  {% elif tab == 'new' %}
+  <section class="telegram-composer-grid">
+    <form class="card telegram-composer" action="/master/telegram/campaigns" method="post" data-telegram-composer>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="telegram-section-head"><div><small>Новая рассылка</small><h2>Сообщение</h2></div><span class="telegram-safety-pill">Сначала черновик</span></div>
+      <label>Название рассылки<input name="title" maxlength="120" required placeholder="Например: Турнир в пятницу"></label>
+      <div class="telegram-form-grid">
+        <label>Категория<select name="category" data-telegram-category>{% for code,label in telegram_categories %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select></label>
+        <label>Аудитория<select name="audience_type"><option value="all">Все с подключённым Telegram</option><option value="client">Один пользователь по ID</option></select></label>
+      </div>
+      <label>Пользователь ID <span class="muted">для персональной отправки</span><input name="audience_value" inputmode="numeric" placeholder="Например: 125"></label>
+      <label>Текст сообщения<textarea name="message_text" maxlength="4096" rows="9" required data-telegram-message placeholder="Напишите сообщение..."></textarea><span class="telegram-counter"><b data-telegram-count>0</b>/4096</span></label>
+      <div class="telegram-form-grid">
+        <label>Текст кнопки<input name="button_text" maxlength="64" data-telegram-button-text placeholder="Участвовать"></label>
+        <label>Ссылка кнопки<input name="button_url" maxlength="1000" data-telegram-button-url placeholder="https://..."></label>
+      </div>
+      <div class="telegram-audience-note"><span>Доступно сейчас</span><strong data-telegram-audience>{{ audience_counts.club_updates }}</strong><small>Подключённый Telegram + включённая категория уведомлений</small></div>
+      <div class="telegram-form-actions"><button class="button" type="submit">Сохранить черновик</button></div>
+    </form>
+
+    <aside class="telegram-preview-column">
+      <div class="telegram-preview-label">Предпросмотр Telegram</div>
+      <div class="telegram-phone-preview">
+        <div class="telegram-phone-head"><span>JACKSIDE</span><small>бот</small></div>
+        <div class="telegram-message-bubble"><div data-telegram-preview-text>Текст сообщения появится здесь.</div><a href="#" data-telegram-preview-button hidden>Кнопка</a><small>18:14</small></div>
+      </div>
+      <p class="muted telegram-preview-help">Предпросмотр показывает композицию сообщения. После включения двух защитных переключателей отправка выполняется напрямую через JACKSIDE Bot и Telegram Bot API.</p>
+    </aside>
+  </section>
+
+  {% elif tab == 'automation' %}
+  <section class="telegram-section">
+    <div class="telegram-section-head"><div><small>События продукта</small><h2>Автоуведомления</h2></div><span class="telegram-safety-pill">По умолчанию выключены</span></div>
+    <div class="telegram-rule-grid">
+      {% for rule in rules %}
+      <article class="card telegram-rule-card"><div class="telegram-row-top"><strong>{{ rule.name }}</strong><span class="telegram-status {{ 'is-on' if rule.is_enabled else '' }}">{{ 'Включено' if rule.is_enabled else 'Выключено' }}</span></div><p>{{ rule.event_type }}</p><small>{{ rule.category }}{% if rule.lead_minutes is not none %} · за {{ rule.lead_minutes }} мин.{% endif %}{% if rule.template_title %} · {{ rule.template_title }}{% endif %}</small></article>
+      {% endfor %}
+    </div>
+    <div class="card telegram-foundation-note"><strong>Контур событий отделён от бизнес-логики.</strong><p>Ошибка Telegram не сможет отменить турнир, JACKSIDE или выдачу награды. Автоматические правила включим только после ручного test-to-self.</p></div>
+  </section>
+
+  {% elif tab == 'templates' %}
+  <section class="telegram-section">
+    <div class="ia-list-head"><div><h2>Шаблоны</h2><span class="muted">{{ templates|length }}</span></div></div>
+    <div class="telegram-template-grid">{% for item in templates %}<article class="card telegram-template-card"><div class="telegram-row-top"><strong>{{ item.title }}</strong><code>{{ item.code }}</code></div><p>{{ item.body_text }}</p><small>{{ item.category }} · {{ 'активен' if item.is_active else 'выключен' }}</small></article>{% endfor %}</div>
+  </section>
+
+  {% elif tab == 'history' %}
+  <section class="telegram-section">
+    <div class="ia-list-head"><div><h2>История доставки</h2><span class="muted">Последние 100 событий</span></div></div>
+    {% if deliveries %}
+    <div class="card telegram-table-wrap"><table class="ia-data-table telegram-table"><thead><tr><th>Время</th><th>Получатель</th><th>Рассылка</th><th>Статус</th><th>Ошибка</th></tr></thead><tbody>{% for item in deliveries %}<tr><td>{{ display_datetime(item.created_at) }}</td><td>{{ item.nickname or item.first_name or item.username or ('ID ' ~ item.client_id) }}</td><td>{{ item.campaign_title or 'Событие' }}</td><td><span class="telegram-status status-{{ item.status }}">{{ item.status }}</span></td><td>{{ item.error_text or '—' }}</td></tr>{% endfor %}</tbody></table></div>
+    {% else %}
+    <div class="card telegram-empty"><strong>История пока пустая</strong><p>Здесь появятся успешные отправки, повторы и ошибки Telegram.</p></div>
+    {% endif %}
+  </section>
+
+  {% elif tab == 'users' %}
+  <section class="telegram-section">
+    <div class="ia-list-head"><div><h2>Пользователи Telegram</h2><span class="muted">{{ stats.linked }} подключено</span></div></div>
+    <div class="telegram-user-list">
+      {% for item in users %}
+      <article class="card telegram-user-row"><div class="ia-avatar">{{ (item.nickname or item.first_name or item.username or 'T')[:1]|upper }}</div><div class="telegram-user-identity"><strong>{{ item.nickname or item.first_name or item.username or ('Игрок #' ~ item.id) }}</strong><span>{% if item.username %}@{{ item.username }} · {% endif %}ID {{ item.id }}</span></div><span class="telegram-status {{ 'is-on' if item.notifications_enabled else '' }}">{{ 'Уведомления ВКЛ' if item.notifications_enabled else 'Уведомления ВЫКЛ' }}</span><div class="telegram-user-categories"><small>{{ 'Турниры' if item.tournaments_enabled else '—' }}</small><small>{{ 'JACKSIDE' if item.jackside_enabled else '—' }}</small><small>{{ 'Награды' if item.rewards_enabled else '—' }}</small></div></article>
+      {% else %}
+      <div class="card telegram-empty"><strong>Нет подключённых Telegram</strong><p>Пользователи появятся здесь после привязки Telegram к личному кабинету.</p></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% elif tab == 'settings' %}
+  <section class="telegram-settings-grid">
+    <form class="card telegram-settings-card" action="/master/telegram/settings" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div><small>Безопасность очереди</small><h2>Глобальный переключатель</h2></div>
+      <label class="telegram-toggle-row"><span><strong>Разрешить реальную отправку</strong><small>Работает только вместе с HJC_TELEGRAM_NOTIFICATIONS_ENABLED=true и настроенным Bot Token.</small></span><input type="checkbox" name="sending_enabled" value="true" {{ 'checked' if telegram_system and telegram_system.sending_enabled else '' }}></label>
+      <label>Лимит сообщений в секунду<input type="number" name="rate_limit_per_second" min="1" max="30" value="{{ telegram_system.rate_limit_per_second if telegram_system else 20 }}"></label>
+      <button class="button" type="submit">Сохранить</button>
+    </form>
+
+    <article class="card telegram-settings-card">
+      <div><small>Состояние контура</small><h2>Готовность канала</h2></div>
+      <div class="telegram-health-row"><span>HJC_TELEGRAM_NOTIFICATIONS_ENABLED</span><strong>{{ 'ВКЛ' if environment_enabled else 'ВЫКЛ' }}</strong></div>
+      <div class="telegram-health-row"><span>Транспорт</span><strong>JACKSIDE Bot / Telegram Bot API</strong></div>
+      <div class="telegram-health-row"><span>Внутренний переключатель</span><strong>{{ 'ВКЛ' if telegram_system and telegram_system.sending_enabled else 'ВЫКЛ' }}</strong></div>
+      <p class="muted">Bot Token хранится только в серверном .env. В GitHub и в базе он не сохраняется.</p>
+    </article>
+
+    <article class="card telegram-settings-card telegram-settings-wide"><div><small>Политика подписки</small><h2>После привязки Telegram</h2></div><p>Telegram Login запрашивает право JACKSIDE Bot отправлять личные сообщения. Пользователь может отключить общий канал или отдельные категории в личном кабинете.</p><p class="muted">Маркетинговые отправки дополнительно проходят проверку действующего маркетингового согласия.</p></article>
+  </section>
+  {% endif %}
+</section>
+<script src="{{ url_for('static', path='/js/telegram-notifications.js') }}?v={{ asset_version }}" defer></script>
+{% endblock %}
