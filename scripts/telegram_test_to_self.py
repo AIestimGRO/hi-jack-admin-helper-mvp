@@ -6,7 +6,12 @@ import sys
 from pathlib import Path
 
 from app.db import connect
-from app.telegram_transport import TelegramTransportError, _default_send_message
+from app.telegram_transport import (
+    TelegramPermanentError,
+    TelegramTransportError,
+    _default_send_message,
+    validate_private_chat_id,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -61,18 +66,28 @@ def _linked_clients(db_path: Path):
         ).fetchall()
 
 
+def _chat_id_status(chat_id: str) -> str:
+    try:
+        validate_private_chat_id(chat_id)
+    except TelegramPermanentError:
+        return "INVALID_REAUTH_REQUIRED"
+    return "SENDABLE"
+
+
 def _list_clients(db_path: Path) -> int:
     rows = _linked_clients(db_path)
     if not rows:
         print("No Telegram-linked clients found.")
         return 0
-    print("client_id\tdisplay\tusername\ttelegram_chat_id")
+    print("client_id\tdisplay\tusername\ttelegram_chat_id\tstatus")
     for row in rows:
+        chat_id = str(row["telegram_chat_id"] or "-")
         print(
             f"{int(row['id'])}\t"
             f"{str(row['display_name'] or '-')}\t"
             f"{str(row['username'] or '-')}\t"
-            f"{str(row['telegram_chat_id'] or '-')}"
+            f"{chat_id}\t"
+            f"{_chat_id_status(chat_id)}"
         )
     return 0
 
@@ -104,6 +119,15 @@ def _send_one(db_path: Path, client_id: int, text: str, confirm: str) -> int:
     chat_id = str(row["telegram_chat_id"] or "").strip()
     if not chat_id:
         print("Client has no linked Telegram ID.", file=sys.stderr)
+        return 2
+    try:
+        chat_id = validate_private_chat_id(chat_id)
+    except TelegramPermanentError:
+        print(
+            "Refusing to send: linked Telegram ID is not a Bot API user ID. "
+            "Re-authorize this client through Telegram Login first.",
+            file=sys.stderr,
+        )
         return 2
 
     print(
