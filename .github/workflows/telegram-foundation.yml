@@ -1,0 +1,42 @@
+name: Telegram Foundation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/telegram-foundation.yml"
+      - ".env.example"
+      - "app/config.py"
+      - "app/main.py"
+      - "app/telegram_notifications.py"
+      - "app/templates/admin_telegram_workspace.html"
+      - "app/templates/member_telegram.html"
+      - "app/static/css/telegram-notifications.css"
+      - "app/static/js/telegram-notifications.js"
+      - "tests/test_telegram_notifications.py"
+      - "docs/telegram-notifications-integration.md"
+
+jobs:
+  telegram-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff Telegram foundation
+        run: ruff check app/telegram_notifications.py tests/test_telegram_notifications.py
+
+      - name: Compile Telegram foundation
+        run: python -m py_compile app/telegram_notifications.py
+
+      - name: Test Telegram foundation
+        run: pytest -q tests/test_telegram_notifications.py
