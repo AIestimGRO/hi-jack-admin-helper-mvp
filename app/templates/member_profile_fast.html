@@ -35,7 +35,7 @@
       <div class="profile-achievement-stage">
         <div class="profile-achievement-intro"><div><h2 id="profile-emblems-heading">Hi, Titles!</h2></div></div>
         <div class="profile-emblem-grid" data-two-row-titles="1" data-unlocked-count="{{ profile_collection.unlocked_count }}" aria-label="Hi, Titles! · открыто {{ profile_collection.active_count }} из {{ profile_collection.total_count }}">
-          {% for item in profile_collection.items %}
+          {% for item in profile_collection['items'] %}
           <details class="{{ item.card_class }}" data-emblem-state="{{ 'locked' if item.state == 'locked' else 'unlocked' }}" data-emblem-kind="{{ item.kind or 'title' }}">
             <summary>
               <span class="profile-emblem-icon {{ 'has-custom-art' if item.icon_path else '' }}" aria-hidden="true">
