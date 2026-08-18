@@ -31,9 +31,12 @@ Owns Telegram delivery transport:
 - Telegram identity to application-user resolution;
 - transport retries and Telegram-specific error interpretation.
 
-Existing transport entry point:
+Existing transport entry points:
 
-`celery_app.tasks.telegram.send_telegram`
+- `celery_app.tasks.telegram.send_telegram`
+- `celery_app.tasks.telegram.broadcast_messages`
+
+The current bot already has an admin broadcast flow in `telegram_bot/handlers/callbacks/spamming.py`. It supports preview and mass delivery through the Celery transport. The notification project should reuse that sender rather than introduce another Telegram API client.
 
 Existing tournament registration API:
 
@@ -72,6 +75,8 @@ The foundation stores JSON with this shape:
 
 The transport adapter may translate this to Telegram `sendMessage` parameters. New payload fields must be additive and backward-compatible.
 
+The existing Celery sender currently accepts Telegram Bot API method arguments and can already retry transient failures. The adapter should translate the outbox payload to that existing task instead of copying its retry/rate-limit logic into Admin Helper.
+
 ## Recipient identity
 
 Admin Helper currently supports both fields present in the existing client database:
@@ -80,6 +85,8 @@ Admin Helper currently supports both fields present in the existing client datab
 2. `telegram_id` — legacy fallback.
 
 Audience selection and outbox creation must use the same fallback order. This prevents already-linked legacy users from silently disappearing from campaigns.
+
+The main `hi_jack_club` user model already uses a unique `telegram_id`, which makes Telegram callback identity resolution deterministic once the same account mapping is available across the two systems.
 
 ## Subscription defaults
 
@@ -121,6 +128,21 @@ Callback flow:
 6. Repeated callback execution must be idempotent.
 
 A later `Отменить участие` action should use the same pattern and the existing unregister business rules.
+
+## Minimal transport patch in hi_jack_club
+
+The next implementation in the main repository should stay deliberately small:
+
+1. add a service-authenticated internal endpoint or worker ingress that accepts one normalized outbox message;
+2. validate a versioned payload and idempotency key;
+3. enqueue the existing `send_telegram` task for one recipient, or reuse `broadcast_messages` only when the upstream audience has not already been expanded;
+4. support Telegram reply markup for action buttons without replacing the existing sender;
+5. return/record a stable delivery acknowledgement so Admin Helper can update the journal;
+6. add an aiogram callback handler for signed tournament actions;
+7. resolve `call.from_user.id` to the existing `User.telegram_id` and execute trusted tournament registration logic;
+8. cover registration success, waitlist, already registered, registration closed and invalid/expired token cases with tests.
+
+Admin Helper already expands audiences into one outbox row per recipient, so the preferred transport path is the single-recipient `send_telegram` task. This preserves per-user idempotency and delivery status. The existing mass `broadcast_messages` task remains useful for legacy bot-admin broadcasts.
 
 ## Failure semantics
 
