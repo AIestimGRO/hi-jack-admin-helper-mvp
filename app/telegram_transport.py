@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -167,6 +168,19 @@ def _backoff_seconds(attempts: int) -> int:
     schedule = (30, 60, 300, 900, 3600)
     index = max(0, min(int(attempts) - 1, len(schedule) - 1))
     return schedule[index]
+
+
+def _rate_limit_per_second(settings: Any) -> int:
+    with connect(settings.db_path) as conn:
+        row = conn.execute(
+            "SELECT rate_limit_per_second FROM telegram_notification_settings WHERE id=1"
+        ).fetchone()
+    if not row:
+        return 20
+    try:
+        return max(1, min(30, int(row["rate_limit_per_second"])))
+    except (TypeError, ValueError, KeyError, IndexError):
+        return 20
 
 
 def _refresh_campaign_status(conn, campaign_id: int | None) -> None:
@@ -347,6 +361,8 @@ def dispatch_telegram_outbox_once(
     *,
     limit: int = 20,
     sender: Callable[[str, str, dict[str, Any], float], dict[str, Any]] | None = None,
+    sleeper: Callable[[float], None] | None = None,
+    clock: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
     ready, reason = _transport_gate(settings)
     if not ready:
@@ -359,6 +375,7 @@ def dispatch_telegram_outbox_once(
         }
 
     safe_limit = max(1, min(int(limit), 100))
+    rate_limit = _rate_limit_per_second(settings)
     with connect(settings.db_path) as conn:
         candidate_rows = conn.execute(
             """
@@ -372,6 +389,12 @@ def dispatch_telegram_outbox_once(
         ).fetchall()
 
     send_message = sender or _default_send_message
+    throttle_enabled = sender is None or sleeper is not None
+    sleep_fn = sleeper or time.sleep
+    clock_fn = clock or time.monotonic
+    interval = 1.0 / float(rate_limit)
+    next_send_at: float | None = None
+
     sent = 0
     failed = 0
     retrying = 0
@@ -386,6 +409,14 @@ def dispatch_telegram_outbox_once(
             payload = json.loads(str(row.get("payload_json") or "{}"))
             if not isinstance(payload, dict):
                 raise TelegramPermanentError("outbox_payload_invalid")
+
+            if throttle_enabled:
+                now = clock_fn()
+                if next_send_at is not None and now < next_send_at:
+                    sleep_fn(next_send_at - now)
+                    now = clock_fn()
+                next_send_at = max(now, next_send_at or now) + interval
+
             result = send_message(
                 str(settings.telegram_bot_token),
                 str(row["telegram_chat_id"]),
@@ -443,6 +474,7 @@ def dispatch_telegram_outbox_once(
         "retrying": retrying,
         "skipped": skipped,
         "considered": len(candidate_rows),
+        "rate_limit_per_second": rate_limit,
     }
 
 
