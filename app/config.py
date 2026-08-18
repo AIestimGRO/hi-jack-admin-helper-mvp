@@ -36,6 +36,11 @@ class Settings:
     telegram_notifications_enabled: bool = _bool_env(
         "HJC_TELEGRAM_NOTIFICATIONS_ENABLED", False
     )
+    telegram_transport_url: str = os.getenv("HJC_TELEGRAM_TRANSPORT_URL", "").strip()
+    telegram_bridge_secret: str = os.getenv("HJC_TELEGRAM_BRIDGE_SECRET", "").strip()
+    telegram_transport_timeout_seconds: float = float(
+        os.getenv("HJC_TELEGRAM_TRANSPORT_TIMEOUT_SECONDS", "5")
+    )
     smtp_host: str = os.getenv("HJC_SMTP_HOST", "").strip()
     smtp_port: int = int(os.getenv("HJC_SMTP_PORT", "587"))
     smtp_username: str = os.getenv("HJC_SMTP_USERNAME", "").strip()
@@ -72,4 +77,8 @@ class Settings:
         if not 1 <= self.vault_activation_minutes <= 120:
             raise RuntimeError(
                 "HJC_VAULT_ACTIVATION_MINUTES must be between 1 and 120"
+            )
+        if not 0.5 <= self.telegram_transport_timeout_seconds <= 30:
+            raise RuntimeError(
+                "HJC_TELEGRAM_TRANSPORT_TIMEOUT_SECONDS must be between 0.5 and 30"
             )
