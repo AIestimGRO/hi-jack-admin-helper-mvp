@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from app.telegram_notifications import (
     ensure_telegram_notification_schema,
     queue_manual_campaign,
 )
+from app.telegram_safety_hotfix import safe_audience_count, safe_queue_manual_campaign
 
 
 @pytest.fixture
@@ -254,6 +256,88 @@ def test_manual_campaign_respects_category_opt_out(db_path):
         ).fetchone()[0]
 
     assert count == 0
+
+
+def test_future_scheduled_campaign_is_not_manually_queued(db_path):
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    with transaction(db_path) as conn:
+        client_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "tg-future-queue-1",
+                "first_name": "Future",
+                "phone_raw": "9991234574",
+            },
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_user_id='234826011' WHERE id=?",
+            (client_id,),
+        )
+        campaign_id = int(
+            conn.execute(
+                """
+                INSERT INTO telegram_notification_campaigns(
+                    title,category,message_text,audience_type,audience_value,
+                    status,scheduled_at
+                ) VALUES ('Future','club_updates','Later','client',?,'draft',?)
+                """,
+                (str(client_id), future),
+            ).lastrowid
+        )
+        with pytest.raises(ValueError, match="Планировщик"):
+            safe_queue_manual_campaign(conn, campaign_id=campaign_id)
+        outbox_count = conn.execute(
+            "SELECT COUNT(*) FROM telegram_notification_outbox WHERE campaign_id=?",
+            (campaign_id,),
+        ).fetchone()[0]
+        status = conn.execute(
+            "SELECT status FROM telegram_notification_campaigns WHERE id=?",
+            (campaign_id,),
+        ).fetchone()[0]
+
+    assert outbox_count == 0
+    assert status == "draft"
+
+
+def test_stale_oidc_subject_is_excluded_before_outbox_and_preview(db_path):
+    with transaction(db_path) as conn:
+        valid_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "tg-valid-safety-1",
+                "first_name": "Valid",
+                "phone_raw": "9991234575",
+            },
+        )
+        stale_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "tg-stale-safety-1",
+                "first_name": "Stale",
+                "phone_raw": "9991234576",
+            },
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_user_id='234826011' WHERE id=?",
+            (valid_id,),
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_user_id='84672257577528328580' WHERE id=?",
+            (stale_id,),
+        )
+        campaign_id = _create_campaign(conn)
+        assert safe_audience_count(conn, "club_updates") == 1
+        assert safe_queue_manual_campaign(conn, campaign_id=campaign_id) == 1
+        rows = conn.execute(
+            "SELECT client_id,telegram_chat_id FROM telegram_notification_outbox WHERE campaign_id=?",
+            (campaign_id,),
+        ).fetchall()
+
+    assert [(row["client_id"], row["telegram_chat_id"]) for row in rows] == [
+        (valid_id, "234826011")
+    ]
 
 
 def test_foundation_starts_with_sending_disabled(db_path):
