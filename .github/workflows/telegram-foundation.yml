@@ -7,6 +7,7 @@ on:
       - ".env.example"
       - "app/config.py"
       - "app/main.py"
+      - "app/services/telegram_oidc.py"
       - "app/telegram_notifications.py"
       - "app/telegram_transport.py"
       - "app/templates/admin_telegram_workspace.html"
@@ -15,6 +16,7 @@ on:
       - "app/static/js/telegram-notifications.js"
       - "scripts/telegram_dispatch_once.py"
       - "tests/test_telegram_notifications.py"
+      - "tests/test_telegram_oidc.py"
       - "tests/test_telegram_transport.py"
       - "docs/telegram-notifications-integration.md"
 
@@ -38,15 +40,18 @@ jobs:
       - name: Ruff Telegram foundation
         run: >-
           ruff check
+          app/services/telegram_oidc.py
           app/telegram_notifications.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py
           tests/test_telegram_notifications.py
+          tests/test_telegram_oidc.py
           tests/test_telegram_transport.py
 
       - name: Compile Telegram foundation
         run: >-
           python -m py_compile
+          app/services/telegram_oidc.py
           app/telegram_notifications.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py
@@ -55,4 +60,5 @@ jobs:
         run: >-
           pytest -q
           tests/test_telegram_notifications.py
+          tests/test_telegram_oidc.py
           tests/test_telegram_transport.py
