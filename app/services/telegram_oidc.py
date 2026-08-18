@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import secrets
 import urllib.parse
 import urllib.request
@@ -15,7 +16,23 @@ TELEGRAM_AUTH_URL = "https://oauth.telegram.org/auth"
 TELEGRAM_TOKEN_URL = "https://oauth.telegram.org/token"
 TELEGRAM_JWKS_URL = "https://oauth.telegram.org/.well-known/jwks.json"
 TELEGRAM_ISSUER = "https://oauth.telegram.org"
-TELEGRAM_SCOPE = "openid profile telegram:bot_access"
+TELEGRAM_SCOPE = "openid profile"
+TELEGRAM_SCOPE_WITH_BOT_ACCESS = "openid profile telegram:bot_access"
+
+
+def _bot_access_enabled() -> bool:
+    return os.getenv("HJC_TELEGRAM_BOT_ACCESS_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def telegram_scope() -> str:
+    if _bot_access_enabled():
+        return TELEGRAM_SCOPE_WITH_BOT_ACCESS
+    return TELEGRAM_SCOPE
 
 
 def new_pkce() -> tuple[str, str]:
@@ -32,7 +49,7 @@ def authorization_url(
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": TELEGRAM_SCOPE,
+        "scope": telegram_scope(),
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
