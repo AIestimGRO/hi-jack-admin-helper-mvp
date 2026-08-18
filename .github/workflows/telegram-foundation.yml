@@ -9,16 +9,20 @@ on:
       - "app/main.py"
       - "app/services/telegram_oidc.py"
       - "app/telegram_notifications.py"
+      - "app/telegram_scheduler.py"
       - "app/telegram_transport.py"
+      - "app/templates/admin_telegram_scheduler.html"
       - "app/templates/admin_telegram_workspace.html"
       - "app/templates/base.html"
       - "app/templates/member_telegram.html"
       - "app/static/css/telegram-notifications.css"
       - "app/static/js/telegram-notifications.js"
       - "scripts/telegram_dispatch_once.py"
+      - "scripts/telegram_scheduler_once.py"
       - "scripts/telegram_test_to_self.py"
       - "tests/test_telegram_notifications.py"
       - "tests/test_telegram_oidc.py"
+      - "tests/test_telegram_scheduler.py"
       - "tests/test_telegram_transport.py"
       - "docs/telegram-notifications-integration.md"
 
@@ -53,17 +57,21 @@ jobs:
               "app/main.py",
               "app/services/telegram_oidc.py",
               "app/telegram_notifications.py",
+              "app/telegram_scheduler.py",
               "app/telegram_transport.py",
               "app/static/css/telegram-notifications.css",
               "app/static/js/telegram-notifications.js",
+              "app/templates/admin_telegram_scheduler.html",
               "app/templates/admin_telegram_workspace.html",
               "app/templates/base.html",
               "app/templates/member_telegram.html",
               "docs/telegram-notifications-integration.md",
               "scripts/telegram_dispatch_once.py",
+              "scripts/telegram_scheduler_once.py",
               "scripts/telegram_test_to_self.py",
               "tests/test_telegram_notifications.py",
               "tests/test_telegram_oidc.py",
+              "tests/test_telegram_scheduler.py",
               "tests/test_telegram_transport.py",
           }
           base = os.environ["BASE_SHA"]
@@ -91,11 +99,14 @@ jobs:
           app/main.py
           app/services/telegram_oidc.py
           app/telegram_notifications.py
+          app/telegram_scheduler.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py
+          scripts/telegram_scheduler_once.py
           scripts/telegram_test_to_self.py
           tests/test_telegram_notifications.py
           tests/test_telegram_oidc.py
+          tests/test_telegram_scheduler.py
           tests/test_telegram_transport.py
 
       - name: Compile Telegram changes
@@ -105,8 +116,10 @@ jobs:
           app/main.py
           app/services/telegram_oidc.py
           app/telegram_notifications.py
+          app/telegram_scheduler.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py
+          scripts/telegram_scheduler_once.py
           scripts/telegram_test_to_self.py
 
       - name: Test Telegram feature
@@ -114,6 +127,7 @@ jobs:
           pytest -q
           tests/test_telegram_notifications.py
           tests/test_telegram_oidc.py
+          tests/test_telegram_scheduler.py
           tests/test_telegram_transport.py
 
       - name: Full project regression
