@@ -3,6 +3,7 @@
   if (!page) return;
 
   const tab = page.dataset.accountTab || '';
+  const serverRenderedProfile = tab === 'profile' && page.dataset.performanceRender === 'server';
 
   function openMonthlyRatingByDefault() {
     if (tab !== 'rating') return false;
@@ -25,27 +26,6 @@
     if (jacksideTab) jacksideTab.href = '/account?tab=rating&section=month';
   }
 
-  function numberLeaderboard(container) {
-    if (!container) return;
-    const rows = Array.from(container.children).filter((node) => node.matches('article'));
-    rows.forEach((row, index) => {
-      const position = index + 1;
-      const place = row.querySelector('.leaderboard-place');
-      if (place) {
-        place.textContent = String(position);
-        place.setAttribute('aria-label', `Место ${position}`);
-      }
-      row.classList.remove('podium-1', 'podium-2', 'podium-3');
-      if (position <= 3) row.classList.add('podium', `podium-${position}`);
-    });
-  }
-
-  function numberAllLeaderboards() {
-    if (tab !== 'rating') return;
-    numberLeaderboard(page.querySelector('.jackside-leaderboard'));
-    numberLeaderboard(page.querySelector('.club-leaderboard:not(.jackside-leaderboard)'));
-  }
-
   function centerOpenEmblem(details) {
     if (!details.open || !window.matchMedia('(max-width: 680px)').matches) return;
     window.requestAnimationFrame(() => {
@@ -58,7 +38,7 @@
   }
 
   function mountProfileRichBlocks() {
-    if (tab !== 'profile') return;
+    if (tab !== 'profile' || serverRenderedProfile) return;
     const template = document.getElementById('profile-rich-blocks');
     const header = page.querySelector('.profile-heading');
     if (!template || !header) return;
@@ -81,6 +61,8 @@
 
   function enhanceReferralCopy() {
     document.querySelectorAll('[data-referral-copy]').forEach((button) => {
+      if (button.dataset.referralCopyBound === '1') return;
+      button.dataset.referralCopyBound = '1';
       button.addEventListener('click', async () => {
         const selector = button.getAttribute('data-referral-copy');
         const input = selector ? document.querySelector(selector) : null;
@@ -120,15 +102,19 @@
     loadStylesheetOnce('/static/css/member-ui-cleanup.css?v=1', 'data-member-ui-cleanup');
     loadScriptOnce('/static/js/member-ui-cleanup.js?v=1', 'data-member-ui-cleanup');
     loadStylesheetOnce('/static/css/hijack-member.css?v=3', 'data-hijack-member-extension');
-    loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
+    if (!serverRenderedProfile) {
+      loadScriptOnce('/static/js/member-avatar-global.js?v=1', 'data-member-avatar-global');
+    }
 
     if (tab === 'rating' || tab === 'profile') {
       loadScriptOnce('/static/js/hijack-member.js?v=3', 'data-hijack-member-extension');
     }
 
     if (tab === 'profile') {
-      loadStylesheetOnce('/static/css/member-achievement-carousel.css?v=4', 'data-engagement-carousel');
-      loadScriptOnce('/static/js/profile-experience-v2.js?v=3', 'data-profile-experience-v2');
+      if (!serverRenderedProfile) {
+        loadStylesheetOnce('/static/css/member-achievement-carousel.css?v=4', 'data-engagement-carousel');
+        loadScriptOnce('/static/js/profile-experience-v2.js?v=3', 'data-profile-experience-v2');
+      }
       loadStylesheetOnce('/static/css/account-security.css?v=2', 'data-account-security');
       loadScriptOnce('/static/js/account-security.js?v=2', 'data-account-security');
     }
@@ -147,4 +133,25 @@
   numberAllLeaderboards();
   enhanceReferralCopy();
   loadHiJackExtension();
+
+  function numberLeaderboard(container) {
+    if (!container) return;
+    const rows = Array.from(container.children).filter((node) => node.matches('article'));
+    rows.forEach((row, index) => {
+      const position = index + 1;
+      const place = row.querySelector('.leaderboard-place');
+      if (place) {
+        place.textContent = String(position);
+        place.setAttribute('aria-label', `Место ${position}`);
+      }
+      row.classList.remove('podium-1', 'podium-2', 'podium-3');
+      if (position <= 3) row.classList.add('podium', `podium-${position}`);
+    });
+  }
+
+  function numberAllLeaderboards() {
+    if (tab !== 'rating') return;
+    numberLeaderboard(page.querySelector('.jackside-leaderboard'));
+    numberLeaderboard(page.querySelector('.club-leaderboard:not(.jackside-leaderboard)'));
+  }
 })();
