@@ -15,6 +15,7 @@ on:
       - "app/static/css/telegram-notifications.css"
       - "app/static/js/telegram-notifications.js"
       - "scripts/telegram_dispatch_once.py"
+      - "scripts/telegram_test_to_self.py"
       - "tests/test_telegram_notifications.py"
       - "tests/test_telegram_oidc.py"
       - "tests/test_telegram_transport.py"
@@ -44,6 +45,7 @@ jobs:
           app/telegram_notifications.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py
+          scripts/telegram_test_to_self.py
           tests/test_telegram_notifications.py
           tests/test_telegram_oidc.py
           tests/test_telegram_transport.py
@@ -55,6 +57,7 @@ jobs:
           app/telegram_notifications.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py
+          scripts/telegram_test_to_self.py
 
       - name: Test Telegram foundation
         run: >-
