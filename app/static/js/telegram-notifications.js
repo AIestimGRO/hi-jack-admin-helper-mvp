@@ -2,6 +2,19 @@
   const root = document.querySelector("[data-telegram-admin]");
   if (!root) return;
 
+  const localNav = root.querySelector(".telegram-local-nav");
+  if (localNav && !localNav.querySelector('[href="/master/telegram/scheduler"]')) {
+    const schedulerLink = document.createElement("a");
+    schedulerLink.href = "/master/telegram/scheduler";
+    schedulerLink.textContent = "Планировщик";
+    const createLink = localNav.querySelector('[href="/master/telegram?tab=new"]');
+    if (createLink?.nextSibling) {
+      localNav.insertBefore(schedulerLink, createLink.nextSibling);
+    } else {
+      localNav.appendChild(schedulerLink);
+    }
+  }
+
   const composer = root.querySelector("[data-telegram-composer]");
   if (!composer) return;
 
