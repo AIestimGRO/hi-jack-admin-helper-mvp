@@ -1,0 +1,21 @@
+{% from "_reward_animation.html" import reward_animation %}
+{% for reward in rewards %}
+  {% set sold_out = reward.inventory_total is not none and reward.allocated_count >= reward.inventory_total %}
+  <article id="reward-{{ reward.id }}" class="member-card vault-catalog-card category-{{ reward.category }} {{ 'sold-out' if sold_out else '' }}" data-vault-catalog-card>
+    <div class="vault-card-mark">{{ reward_animation(reward, 'vault-card-animation', category_marks[reward.category]) }}</div>
+    <div class="vault-card-copy">
+      <p class="member-eyebrow">{{ category_labels[reward.category] }}</p>
+      <h3>{{ reward.title }}</h3>
+      <p>{{ reward.description or 'Награда HI JACK!' }}</p>
+      <small>{% if reward.validity_days %}Действует {{ reward.validity_days }} дн. после получения{% else %}Без срока{% endif %}{% if reward.inventory_total is not none %} · осталось {{ [reward.inventory_total - reward.allocated_count, 0]|max }}{% endif %}</small>
+    </div>
+    <form action="/account/rewards/{{ reward.id }}/purchase" method="post" onsubmit="return confirm('Обменять {{ reward.price_jc }} JC на «{{ reward.title|e }}»?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="purchase_id" value="{{ vault_purchase_tokens[reward.id] }}">
+      <input type="hidden" name="expected_price_jc" value="{{ reward.price_jc }}">
+      <button class="vault-buy-button" type="submit" {% if sold_out or balance < reward.price_jc %}disabled{% endif %}>
+        {% if sold_out %}Тираж закончился{% elif balance < reward.price_jc %}Не хватает {{ reward.price_jc - balance }} JC{% else %}Получить за {{ reward.price_jc }} JC{% endif %}
+      </button>
+    </form>
+  </article>
+{% endfor %}
