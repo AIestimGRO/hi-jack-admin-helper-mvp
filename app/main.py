@@ -41,6 +41,7 @@ from app.main_impl import app as _base_app  # noqa: E402
 from app.main_impl import create_app as _base_create_app  # noqa: E402
 from app.member_account_management import install_member_account_management
 from app.member_host_routing import install_member_host_routing
+from app.member_performance import install_member_performance
 from app.prelaunch_data_integrity import install_prelaunch_data_integrity
 from app.prelaunch_economy_compat import install_prelaunch_economy_compat
 from app.prelaunch_experience import install_prelaunch_experience
@@ -120,6 +121,7 @@ def _install_extensions(application):
     application = install_admin_information_architecture(application)
     application = install_admin_access_control(application)
     application = install_member_host_routing(application)
+    application = install_member_performance(application)
     return _session_middleware_outermost(application)
 
 
