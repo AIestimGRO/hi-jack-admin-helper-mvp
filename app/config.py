@@ -36,10 +36,9 @@ class Settings:
     telegram_notifications_enabled: bool = _bool_env(
         "HJC_TELEGRAM_NOTIFICATIONS_ENABLED", False
     )
-    telegram_transport_url: str = os.getenv("HJC_TELEGRAM_TRANSPORT_URL", "").strip()
-    telegram_bridge_secret: str = os.getenv("HJC_TELEGRAM_BRIDGE_SECRET", "").strip()
+    telegram_bot_token: str = os.getenv("HJC_TELEGRAM_BOT_TOKEN", "").strip()
     telegram_transport_timeout_seconds: float = float(
-        os.getenv("HJC_TELEGRAM_TRANSPORT_TIMEOUT_SECONDS", "5")
+        os.getenv("HJC_TELEGRAM_TRANSPORT_TIMEOUT_SECONDS", "10")
     )
     smtp_host: str = os.getenv("HJC_SMTP_HOST", "").strip()
     smtp_port: int = int(os.getenv("HJC_SMTP_PORT", "587"))
