@@ -8,11 +8,14 @@ on:
       - "app/config.py"
       - "app/main.py"
       - "app/telegram_notifications.py"
+      - "app/telegram_transport.py"
       - "app/templates/admin_telegram_workspace.html"
       - "app/templates/member_telegram.html"
       - "app/static/css/telegram-notifications.css"
       - "app/static/js/telegram-notifications.js"
+      - "scripts/telegram_dispatch_once.py"
       - "tests/test_telegram_notifications.py"
+      - "tests/test_telegram_transport.py"
       - "docs/telegram-notifications-integration.md"
 
 jobs:
@@ -33,10 +36,23 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Ruff Telegram foundation
-        run: ruff check app/telegram_notifications.py tests/test_telegram_notifications.py
+        run: >-
+          ruff check
+          app/telegram_notifications.py
+          app/telegram_transport.py
+          scripts/telegram_dispatch_once.py
+          tests/test_telegram_notifications.py
+          tests/test_telegram_transport.py
 
       - name: Compile Telegram foundation
-        run: python -m py_compile app/telegram_notifications.py
+        run: >-
+          python -m py_compile
+          app/telegram_notifications.py
+          app/telegram_transport.py
+          scripts/telegram_dispatch_once.py
 
       - name: Test Telegram foundation
-        run: pytest -q tests/test_telegram_notifications.py
+        run: >-
+          pytest -q
+          tests/test_telegram_notifications.py
+          tests/test_telegram_transport.py
