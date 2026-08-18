@@ -10,10 +10,10 @@ from app.telegram_notifications import (
     queue_manual_campaign,
 )
 from app.telegram_transport import (
-    apply_delivery_result,
+    TelegramPermanentError,
+    TelegramRateLimitError,
+    TelegramTransportError,
     dispatch_telegram_outbox_once,
-    sign_transport_body,
-    verify_transport_signature,
 )
 
 
@@ -26,17 +26,26 @@ def db_path(tmp_path: Path) -> Path:
     return path
 
 
-def _settings(db_path: Path, *, enabled: bool = True):
+def _settings(
+    db_path: Path,
+    *,
+    enabled: bool = True,
+    bot_token: str = "123456:test-token",
+):
     return SimpleNamespace(
         db_path=db_path,
         telegram_notifications_enabled=enabled,
-        telegram_transport_url="https://transport.example/internal/telegram/dispatch",
-        telegram_bridge_secret="test-bridge-secret",
-        telegram_transport_timeout_seconds=5.0,
+        telegram_bot_token=bot_token,
+        telegram_transport_timeout_seconds=10.0,
     )
 
 
-def _queued_campaign(db_path: Path) -> tuple[int, int]:
+def _queued_campaign(
+    db_path: Path,
+    *,
+    button_text: str | None = None,
+    button_url: str | None = None,
+) -> tuple[int, int]:
     with transaction(db_path) as conn:
         client_id, _ = upsert_client(
             conn,
@@ -53,9 +62,10 @@ def _queued_campaign(db_path: Path) -> tuple[int, int]:
         cursor = conn.execute(
             """
             INSERT INTO telegram_notification_campaigns(
-                title,category,message_text,audience_type
-            ) VALUES ('Transport test','club_updates','Hello transport','all')
-            """
+                title,category,message_text,audience_type,button_text,button_url
+            ) VALUES ('Transport test','club_updates','Hello transport','all',?,?)
+            """,
+            (button_text, button_url),
         )
         campaign_id = int(cursor.lastrowid)
         assert queue_manual_campaign(conn, campaign_id=campaign_id) == 1
@@ -65,42 +75,14 @@ def _queued_campaign(db_path: Path) -> tuple[int, int]:
     return campaign_id, client_id
 
 
-def test_signature_round_trip_and_expiration():
-    body = b'{"hello":"world"}'
-    timestamp = "1787040000"
-    signature = sign_transport_body("shared-secret", timestamp, body)
-
-    assert verify_transport_signature(
-        "shared-secret",
-        body,
-        timestamp,
-        signature,
-        now_timestamp=1787040001,
-    )
-    assert not verify_transport_signature(
-        "shared-secret",
-        body,
-        timestamp,
-        signature,
-        now_timestamp=1787040400,
-    )
-    assert not verify_transport_signature(
-        "wrong-secret",
-        body,
-        timestamp,
-        signature,
-        now_timestamp=1787040001,
-    )
-
-
 def test_dispatch_is_blocked_by_environment_flag(db_path):
     _queued_campaign(db_path)
     called = False
 
-    def sender(url, secret, payload, timeout):
+    def sender(token, chat_id, payload, timeout):
         nonlocal called
         called = True
-        return {"accepted": True, "task_id": "unexpected"}
+        return {"message_id": 1}
 
     result = dispatch_telegram_outbox_once(
         _settings(db_path, enabled=False),
@@ -117,34 +99,49 @@ def test_dispatch_is_blocked_by_environment_flag(db_path):
     assert status == "queued"
 
 
-def test_dispatch_acceptance_and_delivery_callback(db_path):
-    campaign_id, client_id = _queued_campaign(db_path)
-    envelopes = []
-
-    def sender(url, secret, payload, timeout):
-        envelopes.append((url, secret, payload, timeout))
-        return {"accepted": True, "task_id": "celery-task-1"}
+def test_dispatch_is_blocked_without_bot_token(db_path):
+    _queued_campaign(db_path)
 
     result = dispatch_telegram_outbox_once(
-        _settings(db_path),
-        sender=sender,
+        _settings(db_path, bot_token=""),
+        sender=lambda *args: {"message_id": 1},
     )
+
+    assert result["ok"] is False
+    assert result["reason"] == "bot_token_missing"
+
+
+def test_direct_dispatch_marks_message_sent(db_path):
+    campaign_id, client_id = _queued_campaign(
+        db_path,
+        button_text="Open",
+        button_url="https://club-v2.hijackpoker.ru/",
+    )
+    calls = []
+
+    def sender(token, chat_id, payload, timeout):
+        calls.append((token, chat_id, payload, timeout))
+        return {"message_id": 777}
+
+    result = dispatch_telegram_outbox_once(_settings(db_path), sender=sender)
 
     assert result == {
         "ok": True,
         "reason": "dispatched",
-        "accepted": 1,
+        "sent": 1,
         "failed": 0,
+        "retrying": 0,
         "skipped": 0,
         "considered": 1,
     }
-    assert len(envelopes) == 1
-    _, secret, envelope, timeout = envelopes[0]
-    assert secret == "test-bridge-secret"
-    assert timeout == 5.0
-    assert envelope["chat_id"] == "123456789"
-    assert envelope["text"] == "Hello transport"
-    assert envelope["idempotency_key"].startswith(f"manual:{campaign_id}:client:")
+    assert len(calls) == 1
+    token, chat_id, payload, timeout = calls[0]
+    assert token == "123456:test-token"
+    assert chat_id == "123456789"
+    assert payload["text"] == "Hello transport"
+    assert payload["button_text"] == "Open"
+    assert payload["button_url"] == "https://club-v2.hijackpoker.ru/"
+    assert timeout == 10.0
 
     with connect(db_path) as conn:
         outbox = conn.execute(
@@ -164,79 +161,83 @@ def test_dispatch_acceptance_and_delivery_callback(db_path):
             (campaign_id,),
         ).fetchone()[0]
 
-    assert outbox["status"] == "sending"
-    assert outbox["attempts"] == 1
-    assert delivery["status"] == "accepted"
-    assert delivery["provider_message_id"] == "celery-task-1"
-    assert campaign_status == "sending"
-
-    callback = apply_delivery_result(
-        db_path,
-        {
-            "outbox_id": outbox["id"],
-            "idempotency_key": outbox["idempotency_key"],
-            "status": "sent",
-            "telegram_message_id": "777",
-        },
-    )
-
-    assert callback["ok"] is True
-    assert callback["duplicate"] is False
-    with connect(db_path) as conn:
-        final_outbox = conn.execute(
-            "SELECT status,last_error FROM telegram_notification_outbox WHERE id=?",
-            (outbox["id"],),
-        ).fetchone()
-        final_campaign = conn.execute(
-            "SELECT status FROM telegram_notification_campaigns WHERE id=?",
-            (campaign_id,),
-        ).fetchone()[0]
-        sent_delivery = conn.execute(
-            """
-            SELECT status,provider_message_id
-            FROM telegram_notification_deliveries
-            WHERE outbox_id=? AND status='sent'
-            """,
-            (outbox["id"],),
-        ).fetchone()
-
     assert client_id > 0
-    assert final_outbox["status"] == "sent"
-    assert final_outbox["last_error"] is None
-    assert final_campaign == "sent"
-    assert sent_delivery["provider_message_id"] == "777"
+    assert outbox["status"] == "sent"
+    assert outbox["attempts"] == 1
+    assert outbox["last_error"] is None
+    assert delivery["status"] == "sent"
+    assert delivery["provider_message_id"] == "777"
+    assert campaign_status == "sent"
 
 
-def test_delivery_callback_is_idempotent(db_path):
+def test_permanent_telegram_error_fails_without_retry(db_path):
     campaign_id, _ = _queued_campaign(db_path)
 
-    def sender(url, secret, payload, timeout):
-        return {"accepted": True, "task_id": "celery-task-2"}
+    def sender(token, chat_id, payload, timeout):
+        raise TelegramPermanentError("Forbidden: bot was blocked by the user")
 
-    dispatch_telegram_outbox_once(_settings(db_path), sender=sender)
+    result = dispatch_telegram_outbox_once(_settings(db_path), sender=sender)
+
+    assert result["failed"] == 1
+    assert result["retrying"] == 0
     with connect(db_path) as conn:
-        outbox = conn.execute(
-            "SELECT id,idempotency_key FROM telegram_notification_outbox WHERE campaign_id=?",
+        row = conn.execute(
+            """
+            SELECT status,attempts,next_attempt_at,last_error
+            FROM telegram_notification_outbox
+            WHERE campaign_id=?
+            """,
             (campaign_id,),
         ).fetchone()
+    assert row["status"] == "failed"
+    assert row["attempts"] == 1
+    assert row["next_attempt_at"] is None
+    assert "blocked" in row["last_error"]
 
-    payload = {
-        "outbox_id": outbox["id"],
-        "idempotency_key": outbox["idempotency_key"],
-        "status": "sent",
-        "telegram_message_id": "888",
-    }
-    first = apply_delivery_result(db_path, payload)
-    second = apply_delivery_result(db_path, payload)
 
-    assert first["duplicate"] is False
-    assert second["duplicate"] is True
+def test_transient_telegram_error_is_retried(db_path):
+    campaign_id, _ = _queued_campaign(db_path)
+
+    def sender(token, chat_id, payload, timeout):
+        raise TelegramTransportError("telegram_network_error")
+
+    result = dispatch_telegram_outbox_once(_settings(db_path), sender=sender)
+
+    assert result["failed"] == 0
+    assert result["retrying"] == 1
     with connect(db_path) as conn:
-        sent_count = conn.execute(
+        row = conn.execute(
             """
-            SELECT COUNT(*) FROM telegram_notification_deliveries
-            WHERE outbox_id=? AND status='sent'
+            SELECT status,attempts,next_attempt_at,last_error
+            FROM telegram_notification_outbox
+            WHERE campaign_id=?
             """,
-            (outbox["id"],),
-        ).fetchone()[0]
-    assert sent_count == 1
+            (campaign_id,),
+        ).fetchone()
+    assert row["status"] == "queued"
+    assert row["attempts"] == 1
+    assert row["next_attempt_at"] is not None
+    assert row["last_error"] == "telegram_network_error"
+
+
+def test_rate_limit_uses_retry_queue(db_path):
+    campaign_id, _ = _queued_campaign(db_path)
+
+    def sender(token, chat_id, payload, timeout):
+        raise TelegramRateLimitError("Too Many Requests", retry_after=60)
+
+    result = dispatch_telegram_outbox_once(_settings(db_path), sender=sender)
+
+    assert result["retrying"] == 1
+    with connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT status,next_attempt_at,last_error
+            FROM telegram_notification_outbox
+            WHERE campaign_id=?
+            """,
+            (campaign_id,),
+        ).fetchone()
+    assert row["status"] == "queued"
+    assert row["next_attempt_at"] is not None
+    assert row["last_error"] == "Too Many Requests"
