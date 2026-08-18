@@ -31,6 +31,7 @@
 {% if current_path.startswith('/master/clients') or current_path.startswith('/clients') or current_path.startswith('/master/member-accounts') or current_path.startswith('/master/referrals') %}{% set admin_section = 'clients' %}
 {% elif current_path.startswith('/master/jackside') or current_path.startswith('/staff/quizzes') or (current_path == '/master' and master_tab == 'campaigns') %}{% set admin_section = 'jackside' %}
 {% elif current_path.startswith('/master/reports') or current_path.startswith('/admin/quiz') or (current_path == '/master' and master_tab == 'analytics') %}{% set admin_section = 'reports' %}
+{% elif current_path.startswith('/master/telegram') %}{% set admin_section = 'telegram' %}
 {% elif current_path.startswith('/admin/vault') or current_path.startswith('/staff/redeem') %}{% set admin_section = 'vault' %}
 {% endif %}
 <body class="admin-app-body admin-section-{{ admin_section }}" data-admin-access-role="{{ access_role }}">
@@ -59,6 +60,11 @@
       <a class="{{ 'active' if current_path == '/master' and master_tab == 'engagement' or current_path.startswith('/master/engagement-icons') else '' }}" href="/master?tab=engagement"><span>♛</span><div><strong>Звания и достижения</strong><small>Условия, награды и иконки коллекции</small></div></a>
       {% endif %}
       <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Каталог, карты и награды</small></div></a>
+
+      {% if is_master %}
+      <span class="admin-nav-group-label">Коммуникации</span>
+      <a class="{{ 'active' if admin_section == 'telegram' else '' }}" href="/master/telegram"><span>✦</span><div><strong>Telegram</strong><small>Рассылки, автоуведомления и история</small></div></a>
+      {% endif %}
 
       <span class="admin-nav-group-label">Управление</span>
       <a class="{{ 'active' if current_path.startswith('/staff-access') else '' }}" href="/staff-access"><span>◎</span><div><strong>Команда и доступы</strong><small>{{ 'Квиз-админы и бармены' if is_master else 'Управление доступами' }}</small></div></a>

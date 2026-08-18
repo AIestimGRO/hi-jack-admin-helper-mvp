@@ -13,11 +13,97 @@
       <span>Telegram подключён</span>
       <strong>{{ '@' ~ member.username if member.username else 'Аккаунт подтверждён' }}</strong>
     </div>
+
+    <div class="telegram-notification-consent" data-telegram-notification-preferences>
+      <div>
+        <strong>Уведомления Hi, Jack включены</strong>
+        <p class="member-muted">При подключении Telegram вы соглашаетесь получать уведомления о турнирах, JACKSIDE, наградах и важных событиях клуба. Настройки можно изменить в любой момент.</p>
+      </div>
+      <form data-telegram-notification-form hidden>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="telegram-notification-master"><span>Telegram-уведомления</span><input type="checkbox" name="notifications_enabled" value="true" checked data-telegram-notification-master></label>
+        <div class="telegram-notification-categories" data-telegram-notification-categories>
+          <label><span>Турниры</span><input type="checkbox" name="tournaments_enabled" value="true" checked></label>
+          <label><span>JACKSIDE</span><input type="checkbox" name="jackside_enabled" value="true" checked></label>
+          <label><span>Награды и JACKCOINS</span><input type="checkbox" name="rewards_enabled" value="true" checked></label>
+          <label><span>Важные уведомления клуба</span><input type="checkbox" name="club_updates_enabled" value="true" checked></label>
+          <label><span>Новости и предложения</span><input type="checkbox" name="marketing_enabled" value="true" checked></label>
+        </div>
+        <button class="member-secondary" type="submit">Сохранить настройки</button>
+        <small class="member-muted" data-telegram-notification-status></small>
+      </form>
+    </div>
+
     <a class="member-primary member-button-link" href="/account/continue">В JACKSIDE</a>
   {% else %}
+    <p class="member-muted">Подключая Telegram, вы включаете уведомления Hi, Jack о турнирах, JACKSIDE, наградах и важных событиях. Их можно отключить позже в настройках.</p>
     <a class="telegram-button {{ '' if telegram_available else 'disabled' }}" href="{{ '/account/telegram/start' if telegram_available else '#' }}">Подключить Telegram</a>
     {% if not telegram_available %}<p class="member-muted">Подключение Telegram пока не настроено.</p>{% endif %}
     <a class="member-secondary member-button-link" href="/account/continue">Пропустить</a>
   {% endif %}
 </section>
+
+{% if member.telegram_user_id %}
+<style>
+.telegram-notification-consent{margin:14px 0;padding:14px;border:1px solid rgba(103,230,211,.14);border-radius:14px;background:rgba(47,216,194,.035);display:grid;gap:12px}
+.telegram-notification-consent p{margin:5px 0 0;font-size:11px;line-height:1.5}
+.telegram-notification-consent form{display:grid;gap:10px}
+.telegram-notification-master,.telegram-notification-categories label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}
+.telegram-notification-master{padding:10px 0;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);font-weight:700}
+.telegram-notification-master input,.telegram-notification-categories input{width:20px;height:20px}
+.telegram-notification-categories{display:grid;gap:8px}
+.telegram-notification-categories label{color:var(--member-muted,#9ba9a6);font-size:11px}
+</style>
+<script>
+(() => {
+  const root = document.querySelector("[data-telegram-notification-preferences]");
+  const form = root?.querySelector("[data-telegram-notification-form]");
+  if (!root || !form) return;
+  const master = form.querySelector("[data-telegram-notification-master]");
+  const categories = form.querySelector("[data-telegram-notification-categories]");
+  const status = form.querySelector("[data-telegram-notification-status]");
+
+  const syncDisabled = () => {
+    const enabled = Boolean(master?.checked);
+    categories?.querySelectorAll("input").forEach((input) => { input.disabled = !enabled; });
+  };
+
+  fetch("/api/account/telegram-notifications", { credentials: "same-origin", headers: { Accept: "application/json" } })
+    .then((response) => { if (!response.ok) throw new Error("load_failed"); return response.json(); })
+    .then((payload) => {
+      master.checked = Boolean(payload.notifications_enabled);
+      Object.entries(payload.categories || {}).forEach(([name, enabled]) => {
+        const input = form.querySelector(`[name="${name}_enabled"]`);
+        if (input) input.checked = Boolean(enabled);
+      });
+      syncDisabled();
+      form.hidden = false;
+    })
+    .catch(() => {
+      form.hidden = false;
+      if (status) status.textContent = "Не удалось загрузить настройки. Попробуйте обновить страницу.";
+    });
+
+  master?.addEventListener("change", syncDisabled);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData();
+    data.set("csrf_token", form.querySelector('[name="csrf_token"]').value);
+    data.set("notifications_enabled", master.checked ? "true" : "false");
+    ["tournaments", "jackside", "rewards", "club_updates", "marketing"].forEach((name) => {
+      const input = form.querySelector(`[name="${name}_enabled"]`);
+      data.set(`${name}_enabled`, input?.checked ? "true" : "false");
+    });
+    if (status) status.textContent = "Сохраняем...";
+    try {
+      const response = await fetch("/api/account/telegram-notifications", { method: "POST", body: data, credentials: "same-origin", headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error("save_failed");
+      if (status) status.textContent = "Настройки сохранены";
+    } catch (_) {
+      if (status) status.textContent = "Не удалось сохранить настройки";
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
