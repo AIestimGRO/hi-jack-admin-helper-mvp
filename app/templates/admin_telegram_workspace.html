@@ -60,7 +60,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="card telegram-empty"><strong>Рассылок пока нет</strong><p>Создайте первый черновик. До подключения транспорта он останется безопасно внутри админки.</p><a class="button" href="/master/telegram?tab=new">Создать рассылку</a></div>
+    <div class="card telegram-empty"><strong>Рассылок пока нет</strong><p>Создайте первый черновик. Пока глобальная отправка выключена, он останется безопасно внутри админки.</p><a class="button" href="/master/telegram?tab=new">Создать рассылку</a></div>
     {% endif %}
   </section>
 
@@ -87,10 +87,10 @@
     <aside class="telegram-preview-column">
       <div class="telegram-preview-label">Предпросмотр Telegram</div>
       <div class="telegram-phone-preview">
-        <div class="telegram-phone-head"><span>Hi, Jack Club</span><small>бот</small></div>
+        <div class="telegram-phone-head"><span>JACKSIDE</span><small>бот</small></div>
         <div class="telegram-message-bubble"><div data-telegram-preview-text>Текст сообщения появится здесь.</div><a href="#" data-telegram-preview-button hidden>Кнопка</a><small>18:14</small></div>
       </div>
-      <p class="muted telegram-preview-help">Предпросмотр показывает композицию сообщения. Foundation только создаёт безопасную очередь; фактическая отправка будет выполняться существующим Telegram-транспортом Hi, Jack.</p>
+      <p class="muted telegram-preview-help">Предпросмотр показывает композицию сообщения. После включения двух защитных переключателей отправка выполняется напрямую через JACKSIDE Bot и Telegram Bot API.</p>
     </aside>
   </section>
 
@@ -102,7 +102,7 @@
       <article class="card telegram-rule-card"><div class="telegram-row-top"><strong>{{ rule.name }}</strong><span class="telegram-status {{ 'is-on' if rule.is_enabled else '' }}">{{ 'Включено' if rule.is_enabled else 'Выключено' }}</span></div><p>{{ rule.event_type }}</p><small>{{ rule.category }}{% if rule.lead_minutes is not none %} · за {{ rule.lead_minutes }} мин.{% endif %}{% if rule.template_title %} · {{ rule.template_title }}{% endif %}</small></article>
       {% endfor %}
     </div>
-    <div class="card telegram-foundation-note"><strong>Контур событий отделён от бизнес-логики.</strong><p>Правила хранятся отдельно и будут включаться после подключения транспорта. Ошибка Telegram не сможет отменить турнир, JACKSIDE или выдачу награды.</p></div>
+    <div class="card telegram-foundation-note"><strong>Контур событий отделён от бизнес-логики.</strong><p>Ошибка Telegram не сможет отменить турнир, JACKSIDE или выдачу награды. Автоматические правила включим только после ручного test-to-self.</p></div>
   </section>
 
   {% elif tab == 'templates' %}
@@ -117,7 +117,7 @@
     {% if deliveries %}
     <div class="card telegram-table-wrap"><table class="ia-data-table telegram-table"><thead><tr><th>Время</th><th>Получатель</th><th>Рассылка</th><th>Статус</th><th>Ошибка</th></tr></thead><tbody>{% for item in deliveries %}<tr><td>{{ display_datetime(item.created_at) }}</td><td>{{ item.nickname or item.first_name or item.username or ('ID ' ~ item.client_id) }}</td><td>{{ item.campaign_title or 'Событие' }}</td><td><span class="telegram-status status-{{ item.status }}">{{ item.status }}</span></td><td>{{ item.error_text or '—' }}</td></tr>{% endfor %}</tbody></table></div>
     {% else %}
-    <div class="card telegram-empty"><strong>История пока пустая</strong><p>Здесь появятся успешные отправки, пропуски и ошибки Telegram после подключения транспорта.</p></div>
+    <div class="card telegram-empty"><strong>История пока пустая</strong><p>Здесь появятся успешные отправки, повторы и ошибки Telegram.</p></div>
     {% endif %}
   </section>
 
@@ -138,7 +138,7 @@
     <form class="card telegram-settings-card" action="/master/telegram/settings" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div><small>Безопасность очереди</small><h2>Глобальный переключатель</h2></div>
-      <label class="telegram-toggle-row"><span><strong>Разрешить передачу в транспорт</strong><small>До интеграции с основным Telegram-сервисом этот переключатель не отправляет сообщения наружу.</small></span><input type="checkbox" name="sending_enabled" value="true" {{ 'checked' if telegram_system and telegram_system.sending_enabled else '' }}></label>
+      <label class="telegram-toggle-row"><span><strong>Разрешить реальную отправку</strong><small>Работает только вместе с HJC_TELEGRAM_NOTIFICATIONS_ENABLED=true и настроенным Bot Token.</small></span><input type="checkbox" name="sending_enabled" value="true" {{ 'checked' if telegram_system and telegram_system.sending_enabled else '' }}></label>
       <label>Лимит сообщений в секунду<input type="number" name="rate_limit_per_second" min="1" max="30" value="{{ telegram_system.rate_limit_per_second if telegram_system else 20 }}"></label>
       <button class="button" type="submit">Сохранить</button>
     </form>
@@ -146,12 +146,12 @@
     <article class="card telegram-settings-card">
       <div><small>Состояние контура</small><h2>Готовность канала</h2></div>
       <div class="telegram-health-row"><span>HJC_TELEGRAM_NOTIFICATIONS_ENABLED</span><strong>{{ 'ВКЛ' if environment_enabled else 'ВЫКЛ' }}</strong></div>
-      <div class="telegram-health-row"><span>Транспорт</span><strong>{{ delivery_transport }}</strong></div>
+      <div class="telegram-health-row"><span>Транспорт</span><strong>JACKSIDE Bot / Telegram Bot API</strong></div>
       <div class="telegram-health-row"><span>Внутренний переключатель</span><strong>{{ 'ВКЛ' if telegram_system and telegram_system.sending_enabled else 'ВЫКЛ' }}</strong></div>
-      <p class="muted">Bot Token остаётся в основном сервисе Hi, Jack. Админ-helper хранит только кампании, подписки, аудиторию и outbox.</p>
+      <p class="muted">Bot Token хранится только в серверном .env. В GitHub и в базе он не сохраняется.</p>
     </article>
 
-    <article class="card telegram-settings-card telegram-settings-wide"><div><small>Политика подписки</small><h2>После привязки Telegram</h2></div><p>Уведомления и все категории включаются по умолчанию. Пользователь может отключить общий канал или отдельные категории в личном кабинете.</p><p class="muted">Маркетинговые отправки должны дополнительно проходить проверку действующего маркетингового согласия перед фактической отправкой.</p></article>
+    <article class="card telegram-settings-card telegram-settings-wide"><div><small>Политика подписки</small><h2>После привязки Telegram</h2></div><p>Telegram Login запрашивает право JACKSIDE Bot отправлять личные сообщения. Пользователь может отключить общий канал или отдельные категории в личном кабинете.</p><p class="muted">Маркетинговые отправки дополнительно проходят проверку действующего маркетингового согласия.</p></article>
   </section>
   {% endif %}
 </section>
