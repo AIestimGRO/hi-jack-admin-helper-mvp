@@ -17,6 +17,8 @@ on:
       - "app/templates/member_telegram.html"
       - "app/static/css/telegram-notifications.css"
       - "app/static/js/telegram-notifications.js"
+      - "deploy/systemd/hi-jack-telegram-scheduler.service"
+      - "deploy/systemd/hi-jack-telegram-scheduler.timer"
       - "scripts/telegram_dispatch_once.py"
       - "scripts/telegram_scheduler_once.py"
       - "scripts/telegram_test_to_self.py"
@@ -65,6 +67,8 @@ jobs:
               "app/templates/admin_telegram_workspace.html",
               "app/templates/base.html",
               "app/templates/member_telegram.html",
+              "deploy/systemd/hi-jack-telegram-scheduler.service",
+              "deploy/systemd/hi-jack-telegram-scheduler.timer",
               "docs/telegram-notifications-integration.md",
               "scripts/telegram_dispatch_once.py",
               "scripts/telegram_scheduler_once.py",
