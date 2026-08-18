@@ -93,7 +93,11 @@ def install_member_host_routing(app: FastAPI) -> FastAPI:
                 )
         return await call_next(request)
 
-    return app
+    # Keep member-page performance changes outside the global application
+    # entry point so Telegram's isolation workflow remains independent.
+    from app.member_performance import install_member_performance
+
+    return install_member_performance(app)
 
 
 __all__ = [
