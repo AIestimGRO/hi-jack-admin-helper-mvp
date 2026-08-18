@@ -4,6 +4,7 @@
 {% set category_marks = {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'} %}
 {% set category_labels = {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'} %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/member-performance.css') }}?v={{ member_performance_asset }}">
 <div class="member-app-page" data-account-tab="vault" data-performance-render="server" data-server-now="{{ server_now_iso }}">
   {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
   {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
