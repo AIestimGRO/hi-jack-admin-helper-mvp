@@ -35,6 +35,14 @@ TELEGRAM_TABS = {
     "settings",
 }
 
+_CATEGORY_COLUMNS = {
+    "tournaments": "tournaments_enabled",
+    "jackside": "jackside_enabled",
+    "rewards": "rewards_enabled",
+    "club_updates": "club_updates_enabled",
+    "marketing": "marketing_enabled",
+}
+
 
 def ensure_telegram_notification_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -223,7 +231,7 @@ def ensure_telegram_notification_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
-    defaults = (
+    templates = (
         (
             "tournament_reminder",
             "Напоминание о турнире",
@@ -249,7 +257,7 @@ def ensure_telegram_notification_schema(conn: sqlite3.Connection) -> None:
             code,title,category,body_text
         ) VALUES (?,?,?,?)
         """,
-        defaults,
+        templates,
     )
 
     rules = (
@@ -311,9 +319,7 @@ def telegram_preferences(
         (client_id,),
     )
     row = conn.execute(
-        """
-        SELECT * FROM telegram_notification_preferences WHERE client_id=?
-        """,
+        "SELECT * FROM telegram_notification_preferences WHERE client_id=?",
         (client_id,),
     ).fetchone()
     if not row:
@@ -335,19 +341,20 @@ def _display_datetime(value: Any, timezone_name: str) -> str:
 
 
 def _admin_context(request: Request, **values: Any) -> dict[str, Any]:
-    token = str(request.session.get("csrf") or "")
     return {
         "request": request,
-        "csrf_token": token,
+        "csrf_token": str(request.session.get("csrf") or ""),
         "admin_name": request.session.get("admin_name", "Мастер"),
         "admin_role": request.session.get("admin_role", "master_admin"),
-        "asset_version": "telegram-notifications-v1",
+        "asset_version": "telegram-notifications-v2",
         "telegram_categories": TELEGRAM_CATEGORIES,
         **values,
     }
 
 
-def _redirect(message: str, *, tab: str = "campaigns", error: bool = False) -> RedirectResponse:
+def _redirect(
+    message: str, *, tab: str = "campaigns", error: bool = False
+) -> RedirectResponse:
     values = {"tab": tab, "error" if error else "ok": message}
     return RedirectResponse(
         f"/master/telegram?{urlencode(values)}",
@@ -402,19 +409,16 @@ def _linked_users(conn: sqlite3.Connection, limit: int = 100) -> list[sqlite3.Ro
 
 
 def _audience_count(conn: sqlite3.Connection, category: str = "club_updates") -> int:
-    column = {
-        "tournaments": "tournaments_enabled",
-        "jackside": "jackside_enabled",
-        "rewards": "rewards_enabled",
-        "club_updates": "club_updates_enabled",
-        "marketing": "marketing_enabled",
-    }.get(category, "club_updates_enabled")
+    column = _CATEGORY_COLUMNS.get(category, "club_updates_enabled")
     row = conn.execute(
         f"""
         SELECT COUNT(*)
         FROM clients c
         JOIN telegram_notification_preferences p ON p.client_id=c.id
-        WHERE COALESCE(c.telegram_user_id,'')<>''
+        WHERE (
+                COALESCE(c.telegram_user_id,'')<>''
+                OR COALESCE(c.telegram_id,'')<>''
+              )
           AND p.notifications_enabled=1
           AND p.{column}=1
           AND COALESCE(c.client_status,'existing')<>'deleted'
@@ -436,17 +440,11 @@ def queue_manual_campaign(
         raise ValueError("Эту рассылку уже нельзя поставить в очередь")
 
     category = str(campaign["category"] or "club_updates")
-    column = {
-        "tournaments": "tournaments_enabled",
-        "jackside": "jackside_enabled",
-        "rewards": "rewards_enabled",
-        "club_updates": "club_updates_enabled",
-        "marketing": "marketing_enabled",
-    }.get(category, "club_updates_enabled")
-
+    column = _CATEGORY_COLUMNS.get(category, "club_updates_enabled")
     audience_type = str(campaign["audience_type"] or "all")
     params: list[Any] = []
     extra = ""
+
     if audience_type == "client":
         try:
             client_id = int(str(campaign["audience_value"] or ""))
@@ -459,10 +457,17 @@ def queue_manual_campaign(
 
     rows = conn.execute(
         f"""
-        SELECT c.id,c.telegram_user_id
+        SELECT c.id,
+               COALESCE(
+                   NULLIF(c.telegram_user_id,''),
+                   NULLIF(c.telegram_id,'')
+               ) AS telegram_chat_id
         FROM clients c
         JOIN telegram_notification_preferences p ON p.client_id=c.id
-        WHERE COALESCE(c.telegram_user_id,'')<>''
+        WHERE (
+                COALESCE(c.telegram_user_id,'')<>''
+                OR COALESCE(c.telegram_id,'')<>''
+              )
           AND p.notifications_enabled=1
           AND p.{column}=1
           AND COALESCE(c.client_status,'existing')<>'deleted'
@@ -491,13 +496,14 @@ def queue_manual_campaign(
                 campaign_id,
                 category,
                 int(row["id"]),
-                str(row["telegram_user_id"]),
+                str(row["telegram_chat_id"]),
                 json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
                 key,
             ),
         )
         if cursor.rowcount:
             queued += 1
+
     conn.execute(
         """
         UPDATE telegram_notification_campaigns
@@ -576,7 +582,10 @@ def install_telegram_notifications(app: FastAPI) -> FastAPI:
                         """
                         SELECT COUNT(*) FROM clients c
                         JOIN telegram_notification_preferences p ON p.client_id=c.id
-                        WHERE COALESCE(c.telegram_user_id,'')<>''
+                        WHERE (
+                                COALESCE(c.telegram_user_id,'')<>''
+                                OR COALESCE(c.telegram_id,'')<>''
+                              )
                           AND p.notifications_enabled=1
                         """
                     ).fetchone()[0]
@@ -608,9 +617,7 @@ def install_telegram_notifications(app: FastAPI) -> FastAPI:
                 environment_enabled=bool(
                     getattr(settings, "telegram_notifications_enabled", False)
                 ),
-                bot_configured=bool(
-                    getattr(settings, "telegram_bot_token", "")
-                ),
+                delivery_transport="hi_jack_club / Celery",
                 campaigns=campaigns,
                 rules=rules,
                 templates=template_rows,
@@ -638,6 +645,7 @@ def install_telegram_notifications(app: FastAPI) -> FastAPI:
         clean_title = " ".join(str(title or "").split())[:120]
         clean_message = str(message_text or "").strip()
         category_codes = {code for code, _ in TELEGRAM_CATEGORIES}
+
         if not clean_title:
             return _redirect("Укажите название рассылки", tab="new", error=True)
         if not clean_message:
@@ -759,9 +767,7 @@ def install_telegram_notifications(app: FastAPI) -> FastAPI:
         member = _current_member(request, required=True)
         with transaction(settings.db_path) as conn:
             client = conn.execute(
-                """
-                SELECT telegram_user_id,telegram_id FROM clients WHERE id=?
-                """,
+                "SELECT telegram_user_id,telegram_id FROM clients WHERE id=?",
                 (int(member["client_id"]),),
             ).fetchone()
             row = telegram_preferences(conn, int(member["client_id"]))
@@ -801,18 +807,15 @@ def install_telegram_notifications(app: FastAPI) -> FastAPI:
         _check_csrf(request, csrf_token)
         with transaction(settings.db_path) as conn:
             client = conn.execute(
-                """
-                SELECT telegram_user_id,telegram_id FROM clients WHERE id=?
-                """,
+                "SELECT telegram_user_id,telegram_id FROM clients WHERE id=?",
                 (int(member["client_id"]),),
             ).fetchone()
             if not client or not (
                 str(client["telegram_user_id"] or "").strip()
                 or str(client["telegram_id"] or "").strip()
             ):
-                raise HTTPException(
-                    status_code=409, detail="telegram_not_connected"
-                )
+                raise HTTPException(status_code=409, detail="telegram_not_connected")
+
             telegram_preferences(conn, int(member["client_id"]))
             conn.execute(
                 """
