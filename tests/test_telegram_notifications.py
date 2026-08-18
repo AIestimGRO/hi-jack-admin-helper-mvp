@@ -19,6 +19,18 @@ def db_path(tmp_path: Path) -> Path:
     return path
 
 
+def _create_campaign(conn, *, category: str = "club_updates") -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO telegram_notification_campaigns(
+            title,category,message_text,audience_type
+        ) VALUES ('Test',?,'Hello','all')
+        """,
+        (category,),
+    )
+    return int(cursor.lastrowid)
+
+
 def test_linking_telegram_enables_notifications_by_default(db_path):
     with transaction(db_path) as conn:
         client_id, _ = upsert_client(
@@ -37,6 +49,33 @@ def test_linking_telegram_enables_notifications_by_default(db_path):
         conn.execute(
             "UPDATE clients SET telegram_user_id=? WHERE id=?",
             ("123456789", client_id),
+        )
+        row = conn.execute(
+            """
+            SELECT notifications_enabled,tournaments_enabled,jackside_enabled,
+                   rewards_enabled,club_updates_enabled,marketing_enabled
+            FROM telegram_notification_preferences
+            WHERE client_id=?
+            """,
+            (client_id,),
+        ).fetchone()
+
+    assert tuple(row) == (1, 1, 1, 1, 1, 1)
+
+
+def test_linking_legacy_telegram_id_enables_notifications_by_default(db_path):
+    with transaction(db_path) as conn:
+        client_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "tg-legacy-default-1",
+                "first_name": "Legacy",
+                "phone_raw": "9991234571",
+            },
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_id=? WHERE id=?",
+            ("987654321", client_id),
         )
         row = conn.execute(
             """
@@ -133,14 +172,7 @@ def test_manual_campaign_queue_is_idempotent_and_skips_opted_out_users(db_path):
             """,
             (second_id,),
         )
-        cursor = conn.execute(
-            """
-            INSERT INTO telegram_notification_campaigns(
-                title,category,message_text,audience_type
-            ) VALUES ('Test','club_updates','Hello','all')
-            """
-        )
-        campaign_id = int(cursor.lastrowid)
+        campaign_id = _create_campaign(conn)
 
         assert queue_manual_campaign(conn, campaign_id=campaign_id) == 1
         assert queue_manual_campaign(conn, campaign_id=campaign_id) == 0
@@ -159,6 +191,69 @@ def test_manual_campaign_queue_is_idempotent_and_skips_opted_out_users(db_path):
     assert rows[0]["telegram_chat_id"] == "444444"
     assert rows[0]["idempotency_key"] == f"manual:{campaign_id}:client:{first_id}"
     assert rows[0]["status"] == "queued"
+
+
+def test_manual_campaign_queues_legacy_telegram_id(db_path):
+    with transaction(db_path) as conn:
+        client_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "tg-legacy-queue-1",
+                "first_name": "Legacy Queue",
+                "phone_raw": "9991234572",
+            },
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_id='666666' WHERE id=?",
+            (client_id,),
+        )
+        campaign_id = _create_campaign(conn)
+
+        assert queue_manual_campaign(conn, campaign_id=campaign_id) == 1
+        row = conn.execute(
+            """
+            SELECT client_id,telegram_chat_id
+            FROM telegram_notification_outbox
+            WHERE campaign_id=?
+            """,
+            (campaign_id,),
+        ).fetchone()
+
+    assert row["client_id"] == client_id
+    assert row["telegram_chat_id"] == "666666"
+
+
+def test_manual_campaign_respects_category_opt_out(db_path):
+    with transaction(db_path) as conn:
+        client_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "tg-category-opt-out-1",
+                "first_name": "Category Opt Out",
+                "phone_raw": "9991234573",
+            },
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_user_id='777777' WHERE id=?",
+            (client_id,),
+        )
+        conn.execute(
+            """
+            UPDATE telegram_notification_preferences
+            SET tournaments_enabled=0
+            WHERE client_id=?
+            """,
+            (client_id,),
+        )
+        campaign_id = _create_campaign(conn, category="tournaments")
+
+        assert queue_manual_campaign(conn, campaign_id=campaign_id) == 0
+        count = conn.execute(
+            "SELECT COUNT(*) FROM telegram_notification_outbox WHERE campaign_id=?",
+            (campaign_id,),
+        ).fetchone()[0]
+
+    assert count == 0
 
 
 def test_foundation_starts_with_sending_disabled(db_path):
