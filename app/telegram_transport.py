@@ -13,6 +13,7 @@ from app.db import connect, transaction
 
 
 MAX_TRANSPORT_ATTEMPTS = 5
+TELEGRAM_PRIVATE_USER_ID_MAX = 0xFFFFFFFFFF
 
 
 class TelegramTransportError(RuntimeError):
@@ -31,6 +32,26 @@ class TelegramRateLimitError(TelegramTransportError):
 
 class TelegramConfigurationError(TelegramTransportError):
     pass
+
+
+def validate_private_chat_id(chat_id: str) -> str:
+    """Validate a private Telegram user/chat ID before any Bot API request.
+
+    Notification Center sends direct messages to users authorized through
+    ``telegram:bot_access``. Telegram user IDs are positive integers in the
+    documented MTProto/Bot API user-ID range. This also rejects stale OIDC
+    ``sub`` values that were previously stored as if they were chat IDs.
+    """
+    raw = str(chat_id or "").strip()
+    if not raw or not raw.isascii() or not raw.isdigit():
+        raise TelegramPermanentError("telegram_private_chat_id_invalid")
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise TelegramPermanentError("telegram_private_chat_id_invalid") from exc
+    if value < 1 or value > TELEGRAM_PRIVATE_USER_ID_MAX:
+        raise TelegramPermanentError("telegram_private_chat_id_invalid")
+    return str(value)
 
 
 def _utc_now() -> datetime:
@@ -84,8 +105,9 @@ def _default_send_message(
     if not text:
         raise TelegramPermanentError("outbox_text_missing")
 
+    safe_chat_id = validate_private_chat_id(chat_id)
     request_payload: dict[str, Any] = {
-        "chat_id": str(chat_id),
+        "chat_id": safe_chat_id,
         "text": text,
     }
     button_text = str(payload.get("button_text") or "").strip()
@@ -439,4 +461,5 @@ __all__ = [
     "dispatch_telegram_outbox_once",
     "install_telegram_transport",
     "transport_status",
+    "validate_private_chat_id",
 ]
