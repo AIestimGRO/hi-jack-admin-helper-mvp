@@ -5,6 +5,8 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 
+from app.launch_security_hardening import install_launch_security_hardening
+
 
 MEMBER_TO_ADMIN_HOST = {
     "club-v2.hijackpoker.ru": "quiz-v2.hijackpoker.ru",
@@ -69,7 +71,7 @@ def _with_query(target: str, query: str) -> str:
 
 def install_member_host_routing(app: FastAPI) -> FastAPI:
     if getattr(app.state, "member_host_routing_installed", False):
-        return app
+        return install_launch_security_hardening(app)
     app.state.member_host_routing_installed = True
     configured_admin_host = _configured_host(app.state.settings.quiz_public_base_url)
 
@@ -93,7 +95,7 @@ def install_member_host_routing(app: FastAPI) -> FastAPI:
                 )
         return await call_next(request)
 
-    return app
+    return install_launch_security_hardening(app)
 
 
 __all__ = [
