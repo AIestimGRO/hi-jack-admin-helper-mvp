@@ -1,0 +1,192 @@
+/* Focused launch UX for quiz administration. */
+
+.admin-app-body.admin-quiz-library .page-head,
+.admin-app-body.admin-quiz-library .master-tabs {
+  display: none !important;
+}
+
+.admin-app-body.admin-quiz-library [data-master-panel="campaigns"] {
+  display: block !important;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.quiz-library-hero,
+.jackside-ops-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  margin: 8px 0 22px;
+  border: 1px solid rgba(45, 212, 191, .32);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(11, 31, 29, .96), rgba(4, 15, 14, .96));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .24);
+}
+
+.quiz-library-hero h1,
+.jackside-ops-bar h2 {
+  margin: 4px 0 0;
+}
+
+.quiz-library-hero p,
+.jackside-ops-bar p {
+  margin: 0;
+}
+
+.quiz-library-actions,
+.jackside-release-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.admin-app-body.admin-quiz-library .campaign-create {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 20px;
+  border-radius: 18px;
+}
+
+.admin-app-body.admin-quiz-library .campaign-create > .campaign-referral-fields,
+.admin-app-body.admin-quiz-library .campaign-create > label:nth-of-type(n+7) {
+  grid-column: 1 / -1;
+}
+
+.admin-app-body.admin-quiz-library .campaign-create .jackside-create-route-note,
+.admin-app-body.admin-quiz-library .campaign-tools,
+.admin-app-body.admin-quiz-library [data-campaign-tab="daily_414"],
+.admin-app-body.admin-quiz-library [data-campaign-kind="daily_414"] {
+  display: none !important;
+}
+
+.admin-app-body.admin-quiz-library .campaign-tabs {
+  margin: 18px 0;
+}
+
+.admin-app-body.admin-quiz-library .campaign-group-title {
+  margin-top: 18px;
+}
+
+.admin-app-body.admin-quiz-library .master-item {
+  border-radius: 18px;
+}
+
+[data-jackside-workspace] .ia-page-head {
+  margin-bottom: 18px;
+}
+
+[data-jackside-workspace] .ia-quiet-link[href="/master/jackside-issues"] {
+  display: none !important;
+}
+
+[data-jackside-workspace] .ia-campaign-card {
+  border: 1px solid rgba(45, 212, 191, .24);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(9, 25, 23, .96), rgba(5, 16, 15, .96));
+}
+
+[data-jackside-workspace] .ia-card-actions,
+[data-jackside-workspace] .ia-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-jackside-workspace] .jackside-publish-button,
+[data-jackside-workspace] .jackside-check-button,
+[data-jackside-workspace] .jackside-cancel-button {
+  min-height: 38px;
+  padding: 8px 13px;
+  border-radius: 11px;
+  font-weight: 750;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+[data-jackside-workspace] .jackside-publish-button {
+  padding-inline: 14px;
+  border: 1px solid rgba(34, 211, 238, .55);
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  color: #fff;
+  font-weight: 800;
+}
+
+[data-jackside-workspace] .jackside-check-button {
+  border: 1px solid rgba(148, 163, 184, .35);
+  background: rgba(15, 23, 42, .72);
+  color: #e2e8f0;
+}
+
+[data-jackside-workspace] .jackside-cancel-button {
+  border: 1px solid rgba(248, 113, 113, .42);
+  background: rgba(127, 29, 29, .14);
+  color: #fecaca;
+}
+
+[data-jackside-workspace] .jackside-cancel-button:hover {
+  border-color: rgba(248, 113, 113, .72);
+  background: rgba(127, 29, 29, .26);
+}
+
+[data-jackside-workspace] .jackside-publish-button:disabled,
+[data-jackside-workspace] .jackside-check-button:disabled,
+[data-jackside-workspace] .jackside-cancel-button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+[data-jackside-workspace] .type-pill {
+  text-transform: none;
+}
+
+[data-jackside-workspace] .type-pill[data-status="draft"] {
+  border-color: rgba(251, 191, 36, .46);
+  color: #fde68a;
+}
+
+[data-jackside-workspace] .type-pill[data-status="scheduled"] {
+  border-color: rgba(45, 212, 191, .48);
+  color: #99f6e4;
+}
+
+[data-jackside-workspace] .type-pill[data-status="cancelled"],
+[data-jackside-workspace] .type-pill[data-status="closed"] {
+  opacity: .72;
+}
+
+.hj-builder[data-campaign-type="daily_414"] .daily-order-note {
+  border-color: rgba(45, 212, 191, .35);
+  background: rgba(8, 47, 43, .35);
+}
+
+@media (max-width: 760px) {
+  .quiz-library-hero,
+  .jackside-ops-bar {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .admin-app-body.admin-quiz-library .campaign-create {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .quiz-library-actions,
+  .jackside-release-actions,
+  [data-jackside-workspace] .ia-card-actions,
+  [data-jackside-workspace] .ia-row-actions {
+    width: 100%;
+  }
+
+  .quiz-library-actions > *,
+  .jackside-release-actions > *,
+  [data-jackside-workspace] .ia-card-actions > *,
+  [data-jackside-workspace] .ia-row-actions > * {
+    flex: 1 1 145px;
+  }
+}

@@ -4,6 +4,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from app.db import connect, init_db, transaction
 from app.jackside_multi_issue import (
     create_issue_multi,
@@ -96,18 +98,18 @@ def test_two_releases_same_day_get_independent_campaign_codes(tmp_path: Path) ->
             starts_at=datetime(2026, 8, 14, 18, 14, tzinfo=MOSCOW),
             title="Daily",
         )
-        third = create_issue_multi(
-            conn,
-            issue_date_value=day,
-            starts_at=datetime(2026, 8, 14, 18, 14, tzinfo=MOSCOW),
-            title="Daily 2",
-        )
+        with pytest.raises(ValueError, match="На это время уже существует выпуск JACKSIDE"):
+            create_issue_multi(
+                conn,
+                issue_date_value=day,
+                starts_at=datetime(2026, 8, 14, 18, 14, tzinfo=MOSCOW),
+                title="Daily duplicate",
+            )
 
-    assert first["issue_date"] == second["issue_date"] == third["issue_date"] == "2026-08-14"
+    assert first["issue_date"] == second["issue_date"] == "2026-08-14"
     assert first["campaign_code"] == "jackside_20260814"
     assert second["campaign_code"] == "jackside_20260814_1814"
-    assert third["campaign_code"] == "jackside_20260814_1814_2"
-    assert len({first["campaign_code"], second["campaign_code"], third["campaign_code"]}) == 3
+    assert first["campaign_code"] != second["campaign_code"]
 
 
 def test_featured_issue_chooses_nearest_upcoming_release(tmp_path: Path) -> None:

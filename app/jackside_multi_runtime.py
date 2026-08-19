@@ -6,12 +6,45 @@ from typing import Any
 import sqlite3
 
 from app import jackside_multi_issue as multi_issue
+from app.services import daily_414 as daily_service
+from app.services import jackside_copy as copy_service
 from app.services import jackside_issues as issue_service
 from app.services.daily_414 import DAILY_414_FINAL_TABLE_DELAY_SECONDS
+from app.services.quiz import load_builder_questions
 
 
 _ORIGINAL_EFFECTIVE_CAMPAIGN_SCHEDULE = issue_service.effective_campaign_schedule
 _ORIGINAL_RESCHEDULE_FUTURE_ISSUE = multi_issue.reschedule_future_issue
+_ORIGINAL_CREATE_ISSUE_MULTI = multi_issue.create_issue_multi
+_ORIGINAL_VALIDATE_ISSUE = issue_service.validate_issue_for_publish
+_ORIGINAL_ENSURE_DEFAULT_RULES = issue_service.ensure_default_rules
+
+FLEX_RULES_VERSION = "1.2"
+FLEX_RULES_CONTENT = """\
+JACKSIDE — один общий стол на весь клуб Hi, Jack.
+
+Каждый выпуск:
+• количество вопросов основной части задаёт мастер для конкретного выпуска;
+• один общий таймер 4 минуты 14 секунд начинается для всего клуба одновременно;
+• войти можно и после старта, но дополнительное время не даётся;
+• зачётное время считается от общего старта выпуска, а не от момента входа игрока;
+• одна попытка без возврата к уже сохранённым ответам;
+• в зачёт попадает только полностью завершённая до общего дедлайна основная часть;
+• в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;
+• после закрытия основной части идёт 1 минута ожидания, затем начинается финальный стол;
+• финальный стол проводится даже если в него прошёл только один игрок — автоматической победы нет;
+• до последнего вопроса финала ошибка или отсутствие ответа выбивает игрока;
+• единственный финалист также обязан пройти финальные вопросы и правильно ответить на последний вопрос, чтобы победить;
+• победитель — тот, кто первым правильно ответил на последний вопрос финального стола;
+• если финальный стол состоит из одного вопроса, побеждает первый правильный ответ на этот вопрос;
+• если на последнем вопросе правильного ответа нет — победителя нет и главный приз не выдаётся.
+
+JACKCOIN начисляются только за полностью завершённую основную часть.
+Идеальный результат означает правильные ответы на все вопросы основной части конкретного выпуска.
+Главный приз выпуска указывается в карточке дня.
+
+Время сервера и момент приёма ответа сервером являются источником истины для таймеров, зачётного времени и определения победителя.
+"""
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -19,6 +52,250 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
         conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
         ).fetchone()
+    )
+
+
+def ensure_default_rules_flexible(conn: sqlite3.Connection) -> sqlite3.Row:
+    row = _ORIGINAL_ENSURE_DEFAULT_RULES(conn)
+    if str(row["version"] or "") != copy_service.DEFAULT_RULES_VERSION:
+        return row
+    if str(row["content"] or "").strip() != str(copy_service.DEFAULT_RULES_CONTENT).strip():
+        return row
+    existing = conn.execute(
+        "SELECT * FROM jackside_rules_versions WHERE version=?",
+        (FLEX_RULES_VERSION,),
+    ).fetchone()
+    if existing:
+        conn.execute("UPDATE jackside_rules_versions SET is_active=0 WHERE is_active=1")
+        conn.execute(
+            "UPDATE jackside_rules_versions SET is_active=1 WHERE id=?",
+            (int(existing["id"]),),
+        )
+        return conn.execute(
+            "SELECT * FROM jackside_rules_versions WHERE id=?",
+            (int(existing["id"]),),
+        ).fetchone()
+    conn.execute("UPDATE jackside_rules_versions SET is_active=0 WHERE is_active=1")
+    cursor = conn.execute(
+        """
+        INSERT INTO jackside_rules_versions(version, title, content, is_active)
+        VALUES (?, ?, ?, 1)
+        """,
+        (FLEX_RULES_VERSION, "Правила JACKSIDE 4:14", FLEX_RULES_CONTENT),
+    )
+    return conn.execute(
+        "SELECT * FROM jackside_rules_versions WHERE id=?",
+        (int(cursor.lastrowid),),
+    ).fetchone()
+
+
+def validate_issue_for_publish_flexible(
+    conn: sqlite3.Connection,
+    issue: sqlite3.Row | dict[str, Any],
+) -> list[str]:
+    errors = [
+        error
+        for error in _ORIGINAL_VALIDATE_ISSUE(conn, issue)
+        if error != "main_questions_must_be_ten"
+    ]
+    campaign_code = str(issue["campaign_code"] or "")
+    if campaign_code:
+        main_questions = [
+            question
+            for question in load_builder_questions(conn, campaign_code)
+            if str(question.get("game_round") or "main") == "main"
+        ]
+        if not main_questions:
+            errors.append("main_questions_required")
+    return sorted(set(errors))
+
+
+def validate_daily_questions_flexible(
+    questions: list[dict[str, Any]],
+    campaign_code: str,
+) -> None:
+    if not questions:
+        raise ValueError("daily_414_requires_questions")
+    if any(str(question.get("campaign")) != campaign_code for question in questions):
+        raise ValueError("daily_414_requires_own_questions")
+
+
+def public_daily_questions_flexible(
+    questions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    total = max(1, len(questions))
+    for index, question in enumerate(questions):
+        item = dict(question)
+        ratio = (index + 1) / total
+        if ratio <= 0.2:
+            stage = "preflop"
+        elif ratio <= 0.5:
+            stage = "flop"
+        elif ratio <= 0.8:
+            stage = "turn"
+        else:
+            stage = "river"
+        item["game_stage"] = stage
+        item["river_reveal"] = index == total - 1
+        result.append(item)
+    return result
+
+
+def award_daily_jackcoin_flexible(
+    conn: sqlite3.Connection,
+    *,
+    client_id: int,
+    submission_id: int,
+    issue_day: date,
+    correct_count: int,
+    max_correct_count: int,
+    jackcoin_per_correct: int = daily_service.JACKCOIN_PER_CORRECT,
+    jackcoin_completion_bonus: int = daily_service.JACKCOIN_COMPLETION_BONUS,
+    jackcoin_perfect_bonus: int = daily_service.JACKCOIN_PERFECT_BONUS,
+) -> dict[str, int]:
+    progress = conn.execute(
+        "SELECT * FROM daily_414_progress WHERE client_id=?",
+        (client_id,),
+    ).fetchone()
+    previous_date = (
+        date.fromisoformat(str(progress["last_issue_date"]))
+        if progress and progress["last_issue_date"]
+        else None
+    )
+    previous_streak = int(progress["current_streak"]) if progress else 0
+    streak = daily_service._next_streak(
+        previous_date=previous_date,
+        previous_streak=previous_streak,
+        current_date=issue_day,
+    )
+    best_streak = max(streak, int(progress["best_streak"]) if progress else 0)
+    streak_bonus = (
+        0
+        if daily_service._launch_economy_enabled(conn)
+        else daily_service.JACKCOIN_STREAK_BONUSES.get(streak, 0)
+    )
+    per_correct = max(0, int(jackcoin_per_correct))
+    completion_amount = max(0, int(jackcoin_completion_bonus))
+    perfect_bonus = max(0, int(jackcoin_perfect_bonus))
+    answers_correct = max(0, int(correct_count))
+    question_total = max(0, int(max_correct_count))
+    answer_amount = answers_correct * per_correct
+    perfect_amount = (
+        perfect_bonus
+        if question_total > 0 and answers_correct == question_total
+        else 0
+    )
+    total = answer_amount + completion_amount + perfect_amount + streak_bonus
+
+    conn.execute(
+        """
+        INSERT INTO daily_414_progress(
+            client_id, current_streak, best_streak, last_issue_date, updated_at
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(client_id) DO UPDATE SET
+            current_streak=excluded.current_streak,
+            best_streak=MAX(daily_414_progress.best_streak, excluded.best_streak),
+            last_issue_date=excluded.last_issue_date,
+            updated_at=CURRENT_TIMESTAMP
+        """,
+        (client_id, streak, best_streak, issue_day.isoformat()),
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO jackcoin_ledger(
+            client_id, amount, operation_type, source_type, source_id,
+            idempotency_key, comment
+        ) VALUES (?, ?, 'earn', 'daily_414', ?, ?, ?)
+        """,
+        (
+            client_id,
+            total,
+            str(submission_id),
+            f"daily_414:submission:{submission_id}",
+            (
+                f"4:14: {answers_correct} правильных × {per_correct} JC"
+                f" + {completion_amount} JC за завершение"
+                f"{f' + {perfect_amount} JC за идеальный результат' if perfect_amount else ''}"
+                f"{f' + {streak_bonus} JC за серию {streak} дней' if streak_bonus else ''}"
+            ),
+        ),
+    )
+    return {
+        "total": total,
+        "answers": answer_amount,
+        "completion": completion_amount,
+        "perfect": perfect_amount,
+        "streak_bonus": streak_bonus,
+        "streak_days": streak,
+        "best_streak": best_streak,
+    }
+
+
+def result_copy_for_score_flexible(
+    correct_count: int,
+    *,
+    final_eligible: bool = True,
+) -> dict[str, str]:
+    score = max(0, int(correct_count))
+    if score <= 3:
+        title = "Тёплый стол"
+        message = "Сегодня раздача сложилась иначе. JACKCOIN за завершённую игру уже на балансе."
+        code = "low"
+    elif score <= 6:
+        title = "Достойный результат"
+        message = "Хороший ход. JACKCOIN за правильные ответы уже начислены."
+        code = "middle"
+    else:
+        title = "Сильная раздача"
+        message = "Сильный результат основной части. Ждём итогового отбора финального стола."
+        code = "high"
+    if not final_eligible and score >= 7:
+        message = "Сильный результат основной части. В отбор финала этот заход не вошёл. JACKCOIN уже на балансе."
+    return {"code": code, "title": title, "message": message}
+
+
+def create_issue_multi_guarded(
+    conn: sqlite3.Connection,
+    *,
+    issue_date_value: date,
+    starts_at: datetime,
+    title: str | None = None,
+    admin_id: int | None = None,
+    jackcoin_per_correct: int = 5,
+    jackcoin_completion_bonus: int = 10,
+    jackcoin_perfect_bonus: int = 20,
+    final_prize_type: str = "none",
+    final_prize_catalog_reward_id: int | None = None,
+    final_prize_jackcoin_amount: int = 0,
+    final_question_time_seconds: int = 30,
+    timezone_name: str = "Europe/Moscow",
+) -> sqlite3.Row:
+    exact_start = issue_service._timestamp(issue_service._as_utc(starts_at))
+    duplicate = conn.execute(
+        """
+        SELECT id FROM jackside_issues
+        WHERE starts_at=? AND status<>'cancelled'
+        ORDER BY id DESC LIMIT 1
+        """,
+        (exact_start,),
+    ).fetchone()
+    if duplicate:
+        raise ValueError("На это время уже существует выпуск JACKSIDE")
+    return _ORIGINAL_CREATE_ISSUE_MULTI(
+        conn,
+        issue_date_value=issue_date_value,
+        starts_at=starts_at,
+        title=title,
+        admin_id=admin_id,
+        jackcoin_per_correct=jackcoin_per_correct,
+        jackcoin_completion_bonus=jackcoin_completion_bonus,
+        jackcoin_perfect_bonus=jackcoin_perfect_bonus,
+        final_prize_type=final_prize_type,
+        final_prize_catalog_reward_id=final_prize_catalog_reward_id,
+        final_prize_jackcoin_amount=final_prize_jackcoin_amount,
+        final_question_time_seconds=final_question_time_seconds,
+        timezone_name=timezone_name,
     )
 
 
@@ -269,26 +546,38 @@ def reschedule_future_issue_runtime(
 
 
 def apply_runtime_overrides() -> None:
+    issue_service.ensure_default_rules = ensure_default_rules_flexible
+    issue_service.validate_issue_for_publish = validate_issue_for_publish_flexible
     issue_service.effective_campaign_schedule = effective_campaign_schedule_multi
     issue_service.current_featured_issue = current_featured_issue_runtime
+    issue_service.create_issue = create_issue_multi_guarded
+    multi_issue.create_issue_multi = create_issue_multi_guarded
     multi_issue.reschedule_future_issue = reschedule_future_issue_runtime
+    daily_service.validate_daily_questions = validate_daily_questions_flexible
+    daily_service.public_daily_questions = public_daily_questions_flexible
+    daily_service.award_daily_jackcoin = award_daily_jackcoin_flexible
+    copy_service.result_copy_for_score = result_copy_for_score_flexible
 
 
 apply_runtime_overrides()
 
 # The admin IA templates use a lightweight version token for these assets.
-# Bump it in one place so browsers do not retain the pre-multi-release JS.
+# Bump it in one place so browsers do not retain the pre-hotfix JS.
 try:
     from app import admin_information_architecture as admin_ia
 
-    admin_ia.ASSET_VERSION = "admin-ia-v4"
+    admin_ia.ASSET_VERSION = "admin-ia-v5"
 except ImportError:
     pass
 
 
 __all__ = [
     "apply_runtime_overrides",
+    "award_daily_jackcoin_flexible",
+    "create_issue_multi_guarded",
     "current_featured_issue_runtime",
     "effective_campaign_schedule_multi",
     "reschedule_future_issue_runtime",
+    "validate_daily_questions_flexible",
+    "validate_issue_for_publish_flexible",
 ]

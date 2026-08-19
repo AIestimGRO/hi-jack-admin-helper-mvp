@@ -100,7 +100,7 @@ def test_create_and_copy_issue(tmp_path) -> None:
         assert main == 10
 
 
-def test_publish_requires_exactly_ten_main_questions(tmp_path) -> None:
+def test_publish_accepts_flexible_main_question_count(tmp_path) -> None:
     db_path = tmp_path / "issues-publish.sqlite3"
     init_db(db_path)
     starts = datetime(2026, 8, 12, 15, 14, tzinfo=timezone.utc)
@@ -115,53 +115,8 @@ def test_publish_requires_exactly_ten_main_questions(tmp_path) -> None:
         _add_main_questions(conn, issue["campaign_code"], 9)
         _add_final_questions(conn, issue["campaign_code"], 1)
         errors = validate_issue_for_publish(conn, issue)
-        assert "main_questions_must_be_ten" in errors
-        try:
-            schedule_issue(conn, issue_id=int(issue["id"]))
-            assert False, "expected publish to fail"
-        except ValueError as exc:
-            assert "main_questions_must_be_ten" in str(exc)
-
-        _add_main_questions(conn, issue["campaign_code"], 0)  # no-op helper path
-        # Add one more to reach 10
-        qid = int(
-            conn.execute(
-                """
-                INSERT INTO quiz_questions(
-                    campaign_code, code, type, title, position, is_active, game_round
-                ) VALUES (?, 'm10', 'single_choice', 'Main 10', 100, 1, 'main')
-                """,
-                (issue["campaign_code"],),
-            ).lastrowid
-        )
-        conn.execute(
-            """
-            INSERT INTO quiz_options(question_id, code, text, is_correct, position)
-            VALUES (?, 'yes', 'Да', 1, 10), (?, 'no', 'Нет', 0, 20)
-            """,
-            (qid, qid),
-        )
-        # Also test 11 questions blocked
-        qid11 = int(
-            conn.execute(
-                """
-                INSERT INTO quiz_questions(
-                    campaign_code, code, type, title, position, is_active, game_round
-                ) VALUES (?, 'm11', 'single_choice', 'Main 11', 110, 1, 'main')
-                """,
-                (issue["campaign_code"],),
-            ).lastrowid
-        )
-        conn.execute(
-            """
-            INSERT INTO quiz_options(question_id, code, text, is_correct, position)
-            VALUES (?, 'yes', 'Да', 1, 10), (?, 'no', 'Нет', 0, 20)
-            """,
-            (qid11, qid11),
-        )
-        errors = validate_issue_for_publish(conn, issue)
-        assert "main_questions_must_be_ten" in errors
-        conn.execute("DELETE FROM quiz_questions WHERE code='m11'")
+        assert "main_questions_must_be_ten" not in errors
+        assert errors == []
         scheduled = schedule_issue(conn, issue_id=int(issue["id"]))
         assert scheduled["status"] == "scheduled"
         campaign = conn.execute(
@@ -170,6 +125,19 @@ def test_publish_requires_exactly_ten_main_questions(tmp_path) -> None:
         ).fetchone()
         assert campaign["is_active"] == 1
         assert campaign["campaign_type"] == "daily_414"
+
+        issue_11 = create_issue(
+            conn,
+            issue_date_value=date(2026, 8, 13),
+            starts_at=starts + timedelta(days=1),
+            final_prize_type="jackcoin",
+            final_prize_jackcoin_amount=100,
+        )
+        _add_main_questions(conn, issue_11["campaign_code"], 11)
+        _add_final_questions(conn, issue_11["campaign_code"], 1)
+        errors_11 = validate_issue_for_publish(conn, issue_11)
+        assert "main_questions_must_be_ten" not in errors_11
+        assert errors_11 == []
 
 
 def test_legacy_daily_414_fallback(tmp_path) -> None:

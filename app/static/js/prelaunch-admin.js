@@ -1,11 +1,26 @@
 (() => {
   const ensureHotfixStyle = () => {
-    if (document.querySelector('link[data-prelaunch-ui-hotfix]')) return;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = '/static/css/prelaunch-ui-hotfix.css?v=1';
-    link.dataset.prelaunchUiHotfix = 'true';
-    document.head.appendChild(link);
+    if (!document.querySelector('link[data-prelaunch-ui-hotfix]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/static/css/prelaunch-ui-hotfix.css?v=1';
+      link.dataset.prelaunchUiHotfix = 'true';
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('link[data-admin-quiz-ux]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/static/css/admin-quiz-ux.css?v=1';
+      link.dataset.adminQuizUx = 'true';
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-admin-quiz-ux]')) {
+      const script = document.createElement('script');
+      script.src = '/static/js/admin-quiz-ux.js?v=1';
+      script.defer = true;
+      script.dataset.adminQuizUx = 'true';
+      document.head.appendChild(script);
+    }
   };
 
   const toast = (message, kind = 'success') => {
@@ -76,7 +91,7 @@
     if (!form.querySelector('.jackside-central-note')) {
       const note = document.createElement('div');
       note.className = 'jackside-central-note';
-      note.innerHTML = '<strong>JACKSIDE 4:14</strong><span>Экономика, рефералы, 10 вопросов, 1 попытка и общий таймер управляются централизованно.</span><div><a href="/master/jackside-issues">Выпуски</a><a href="/master/economy">Экономика JC</a></div>';
+      note.innerHTML = '<strong>JACKSIDE 4:14</strong><span>Экономика, рефералы, одна попытка и общий таймер управляются централизованно.</span><div><a href="/master/jackside">Выпуски</a><a href="/master/economy">Экономика JC</a></div>';
       const firstLabel = form.querySelector('label');
       if (firstLabel) firstLabel.insertAdjacentElement('afterend', note);
       else form.prepend(note);
@@ -106,6 +121,85 @@
     current.replaceWith(next);
     requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
     return true;
+  };
+
+  const releaseConflicts = async (form) => {
+    const issueDate = form.querySelector('[name="issue_date"]')?.value || '';
+    if (!issueDate) return [];
+    const params = new URLSearchParams({ issue_date: issueDate });
+    const issueId = form.querySelector('[data-edit-issue-id]')?.value || '';
+    if (issueId) params.set('exclude_issue_id', issueId);
+    const response = await fetch(`/api/master/jackside/date-conflicts?${params.toString()}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    return Array.isArray(payload.issues) ? payload.issues : [];
+  };
+
+  const installReleaseSubmitGuard = (form) => {
+    if (!form || form.dataset.releaseSubmitGuard === 'true') return;
+    form.dataset.releaseSubmitGuard = 'true';
+    form.dataset.sameDayGuard = 'true';
+    const confirmed = form.querySelector('[data-same-day-confirm]');
+    const dateInput = form.querySelector('[name="issue_date"]');
+    dateInput?.addEventListener('change', () => {
+      if (confirmed) confirmed.value = '0';
+      form.dataset.releaseReady = '0';
+    });
+
+    form.addEventListener('submit', async (event) => {
+      if (form.dataset.releaseReady === '1') {
+        if (form.dataset.releaseSubmitting === '1') {
+          event.preventDefault();
+          return;
+        }
+        form.dataset.releaseSubmitting = '1';
+        const button = event.submitter || form.querySelector('button[type="submit"]');
+        if (button) {
+          button.disabled = true;
+          button.dataset.originalText = button.textContent || '';
+          button.textContent = form.matches('[data-edit-release-form]') ? 'Сохраняю…' : 'Создаю…';
+        }
+        return;
+      }
+
+      event.preventDefault();
+      if (form.dataset.releaseChecking === '1') return;
+      form.dataset.releaseChecking = '1';
+      const submitter = event.submitter || form.querySelector('button[type="submit"]');
+      try {
+        const conflicts = await releaseConflicts(form);
+        let sameDayConfirmed = false;
+        if (conflicts.length) {
+          const rows = conflicts.map((item) => {
+            const time = String(item.starts_at_local || '').slice(11, 16) || 'без времени';
+            return `• ${time} — ${item.title || 'JACKSIDE'} (${item.status || '—'})`;
+          });
+          const question = [
+            'На эту дату уже есть JACKSIDE:',
+            '',
+            ...rows,
+            '',
+            'Создать или перенести ещё один выпуск на эту дату?',
+          ].join('\n');
+          if (!window.confirm(question)) return;
+          sameDayConfirmed = true;
+        }
+        if (confirmed) confirmed.value = sameDayConfirmed ? '1' : '0';
+        form.dataset.releaseReady = '1';
+        form.requestSubmit(submitter || undefined);
+      } catch (error) {
+        toast(`Не удалось проверить расписание: ${error.message}`, 'error');
+      } finally {
+        form.dataset.releaseChecking = '0';
+      }
+    });
+  };
+
+  const installReleaseSubmitGuards = () => {
+    document.querySelectorAll('[data-release-form], [data-edit-release-form]').forEach(installReleaseSubmitGuard);
   };
 
   const installReloadFreeSave = (form, options = {}) => {
@@ -170,6 +264,7 @@
     if ((form.method || 'get').toLowerCase() !== 'post') return false;
     if (form.dataset.noAjax === 'true' || form.dataset.fullNavigation === 'true') return false;
     if (form.matches('#quick-question-form, #bulk-question-form, [data-existing-question-form]')) return false;
+    if (form.matches('form.campaign-create, [data-release-form], [data-edit-release-form]')) return false;
     if (form.querySelector('input[type="file"]')) return false;
     if ((form.enctype || '').toLowerCase().includes('multipart/form-data')) return false;
     if (form.target && form.target !== '_self') return false;
@@ -209,7 +304,7 @@
       if (!createForm.querySelector('.jackside-create-route-note')) {
         const note = document.createElement('p');
         note.className = 'muted jackside-create-route-note';
-        note.innerHTML = 'Новые ежедневные JACKSIDE создаются через <a href="/master/jackside-issues">«Выпуски JACKSIDE»</a>: дата, 18:14 и экономика JC подставляются централизованно.';
+        note.innerHTML = 'JACKSIDE создаётся в отдельном разделе <a href="/master/jackside">JACKSIDE</a>. Здесь находятся только обычные квизы.';
         createForm.prepend(note);
       }
     }
@@ -237,11 +332,23 @@
   };
 
   const keepQuizManagerScoped = () => {
-    if (document.body.dataset.adminAccessRole !== 'quiz_manager') return;
     if (!location.pathname.startsWith('/master/quiz-builder/')) return;
+    const builder = document.querySelector('[data-quiz-builder]');
+    const isDaily = builder?.dataset.campaignType === 'daily_414';
+    if (document.body.dataset.adminAccessRole === 'quiz_manager') {
+      document.querySelectorAll('a[href="/master?tab=campaigns"]').forEach((link) => {
+        link.href = '/staff/quizzes';
+        if (link.textContent.trim() === 'Настройки') link.textContent = 'К списку квизов';
+      });
+      return;
+    }
     document.querySelectorAll('a[href="/master?tab=campaigns"]').forEach((link) => {
-      link.href = '/staff/quizzes';
-      if (link.textContent.trim() === 'Настройки') link.textContent = 'К списку квизов';
+      link.href = isDaily ? '/master/jackside' : '/master?tab=campaigns';
+      if (link.classList.contains('back')) {
+        link.textContent = isDaily ? '← JACKSIDE' : '← Обычные квизы';
+      } else if (link.textContent.trim() === 'Настройки') {
+        link.textContent = isDaily ? 'К выпускам' : 'Настройки квиза';
+      }
     });
   };
 
@@ -262,6 +369,7 @@
 
   const run = () => {
     ensureHotfixStyle();
+    installReleaseSubmitGuards();
     centralizeCampaignEconomy();
     keepQuizManagerScoped();
     installQuizExportAction();
