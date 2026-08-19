@@ -80,14 +80,14 @@
           <article><strong>{{ engagement.referrals.qualified|default(0) }}</strong><small>Квалифицированы</small></article>
         </div>
         <div class="profile-referral-link"><input id="profile-referral-link" value="{{ referral_link }}" readonly aria-label="Реферальная ссылка"><button type="button" data-referral-copy="#profile-referral-link">Копировать</button></div>
-        <p class="member-muted" style="margin:10px 0 0;font-size:10px;">Квалификация — 3 завершённых выпуска JACKSIDE в 3 разные календарные даты.</p>
+        <p class="member-muted profile-referral-qualification-note">Квалификация — 3 завершённых выпуска JACKSIDE в 3 разные календарные даты.</p>
         {% if engagement.active_referral_titles %}<div class="profile-referral-titles" aria-label="Реферальные звания">{% for item in engagement.active_referral_titles %}<span>{% if item.icon_path %}<img class="profile-referral-title-icon" src="{{ item.icon_path }}" alt="" loading="lazy" decoding="async">{% else %}{{ item.icon or '✦' }}{% endif %} {{ item.name }}</span>{% endfor %}</div>{% endif %}
         <details class="profile-referral-history"><summary>История приглашений · {{ engagement.referrals.history|default([])|length }}</summary><div class="engagement-history">{% for row in engagement.referrals.history|default([]) %}<p><strong>{{ row.display_name }}</strong><span>{{ row.distinct_completed_days }}/3 дней{% if row.qualified_at %} · готово{% endif %}</span></p>{% else %}<p><span>Приглашённых игроков пока нет.</span></p>{% endfor %}</div></details>
       </div>
     </section>
   </div>
 
-  <section class="member-card account-panel profile-panel">
+  <section class="member-card account-panel profile-panel-fast">
     <div class="app-section-head"><div><p class="member-eyebrow">Аккаунт</p><h2>Личные данные</h2></div></div>
     <dl class="profile-data">
       <div><dt>Почта</dt><dd>{{ member.email }}</dd></div>
