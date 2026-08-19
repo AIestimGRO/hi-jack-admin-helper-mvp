@@ -9,6 +9,7 @@ on:
       - "app/main.py"
       - "app/services/telegram_oidc.py"
       - "app/telegram_notifications.py"
+      - "app/telegram_safety_hotfix.py"
       - "app/telegram_scheduler.py"
       - "app/telegram_transport.py"
       - "app/templates/admin_telegram_scheduler.html"
@@ -59,6 +60,7 @@ jobs:
               "app/main.py",
               "app/services/telegram_oidc.py",
               "app/telegram_notifications.py",
+              "app/telegram_safety_hotfix.py",
               "app/telegram_scheduler.py",
               "app/telegram_transport.py",
               "app/static/css/telegram-notifications.css",
@@ -103,6 +105,7 @@ jobs:
           app/main.py
           app/services/telegram_oidc.py
           app/telegram_notifications.py
+          app/telegram_safety_hotfix.py
           app/telegram_scheduler.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py
@@ -120,6 +123,7 @@ jobs:
           app/main.py
           app/services/telegram_oidc.py
           app/telegram_notifications.py
+          app/telegram_safety_hotfix.py
           app/telegram_scheduler.py
           app/telegram_transport.py
           scripts/telegram_dispatch_once.py

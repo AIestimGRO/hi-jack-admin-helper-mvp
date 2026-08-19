@@ -272,3 +272,75 @@ def test_private_chat_id_accepts_documented_user_id_range():
     )
     with pytest.raises(TelegramPermanentError):
         validate_private_chat_id(str(TELEGRAM_PRIVATE_USER_ID_MAX + 1))
+
+
+def test_dispatch_honors_configured_rate_limit(db_path):
+    with transaction(db_path) as conn:
+        first_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "transport-rate-1",
+                "first_name": "Rate One",
+                "phone_raw": "9995550102",
+            },
+        )
+        second_id, _ = upsert_client(
+            conn,
+            {
+                "app_user_id": "transport-rate-2",
+                "first_name": "Rate Two",
+                "phone_raw": "9995550103",
+            },
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_user_id='234826011' WHERE id=?",
+            (first_id,),
+        )
+        conn.execute(
+            "UPDATE clients SET telegram_user_id='234826012' WHERE id=?",
+            (second_id,),
+        )
+        campaign_id = int(
+            conn.execute(
+                """
+                INSERT INTO telegram_notification_campaigns(
+                    title,category,message_text,audience_type
+                ) VALUES ('Rate test','club_updates','Hello rate','all')
+                """
+            ).lastrowid
+        )
+        assert queue_manual_campaign(conn, campaign_id=campaign_id) == 2
+        conn.execute(
+            """
+            UPDATE telegram_notification_settings
+            SET sending_enabled=1,rate_limit_per_second=2
+            WHERE id=1
+            """
+        )
+
+    current = [100.0]
+    sleeps: list[float] = []
+    sent: list[str] = []
+
+    def clock() -> float:
+        return current[0]
+
+    def sleeper(seconds: float) -> None:
+        sleeps.append(seconds)
+        current[0] += seconds
+
+    def sender(token, chat_id, payload, timeout):
+        sent.append(chat_id)
+        return {"message_id": len(sent)}
+
+    result = dispatch_telegram_outbox_once(
+        _settings(db_path),
+        limit=2,
+        sender=sender,
+        sleeper=sleeper,
+        clock=clock,
+    )
+
+    assert result["sent"] == 2
+    assert sent == ["234826011", "234826012"]
+    assert sleeps == pytest.approx([0.5])
