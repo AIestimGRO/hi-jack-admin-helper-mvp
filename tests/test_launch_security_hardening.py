@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import re
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -11,7 +12,10 @@ from PIL import Image
 
 from app.config import Settings
 from app.db import transaction
-from app.launch_security_hardening import _safe_open_image
+from app.launch_security_hardening import (
+    _privacy_safe_rating_categories,
+    _safe_open_image,
+)
 from app.main import create_app
 from app.services.member_accounts import _session_touch_due, validate_password
 
@@ -47,6 +51,40 @@ def _login(client: TestClient) -> None:
         follow_redirects=False,
     )
     assert response.status_code == 303
+
+
+def _profile_consent_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE member_public_rating_consent_state(
+            account_id INTEGER PRIMARY KEY,
+            document_version TEXT NOT NULL,
+            categories_json TEXT NOT NULL,
+            granted INTEGER NOT NULL
+        );
+        CREATE TABLE legal_reference_documents(
+            code TEXT NOT NULL,
+            version TEXT NOT NULL,
+            is_active INTEGER NOT NULL
+        );
+        CREATE TABLE member_profile_sharing(
+            account_id INTEGER PRIMARY KEY,
+            share_game_profile INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE member_profile_visibility(
+            account_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            is_visible INTEGER NOT NULL,
+            PRIMARY KEY(account_id, category)
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO legal_reference_documents(code,version,is_active) VALUES ('public-rating-consent','v1',1)"
+    )
+    return conn
 
 
 def test_public_deep_health_probe_is_disabled(tmp_path) -> None:
@@ -92,6 +130,35 @@ def test_private_routes_are_not_browser_cached(tmp_path) -> None:
     with TestClient(create_app(_settings(tmp_path))) as client:
         response = client.get("/account/login")
         assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_profile_requires_current_explicit_legal_consent() -> None:
+    conn = _profile_consent_conn()
+    try:
+        assert _privacy_safe_rating_categories(conn, 1) == {}
+        conn.execute(
+            """
+            INSERT INTO member_public_rating_consent_state(
+                account_id,document_version,categories_json,granted
+            ) VALUES (1,'v1',?,1)
+            """,
+            ('{"nickname":true,"avatar":true,"participation_stats":true}',),
+        )
+        conn.execute(
+            "INSERT INTO member_profile_visibility(account_id,category,is_visible) VALUES (1,'avatar',0)"
+        )
+        allowed = _privacy_safe_rating_categories(conn, 1)
+        assert allowed["nickname"] is True
+        assert allowed["avatar"] is False
+        assert allowed["game_stats"] is True
+        assert allowed["game_history"] is True
+
+        conn.execute(
+            "UPDATE member_public_rating_consent_state SET document_version='old' WHERE account_id=1"
+        )
+        assert _privacy_safe_rating_categories(conn, 1) == {}
+    finally:
+        conn.close()
 
 
 def test_image_dimensions_are_rejected_before_pixel_load(monkeypatch) -> None:
