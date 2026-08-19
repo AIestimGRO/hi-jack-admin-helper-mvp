@@ -95,31 +95,33 @@ def result_copy_for_score_compat(
     *,
     final_eligible: bool = True,
 ) -> dict[str, str]:
-    """Keep stable result codes while removing fixed 9/10 and 10/10 wording."""
+    """Keep historic result codes without presenting a fixed ten-question scale."""
     score = max(0, int(correct_count))
     if score <= 3:
         code = "0_3"
-        title = "Тёплый стол"
-        message = "Сегодня раздача сложилась иначе. JACKCOIN за завершённую игру уже на балансе."
     elif score <= 6:
         code = "4_6"
-        title = "Достойный результат"
-        message = "Хороший ход. JACKCOIN за правильные ответы уже начислены."
     elif score <= 8:
         code = "7_8"
-        title = "Сильная раздача"
-        message = "Сильный результат основной части. Ждём итогового отбора финального стола."
     elif score == 9:
         code = "9"
-        title = "Очень сильный результат"
-        message = "Сильный результат основной части. Ждём итогового отбора финального стола."
     else:
         code = "10"
-        title = "Максимальный темп"
-        message = "Основная часть завершена с сильным результатом. Ждём финальный стол."
-    if not final_eligible and score >= 7:
-        message = "Сильный результат основной части. В отбор финала этот заход не вошёл. JACKCOIN уже на балансе."
-    return {"code": code, "title": title, "message": message}
+    if final_eligible:
+        message = (
+            "Основная часть завершена. JACKCOIN за правильные ответы уже начислены. "
+            "После закрытия общего таймера система определит участников финального стола."
+        )
+    else:
+        message = (
+            "Основная часть завершена. Этот заход не вошёл в отбор финального стола, "
+            "JACKCOIN за завершённую игру уже на балансе."
+        )
+    return {
+        "code": code,
+        "title": "Основной раунд завершён",
+        "message": message,
+    }
 
 
 issue_service.effective_campaign_schedule = effective_campaign_schedule_compat
