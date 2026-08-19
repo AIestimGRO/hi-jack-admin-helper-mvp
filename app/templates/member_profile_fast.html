@@ -1,0 +1,105 @@
+{% extends "member_base.html" %}
+{% block title %}Профиль — Hi, Jack Club{% endblock %}
+{% set social_labels = {'telegram':'Telegram','miniapp':'Mini App','maps':'Карты'} %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/member-achievement-carousel.css') }}?v={{ member_performance_asset }}">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/member-performance.css') }}?v={{ member_performance_asset }}">
+<div class="member-app-page profile-main-mode" data-account-tab="profile" data-profile-view="main" data-performance-render="server" data-server-now="{{ server_now_iso }}">
+  {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
+  {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
+
+  <header class="app-page-heading profile-heading">
+    <div class="profile-avatar-large {{ 'has-product-avatar' if profile_avatar.url else '' }}">
+      {% if profile_avatar.url %}
+      <img src="{{ profile_avatar.url }}?v={{ profile_avatar.version }}" alt="" loading="eager" decoding="async" class="{{ 'is-sticker' if profile_avatar.kind == 'sticker' else '' }}">
+      {% else %}
+      {{ profile_display_name[:1]|upper }}
+      {% endif %}
+    </div>
+    <div>
+      <a class="profile-account-settings-button" href="/account?tab=profile&amp;view=settings">Настройки аккаунта <span aria-hidden="true">›</span></a>
+      <h1>{{ profile_display_name }}</h1>
+      <p class="member-muted">{{ '@' ~ member.username if member.username else member.email }}</p>
+    </div>
+  </header>
+
+  {% if profile_social_links %}
+  <a class="social-hub-card" href="/account/links">
+    <span class="social-hub-mark">HJ</span>
+    <span><strong>Hi, Jack в сети</strong><small>{% for item in profile_social_links[:3] %}{{ social_labels.get(item.link_type, item.title) }}{% if not loop.last %} · {% endif %}{% endfor %}</small></span>
+    <b aria-hidden="true">›</b>
+  </a>
+  {% endif %}
+
+  <div class="profile-rich-stack" data-profile-server-stack>
+    <section class="profile-rich-section" aria-labelledby="profile-emblems-heading">
+      <div class="profile-achievement-stage">
+        <div class="profile-achievement-intro"><div><h2 id="profile-emblems-heading">Hi, Titles!</h2></div></div>
+        <div class="profile-emblem-grid" data-two-row-titles="1" data-unlocked-count="{{ profile_collection.unlocked_count }}" aria-label="Hi, Titles! · открыто {{ profile_collection.active_count }} из {{ profile_collection.total_count }}">
+          {% for item in profile_collection['items'] %}
+          <details class="{{ item.card_class }}" data-emblem-state="{{ 'locked' if item.state == 'locked' else 'unlocked' }}" data-emblem-kind="{{ item.kind or 'title' }}">
+            <summary>
+              <span class="profile-emblem-icon {{ 'has-custom-art' if item.icon_path else '' }}" aria-hidden="true">
+                {% if item.icon_path %}<img src="{{ item.icon_path }}" alt="" loading="lazy" decoding="async">{% else %}{{ item.icon or ('◆' if item.kind == 'achievement' else '★') }}{% endif %}
+              </span>
+              <span class="profile-emblem-summary-copy"><strong>{{ item.name or ('Достижение' if item.kind == 'achievement' else 'Звание') }}</strong><small>{{ item.subtitle }}</small></span>
+            </summary>
+            <div class="profile-emblem-detail">
+              <p>{{ item.description or ('Это достижение ещё предстоит открыть.' if item.state == 'locked' else 'Награда HI, JACK CLUB!') }}</p>
+              <span class="profile-emblem-meta">{{ item.meta }}</span>
+              {% if item.state == 'active' and item.kind == 'title' and not item.temporary and not item.selected and item.member_title_id %}
+              <form action="/account/titles/{{ item.member_title_id }}/select" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="profile-title-select" type="submit">Сделать основным</button>
+              </form>
+              {% endif %}
+            </div>
+          </details>
+          {% else %}
+          <div class="profile-empty-emblems">Коллекция появится вместе с первыми званиями и достижениями.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="profile-rich-section profile-stat-clean-head" aria-labelledby="profile-stats-heading">
+      <div class="app-section-head"><div><p class="member-eyebrow">Моя игра</p><h2 id="profile-stats-heading">Главное в цифрах</h2></div></div>
+      <div class="profile-stat-visuals">
+        <article class="profile-stat-visual"><div class="profile-accuracy-ring" style="--accuracy: {{ quiz_stats.accuracy|default(0) }}"><strong>{{ quiz_stats.accuracy|default(0) }}%</strong></div><small>Точность ответов</small></article>
+        <article class="profile-stat-visual"><div class="profile-streak-signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><strong>{{ quiz_stats.current_streak|default(0) }}</strong><small>Текущая серия · лучшая {{ quiz_stats.best_streak|default(0) }}</small></article>
+        <article class="profile-stat-visual"><div class="profile-games-orbit"><strong>{{ quiz_stats.completed_count|default(0) }}</strong></div><small>Завершено JACKSIDE</small></article>
+      </div>
+    </section>
+
+    <section class="profile-rich-section profile-referral-clean-head" aria-labelledby="profile-referrals-heading">
+      <div class="profile-referral-card">
+        <div class="profile-referral-top"><div><p class="member-eyebrow">Твоя команда</p><h2 id="profile-referrals-heading">Рефералы</h2></div><div class="profile-referral-qualified"><strong>{{ engagement.referrals.qualified|default(0) }}</strong><small>квалифицировано</small></div></div>
+        <div class="profile-referral-flow" aria-label="Воронка реферальной программы">
+          <article><strong>{{ engagement.referrals.clicks|default(0) }}</strong><small>Переходы</small></article><span class="profile-referral-arrow" aria-hidden="true">›</span>
+          <article><strong>{{ engagement.referrals.registrations|default(0) }}</strong><small>Регистрации</small></article><span class="profile-referral-arrow" aria-hidden="true">›</span>
+          <article><strong>{{ engagement.referrals.qualified|default(0) }}</strong><small>Квалифицированы</small></article>
+        </div>
+        <div class="profile-referral-link"><input id="profile-referral-link" value="{{ referral_link }}" readonly aria-label="Реферальная ссылка"><button type="button" data-referral-copy="#profile-referral-link">Копировать</button></div>
+        <p class="member-muted profile-referral-qualification-note">Квалификация — 3 завершённых выпуска JACKSIDE в 3 разные календарные даты.</p>
+        {% if engagement.active_referral_titles %}<div class="profile-referral-titles" aria-label="Реферальные звания">{% for item in engagement.active_referral_titles %}<span>{% if item.icon_path %}<img class="profile-referral-title-icon" src="{{ item.icon_path }}" alt="" loading="lazy" decoding="async">{% else %}{{ item.icon or '✦' }}{% endif %} {{ item.name }}</span>{% endfor %}</div>{% endif %}
+        <details class="profile-referral-history"><summary>История приглашений · {{ engagement.referrals.history|default([])|length }}</summary><div class="engagement-history">{% for row in engagement.referrals.history|default([]) %}<p><strong>{{ row.display_name }}</strong><span>{{ row.distinct_completed_days }}/3 дней{% if row.qualified_at %} · готово{% endif %}</span></p>{% else %}<p><span>Приглашённых игроков пока нет.</span></p>{% endfor %}</div></details>
+      </div>
+    </section>
+  </div>
+
+  <section class="member-card account-panel profile-panel-fast">
+    <div class="app-section-head"><div><p class="member-eyebrow">Аккаунт</p><h2>Личные данные</h2></div></div>
+    <dl class="profile-data">
+      <div><dt>Почта</dt><dd>{{ member.email }}</dd></div>
+      <div><dt>Telegram</dt><dd>{% if member.telegram_user_id %}{{ '@' ~ member.username if member.username else 'Подключён' }}{% else %}<a class="profile-action" href="/account/telegram">Подключить</a>{% endif %}</dd></div>
+      <div><dt>Телефон</dt><dd>{{ display_phone(member.phone_local) if member.phone_local else 'Не указан' }}</dd></div>
+    </dl>
+  </section>
+
+  <details class="member-card account-details"><summary>История JACKSIDE <span>{{ history|length }}</span></summary><div class="member-history">{% for item in history %}<article><div><strong>{{ item.campaign_title or item.campaign_code }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ item.correct_count }}/{{ item.max_correct_count }} верно</span><span>{% if item.jackcoin_awarded %}+{{ item.jackcoin_awarded }} JC{% else %}{{ item.score|int if item.score is not none else 0 }} балл.{% endif %}</span></article>{% else %}<p class="member-empty">Завершённых выпусков JACKSIDE пока нет.</p>{% endfor %}</div></details>
+  {% if ledger %}<details class="member-card account-details"><summary>История JACKCOIN <span>{{ ledger|length }}</span></summary><div class="member-history">{% for item in ledger %}<article><div><strong>{{ item.comment or item.operation_type }}</strong><small>{{ item.created_at[:16]|replace('T', ' ') }}</small></div><span class="{{ 'jc-plus' if item.amount > 0 else 'jc-minus' }}">{{ '+' if item.amount > 0 else '' }}{{ item.amount }} JC</span></article>{% endfor %}</div></details>{% endif %}
+  <details class="member-card account-details legal-details"><summary>Принятые документы <span>{{ consents|length }}</span></summary><div class="consent-list">{% for consent in consents %}<p><span>{{ consent.title }}</span><small>Редакция {{ consent.document_version }} · {{ consent.accepted_at[:10] }}</small></p>{% endfor %}</div></details>
+  <form class="profile-logout" action="/account/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Выйти из аккаунта</button></form>
+</div>
+<script src="{{ url_for('static', path='/js/member-performance.js') }}?v={{ member_performance_asset }}" defer></script>
+{% endblock %}
