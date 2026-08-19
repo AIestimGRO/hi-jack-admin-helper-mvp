@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -23,6 +24,7 @@ from app.services import jackside_issues as issue_service
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MOSCOW = ZoneInfo("Europe/Moscow")
 
 
 def _add_choice_question(
@@ -49,9 +51,9 @@ def _add_choice_question(
         """
         INSERT INTO quiz_options(
             question_id, code, text, is_correct, position
-        ) VALUES (?, 'a', 'A', 1, 10)
+        ) VALUES (?, 'a', 'A', 1, 10), (?, 'b', 'B', 0, 20)
         """,
-        (question_id,),
+        (question_id, question_id),
     )
     return question_id
 
@@ -117,7 +119,7 @@ def test_exact_duplicate_release_start_is_rejected(tmp_path) -> None:
     db_path = tmp_path / "duplicate-release.sqlite3"
     init_db(db_path)
     ensure_multi_issue_schema(db_path)
-    starts = datetime(2026, 8, 20, 18, 14)
+    starts = datetime(2026, 8, 20, 18, 14, tzinfo=MOSCOW)
     with transaction(db_path) as conn:
         first = create_issue_multi_guarded(
             conn,
@@ -143,13 +145,13 @@ def test_same_day_different_start_times_are_allowed(tmp_path) -> None:
         first = create_issue_multi_guarded(
             conn,
             issue_date_value=date(2026, 8, 20),
-            starts_at=datetime(2026, 8, 20, 18, 14),
+            starts_at=datetime(2026, 8, 20, 18, 14, tzinfo=MOSCOW),
             title="JACKSIDE A",
         )
         second = create_issue_multi_guarded(
             conn,
             issue_date_value=date(2026, 8, 20),
-            starts_at=datetime(2026, 8, 20, 21, 0),
+            starts_at=datetime(2026, 8, 20, 21, 0, tzinfo=MOSCOW),
             title="JACKSIDE B",
         )
     assert int(first["id"]) != int(second["id"])
@@ -159,12 +161,12 @@ def test_reschedule_cannot_collide_with_another_exact_start(tmp_path) -> None:
     db_path = tmp_path / "reschedule-collision.sqlite3"
     init_db(db_path)
     ensure_multi_issue_schema(db_path)
-    occupied = datetime(2026, 8, 21, 21, 0)
+    occupied = datetime(2026, 8, 21, 21, 0, tzinfo=MOSCOW)
     with transaction(db_path) as conn:
         first = create_issue_multi_guarded(
             conn,
             issue_date_value=date(2026, 8, 21),
-            starts_at=datetime(2026, 8, 21, 18, 14),
+            starts_at=datetime(2026, 8, 21, 18, 14, tzinfo=MOSCOW),
             title="First",
         )
         create_issue_multi_guarded(
@@ -192,7 +194,7 @@ def test_publish_validation_accepts_three_main_questions(tmp_path) -> None:
         issue = create_issue_multi_guarded(
             conn,
             issue_date_value=date(2026, 8, 20),
-            starts_at=datetime(2026, 8, 20, 18, 14),
+            starts_at=datetime(2026, 8, 20, 18, 14, tzinfo=MOSCOW),
             title="Flexible release",
         )
         issue_service.ensure_issue_campaign(conn, issue=issue)
@@ -212,11 +214,20 @@ def test_existing_builtin_draft_upgrades_to_flexible_rules_on_validation(tmp_pat
         issue = create_issue_multi_guarded(
             conn,
             issue_date_value=date(2026, 8, 20),
-            starts_at=datetime(2026, 8, 20, 18, 14),
+            starts_at=datetime(2026, 8, 20, 18, 14, tzinfo=MOSCOW),
             title="Existing draft",
         )
         issue_service.ensure_issue_campaign(conn, issue=issue)
         _seed_publishable_questions(conn, str(issue["campaign_code"]), main_count=3)
+        conn.execute("UPDATE jackside_rules_versions SET is_active=0")
+        old_cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO jackside_rules_versions(
+                version, title, content, is_active
+            ) VALUES (?, 'Old built-in rules', ?, 0)
+            """,
+            (copy_service.DEFAULT_RULES_VERSION, copy_service.DEFAULT_RULES_CONTENT),
+        )
         old_rules = conn.execute(
             "SELECT * FROM jackside_rules_versions WHERE version=?",
             (copy_service.DEFAULT_RULES_VERSION,),
@@ -230,9 +241,14 @@ def test_existing_builtin_draft_upgrades_to_flexible_rules_on_validation(tmp_pat
             """,
             (int(old_rules["id"]), str(old_rules["version"]), int(issue["id"])),
         )
+        conn.execute(
+            "UPDATE jackside_rules_versions SET is_active=1 WHERE id=?",
+            (int(old_rules["id"]),),
+        )
         legacy_draft = issue_service.refresh_issue_question_counts(conn, int(issue["id"]))
         errors = validate_issue_for_publish_compat(conn, legacy_draft)
         upgraded = issue_service.get_issue(conn, int(issue["id"]))
+        assert old_cursor is not None
     assert errors == []
     assert upgraded is not None
     assert str(upgraded["rules_version"]) == FLEX_RULES_VERSION
