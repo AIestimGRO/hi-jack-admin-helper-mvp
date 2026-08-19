@@ -10,9 +10,13 @@ from fastapi import FastAPI, Request
 from app.db import transaction
 
 
-ASSET_VERSION = "jackside-critical-20260819-1"
+ASSET_VERSION = "jackside-critical-20260819-2"
 _SCRIPT_TAG = (
     '<script src="/static/js/jackside-critical-hotfix.js?'
+    f'v={ASSET_VERSION}"></script>'
+)
+_ADMIN_SCRIPT_TAG = (
+    '<script src="/static/js/jackside-admin-critical-hotfix.js?'
     f'v={ASSET_VERSION}"></script>'
 )
 _CAMPAIGN_BACKGROUND_RE = re.compile(r'data-campaign-background="[^"]*"')
@@ -77,6 +81,15 @@ def rewrite_jackside_quiz_html(html: str) -> str:
     return rewritten
 
 
+def rewrite_jackside_builder_html(html: str) -> str:
+    """Load JACKSIDE-only admin fixes in the quiz builder."""
+    if 'data-quiz-builder' not in html or 'data-campaign-type="daily_414"' not in html:
+        return html
+    if _ADMIN_SCRIPT_TAG not in html:
+        return html.replace("</body>", f"{_ADMIN_SCRIPT_TAG}\n</body>", 1)
+    return html
+
+
 async def _single_chunk(payload: bytes) -> AsyncIterator[bytes]:
     yield payload
 
@@ -94,7 +107,11 @@ def install_jackside_critical_hotfix(app: FastAPI) -> FastAPI:
                 refresh_jackside_issue_question_counts(conn)
 
         response = await call_next(request)
-        if request.method != "GET" or request.url.path != "/quiz":
+        if request.method != "GET":
+            return response
+        is_quiz = request.url.path == "/quiz"
+        is_builder = request.url.path.startswith("/master/quiz-builder/")
+        if not is_quiz and not is_builder:
             return response
         content_type = str(response.headers.get("content-type") or "").lower()
         if "text/html" not in content_type:
@@ -106,7 +123,13 @@ def install_jackside_critical_hotfix(app: FastAPI) -> FastAPI:
         except UnicodeDecodeError:
             response.body_iterator = _single_chunk(body)
             return response
-        rewritten = rewrite_jackside_quiz_html(html).encode("utf-8")
+
+        rewritten_html = (
+            rewrite_jackside_quiz_html(html)
+            if is_quiz
+            else rewrite_jackside_builder_html(html)
+        )
+        rewritten = rewritten_html.encode("utf-8")
         response.body_iterator = _single_chunk(rewritten)
         response.headers["content-length"] = str(len(rewritten))
         return response
@@ -118,5 +141,6 @@ __all__ = [
     "ASSET_VERSION",
     "install_jackside_critical_hotfix",
     "refresh_jackside_issue_question_counts",
+    "rewrite_jackside_builder_html",
     "rewrite_jackside_quiz_html",
 ]
