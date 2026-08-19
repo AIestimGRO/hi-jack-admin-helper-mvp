@@ -6,6 +6,7 @@ import math
 import threading
 import time
 from collections import deque
+from datetime import date
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
@@ -181,6 +182,18 @@ def _profile_settings_redirect(message: str, *, error: bool = False) -> Redirect
     return RedirectResponse(f"/account?{urlencode(query)}", status_code=303)
 
 
+def _is_adult_birth_date(value: str, *, today: date | None = None) -> bool:
+    try:
+        born = date.fromisoformat(str(value or "").strip())
+    except ValueError:
+        return False
+    current = today or date.today()
+    years = current.year - born.year
+    if (current.month, current.day) < (born.month, born.day):
+        years -= 1
+    return years >= 18
+
+
 def _safe_open_image(data: bytes) -> Image.Image:
     """Reject oversized raster dimensions before Pillow fully decodes pixels."""
     try:
@@ -286,12 +299,49 @@ def _install_email_change_reauth(app: FastAPI) -> None:
         return
 
 
+def _install_birthday_adult_gate(app: FastAPI) -> None:
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if route.path != "/account/birthday":
+            continue
+        if "POST" not in (route.methods or set()):
+            continue
+        if getattr(route, "_launch_adult_gate_wrapped", False):
+            return
+
+        original = route.endpoint
+
+        async def birthday_adult_wrapper(
+            request: Request,
+            birth_date: str,
+            csrf_token: str,
+        ):
+            if not _is_adult_birth_date(birth_date):
+                return RedirectResponse(
+                    "/account/birthday?"
+                    + urlencode({"error": "Регистрация и использование сервиса доступны с 18 лет"}),
+                    status_code=303,
+                )
+            return await original(
+                request=request,
+                birth_date=birth_date,
+                csrf_token=csrf_token,
+            )
+
+        route.endpoint = birthday_adult_wrapper
+        route.dependant.call = birthday_adult_wrapper
+        setattr(route, "_launch_adult_gate_wrapped", True)
+        return
+
+
 def install_launch_security_hardening(app: FastAPI) -> FastAPI:
     if getattr(app.state, "launch_security_hardening_installed", False):
         return app
     app.state.launch_security_hardening_installed = True
     app.state.launch_auth_rate_limiter = _SlidingWindowLimiter()
     _install_email_change_reauth(app)
+    _install_birthday_adult_gate(app)
     _install_safe_image_decoder()
     _install_public_profile_consent_guard()
 
