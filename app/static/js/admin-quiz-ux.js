@@ -18,6 +18,31 @@
     technical_review: 'Техпроверка',
   };
 
+  const issueErrorLabels = {
+    main_questions_required: 'Добавьте хотя бы один вопрос основного раунда',
+    main_questions_must_be_ten: 'Количество основных вопросов больше не ограничено — обновите страницу и повторите',
+    final_questions_required: 'Добавьте хотя бы один вопрос финального стола',
+    invalid_schedule_start: 'Проверьте время старта выпуска',
+    invalid_schedule_end: 'Проверьте время окончания выпуска',
+    invalid_jackcoin_prize: 'Проверьте сумму главного приза JACKCOIN',
+    missing_card_prize: 'Выберите карточку главного приза',
+    invalid_card_prize: 'Выбранная карточка главного приза недоступна',
+    missing_rules_version: 'Не найдена актуальная версия правил JACKSIDE',
+  };
+
+  const readableIssueError = (raw) => {
+    const value = String(raw || '').trim();
+    if (!value.startsWith('issue_invalid:')) return value;
+    return value.slice('issue_invalid:'.length).split(',').map((reason) => {
+      if (issueErrorLabels[reason]) return issueErrorLabels[reason];
+      if (reason.startsWith('empty_options:')) return 'У одного из вопросов нет вариантов ответа';
+      if (reason.startsWith('missing_correct:')) return 'У одного из вопросов не отмечен правильный ответ';
+      if (reason.startsWith('blank_option:')) return 'У одного из вопросов есть пустой вариант ответа';
+      if (reason.startsWith('missing_text_answers:')) return 'У текстового вопроса не указан правильный ответ';
+      return reason;
+    }).join(' · ');
+  };
+
   const installQuizLibraryNav = () => {
     const nav = qs('.admin-persistent-nav nav');
     if (!nav || qs('[data-quiz-library-nav]', nav)) return;
@@ -29,7 +54,7 @@
     link.className = active ? 'active' : '';
     link.dataset.quizLibraryNav = 'true';
     link.href = '/master?tab=campaigns';
-    link.innerHTML = '<span>?</span><div><strong>Обычные квизы</strong><small>Промо, тематические и разовые квизы</small></div>';
+    link.innerHTML = '<span>Q</span><div><strong>Обычные квизы</strong><small>Промо, тематические и разовые квизы</small></div>';
     jackside.insertAdjacentElement('afterend', link);
   };
 
@@ -115,6 +140,28 @@
     });
   };
 
+  const normalizeFlexibleQuestionLabels = () => {
+    qsa('[name="jackcoin_perfect_bonus"]').forEach((input) => {
+      const label = input.closest('label');
+      if (!label) return;
+      [...label.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).forEach((node) => {
+        node.textContent = node.textContent.replace(/10\/10/g, 'идеальный результат');
+      });
+    });
+    qsa('option[value="perfect_games"]').forEach((option) => {
+      option.textContent = option.textContent.replace(/10\/10/g, 'Идеальные результаты');
+    });
+    if (location.pathname === '/master/reports') {
+      qsa('.analytics-stat-grid article').forEach((card) => {
+        if (qs('small', card)?.textContent.trim() !== 'Средний результат') return;
+        const strong = qs('strong', card);
+        if (strong) strong.textContent = strong.textContent.replace(/\/10\s*$/, '');
+        const hint = qs('span', card);
+        if (hint) hint.textContent = 'среднее число правильных ответов';
+      });
+    }
+  };
+
   const csrfToken = () => qs('[data-release-form] [name="csrf_token"]')?.value || qs('[name="csrf_token"]')?.value || '';
 
   const setPillStatus = (container, status) => {
@@ -124,12 +171,12 @@
     pill.textContent = statusLabels[status] || status;
   };
 
-  const markIssueScheduled = (issueId) => {
+  const markIssueStatus = (issueId, status) => {
     const escaped = CSS.escape(String(issueId));
-    qsa(`[data-jackside-publish="${escaped}"], [data-jackside-check="${escaped}"]`).forEach((button) => button.remove());
+    qsa(`[data-jackside-publish="${escaped}"], [data-jackside-check="${escaped}"], [data-jackside-cancel="${escaped}"]`).forEach((button) => button.remove());
     qsa(`[data-edit-issue="${escaped}"]`).forEach((marker) => {
       const container = marker.closest('.ia-campaign-card, .ia-release-row');
-      if (container) setPillStatus(container, 'scheduled');
+      if (container) setPillStatus(container, status);
     });
   };
 
@@ -137,7 +184,7 @@
     if (!issueId || !csrfToken()) return;
     const original = button.textContent;
     button.disabled = true;
-    button.textContent = action === 'schedule' ? 'Публикую…' : 'Проверяю…';
+    button.textContent = action === 'schedule' ? 'Публикую…' : action === 'cancel' ? 'Отменяю…' : 'Проверяю…';
     try {
       const body = new FormData();
       body.set('csrf_token', csrfToken());
@@ -149,11 +196,13 @@
       });
       const finalUrl = new URL(response.url || location.href, location.href);
       const error = finalUrl.searchParams.get('error');
-      if (!response.ok || error) throw new Error(error || `Ошибка ${response.status}`);
-      const message = finalUrl.searchParams.get('ok') || (action === 'schedule' ? 'Выпуск запланирован' : 'Выпуск готов');
-      if (action === 'schedule') markIssueScheduled(issueId);
+      if (!response.ok || error) throw new Error(readableIssueError(error || `Ошибка ${response.status}`));
+      const fallback = action === 'schedule' ? 'Выпуск запланирован' : action === 'cancel' ? 'Выпуск отменён' : 'Выпуск готов к публикации';
+      const message = finalUrl.searchParams.get('ok') || fallback;
+      if (action === 'schedule') markIssueStatus(issueId, 'scheduled');
+      if (action === 'cancel') markIssueStatus(issueId, 'cancelled');
       toast(message);
-      if (action !== 'schedule') {
+      if (action === 'validate') {
         button.disabled = false;
         button.textContent = original;
       }
@@ -171,27 +220,43 @@
     return repeat.startsWith('issue:') ? repeat.slice(6) : '';
   };
 
-  const addDraftActions = (card, actions, status) => {
-    if (status !== 'draft' || !actions || qs('[data-jackside-publish]', actions)) return;
+  const addOperationalActions = (card, actions, status) => {
+    if (!actions) return;
     const issueId = issueIdFromCard(card);
     if (!issueId) return;
 
-    const check = document.createElement('button');
-    check.type = 'button';
-    check.className = 'jackside-check-button';
-    check.dataset.jacksideCheck = issueId;
-    check.textContent = 'Проверить';
-    check.addEventListener('click', () => issueAction(issueId, 'validate', check));
+    if (status === 'draft' && !qs('[data-jackside-publish]', actions)) {
+      const check = document.createElement('button');
+      check.type = 'button';
+      check.className = 'jackside-check-button';
+      check.dataset.jacksideCheck = issueId;
+      check.textContent = 'Проверить';
+      check.addEventListener('click', () => issueAction(issueId, 'validate', check));
 
-    const publish = document.createElement('button');
-    publish.type = 'button';
-    publish.className = 'jackside-publish-button';
-    publish.dataset.jacksidePublish = issueId;
-    publish.textContent = 'Опубликовать и запланировать';
-    publish.addEventListener('click', () => issueAction(issueId, 'schedule', publish));
+      const publish = document.createElement('button');
+      publish.type = 'button';
+      publish.className = 'jackside-publish-button';
+      publish.dataset.jacksidePublish = issueId;
+      publish.textContent = 'Опубликовать и запланировать';
+      publish.addEventListener('click', () => issueAction(issueId, 'schedule', publish));
 
-    actions.prepend(publish);
-    actions.prepend(check);
+      actions.prepend(publish);
+      actions.prepend(check);
+    }
+
+    if (['draft', 'scheduled', 'lobby'].includes(status) && !qs('[data-jackside-cancel]', actions)) {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'jackside-cancel-button';
+      cancel.dataset.jacksideCancel = issueId;
+      cancel.textContent = 'Отменить выпуск';
+      cancel.addEventListener('click', () => {
+        if (window.confirm('Отменить этот выпуск JACKSIDE? Вопросы и история сохранятся.')) {
+          issueAction(issueId, 'cancel', cancel);
+        }
+      });
+      actions.append(cancel);
+    }
   };
 
   function enhanceJacksideWorkspace() {
@@ -206,7 +271,7 @@
       const raw = pill?.textContent.trim() || '';
       if (pill && statusLabels[raw]) setPillStatus(card, raw);
       const actions = qs('.ia-card-actions', card);
-      addDraftActions(card, actions, raw);
+      addOperationalActions(card, actions, raw);
       qsa('.ia-card-stats span', card).forEach((stat) => {
         stat.innerHTML = stat.innerHTML.replace('/10', '');
       });
@@ -219,7 +284,7 @@
       qsa('span', row).forEach((node) => {
         if (/\d+\/10\s*·\s*финал/i.test(node.textContent)) node.textContent = node.textContent.replace('/10', '');
       });
-      addDraftActions(row, qs('.ia-row-actions', row), raw);
+      addOperationalActions(row, qs('.ia-row-actions', row), raw);
     });
 
     if (!qs('.jackside-ops-bar', workspace)) {
@@ -242,7 +307,7 @@
     const params = new URLSearchParams(location.search);
     const target = new URL('/master/jackside', location.origin);
     if (params.get('ok')) target.searchParams.set('ok', params.get('ok'));
-    if (params.get('error')) target.searchParams.set('error', params.get('error'));
+    if (params.get('error')) target.searchParams.set('error', readableIssueError(params.get('error')));
     location.replace(target.href);
     return true;
   };
@@ -251,5 +316,6 @@
   installQuizLibraryNav();
   polishQuizLibrary();
   normalizeBuilderCopy();
+  normalizeFlexibleQuestionLabels();
   enhanceJacksideWorkspace();
 })();
