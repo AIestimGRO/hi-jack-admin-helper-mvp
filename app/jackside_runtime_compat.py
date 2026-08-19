@@ -90,13 +90,47 @@ def reschedule_future_issue_compat(
     )
 
 
+def result_copy_for_score_compat(
+    correct_count: int,
+    *,
+    final_eligible: bool = True,
+) -> dict[str, str]:
+    """Keep stable result codes while removing fixed 9/10 and 10/10 wording."""
+    score = max(0, int(correct_count))
+    if score <= 3:
+        code = "0_3"
+        title = "Тёплый стол"
+        message = "Сегодня раздача сложилась иначе. JACKCOIN за завершённую игру уже на балансе."
+    elif score <= 6:
+        code = "4_6"
+        title = "Достойный результат"
+        message = "Хороший ход. JACKCOIN за правильные ответы уже начислены."
+    elif score <= 8:
+        code = "7_8"
+        title = "Сильная раздача"
+        message = "Сильный результат основной части. Ждём итогового отбора финального стола."
+    elif score == 9:
+        code = "9"
+        title = "Очень сильный результат"
+        message = "Сильный результат основной части. Ждём итогового отбора финального стола."
+    else:
+        code = "10"
+        title = "Максимальный темп"
+        message = "Основная часть завершена с сильным результатом. Ждём финальный стол."
+    if not final_eligible and score >= 7:
+        message = "Сильный результат основной части. В отбор финала этот заход не вошёл. JACKCOIN уже на балансе."
+    return {"code": code, "title": title, "message": message}
+
+
 issue_service.effective_campaign_schedule = effective_campaign_schedule_compat
 issue_service.validate_issue_for_publish = validate_issue_for_publish_compat
 multi_issue.reschedule_future_issue = reschedule_future_issue_compat
+copy_service.result_copy_for_score = result_copy_for_score_compat
 
 
 __all__ = [
     "effective_campaign_schedule_compat",
     "reschedule_future_issue_compat",
+    "result_copy_for_score_compat",
     "validate_issue_for_publish_compat",
 ]
