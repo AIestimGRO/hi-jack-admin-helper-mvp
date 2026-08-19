@@ -162,5 +162,5 @@ def test_scoped_navigation_does_not_send_manager_to_master_workspaces() -> None:
     assert "href=\"/staff-access\"" in base
     assert "access_role == 'quiz_manager'" in dashboard
     assert "{% if access_role == 'master' %}" in client
-    assert "document.body.dataset.adminAccessRole !== 'quiz_manager'" in script
+    assert "document.body.dataset.adminAccessRole === 'quiz_manager'" in script
     assert "link.href = '/staff/quizzes'" in script
