@@ -62,12 +62,27 @@ _AUTH_RATE_RULES: dict[tuple[str, str], tuple[int, int]] = {
     ("POST", "/account/security/phone/request"): (5, 300),
     ("POST", "/account/security/delete/request"): (5, 300),
 }
+_RATE_LIMIT_MAX_BUCKETS = 8192
+_RATE_LIMIT_STALE_SECONDS = 600
 
 
 class _SlidingWindowLimiter:
     def __init__(self) -> None:
         self._events: dict[tuple[str, str], deque[float]] = {}
         self._lock = threading.Lock()
+
+    def _prune(self, now: float) -> None:
+        if len(self._events) < _RATE_LIMIT_MAX_BUCKETS:
+            return
+        stale_before = float(now) - _RATE_LIMIT_STALE_SECONDS
+        for key, events in list(self._events.items()):
+            if not events or events[-1] <= stale_before:
+                self._events.pop(key, None)
+        if len(self._events) < _RATE_LIMIT_MAX_BUCKETS:
+            return
+        overflow = len(self._events) - _RATE_LIMIT_MAX_BUCKETS + 1
+        for key in list(self._events)[:overflow]:
+            self._events.pop(key, None)
 
     def check(
         self,
@@ -81,6 +96,7 @@ class _SlidingWindowLimiter:
         key = (str(bucket), str(client_key))
         cutoff = float(now) - int(window_seconds)
         with self._lock:
+            self._prune(float(now))
             events = self._events.setdefault(key, deque())
             while events and events[0] <= cutoff:
                 events.popleft()
@@ -88,8 +104,6 @@ class _SlidingWindowLimiter:
                 retry_after = events[0] + int(window_seconds) - float(now)
                 return max(1, int(math.ceil(retry_after)))
             events.append(float(now))
-            if not events:
-                self._events.pop(key, None)
         return None
 
 
@@ -101,6 +115,7 @@ def _client_rate_key(request: Request) -> str:
 
 def _rate_limit_response(request: Request, retry_after: int):
     headers = {
+        **_SECURITY_HEADERS,
         "Retry-After": str(max(1, int(retry_after))),
         "Cache-Control": "no-store",
     }
