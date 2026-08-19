@@ -183,4 +183,4 @@ def test_reschedule_moves_streak_snapshot_and_cleans_empty_old_day(tmp_path: Pat
 
 
 def test_multi_issue_runtime_busts_admin_ia_asset_cache() -> None:
-    assert admin_ia.ASSET_VERSION == "admin-ia-v4"
+    assert admin_ia.ASSET_VERSION == "admin-ia-v5"
