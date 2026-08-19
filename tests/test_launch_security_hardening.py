@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import re
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.responses import RedirectResponse
@@ -15,6 +15,7 @@ from app.db import transaction
 from app.launch_security_hardening import (
     _AUTH_RATE_RULES,
     _SlidingWindowLimiter,
+    _is_adult_birth_date,
     _privacy_safe_rating_categories,
     _safe_open_image,
 )
@@ -247,3 +248,10 @@ def test_sliding_window_limiter_blocks_then_recovers() -> None:
         )
         is None
     )
+
+
+def test_legacy_birthday_gate_rejects_under_18() -> None:
+    today = date(2026, 8, 19)
+    assert _is_adult_birth_date("2008-08-19", today=today) is True
+    assert _is_adult_birth_date("2008-08-20", today=today) is False
+    assert _is_adult_birth_date("not-a-date", today=today) is False
