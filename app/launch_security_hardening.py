@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.routing import APIRoute
 
 from app.db import connect
+from app.product_shell import _current_member
+from app.services.member_accounts import verify_password
 
 
 _SECURITY_HEADERS = {
@@ -58,10 +63,57 @@ def _sanitize_redirect_location(value: str | None) -> str | None:
     return location
 
 
+def _profile_settings_redirect(message: str, *, error: bool = False) -> RedirectResponse:
+    query = {"tab": "profile", "view": "settings", "error" if error else "ok": message}
+    return RedirectResponse(f"/account?{urlencode(query)}", status_code=303)
+
+
+def _install_email_change_reauth(app: FastAPI) -> None:
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if route.path != "/account/security/email/request":
+            continue
+        if "POST" not in (route.methods or set()):
+            continue
+        if getattr(route, "_launch_email_reauth_wrapped", False):
+            return
+
+        original = route.endpoint
+
+        async def email_change_reauth_wrapper(
+            request: Request,
+            new_email: str,
+            csrf_token: str,
+        ):
+            form = await request.form()
+            current_password = str(form.get("current_password") or "")
+            member = _current_member(request, required=True)
+            if not current_password or not verify_password(
+                current_password,
+                str(member["password_hash"] or ""),
+            ):
+                return _profile_settings_redirect(
+                    "Введите текущий пароль для смены почты",
+                    error=True,
+                )
+            return await original(
+                request=request,
+                new_email=new_email,
+                csrf_token=csrf_token,
+            )
+
+        route.endpoint = email_change_reauth_wrapper
+        route.dependant.call = email_change_reauth_wrapper
+        setattr(route, "_launch_email_reauth_wrapped", True)
+        return
+
+
 def install_launch_security_hardening(app: FastAPI) -> FastAPI:
     if getattr(app.state, "launch_security_hardening_installed", False):
         return app
     app.state.launch_security_hardening_installed = True
+    _install_email_change_reauth(app)
 
     @app.middleware("http")
     async def launch_security_middleware(request: Request, call_next):
