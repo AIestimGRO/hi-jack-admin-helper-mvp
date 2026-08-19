@@ -39,7 +39,7 @@
     if (params.get('tab') !== 'campaigns') return;
     document.body.classList.add('admin-quiz-library');
     const panel = qs('[data-master-panel="campaigns"]');
-    if (!panel) return;
+    if (!panel || qs('.quiz-library-hero', panel)) return;
 
     const firstHead = qs('.section-head', panel);
     if (firstHead) {
@@ -117,21 +117,20 @@
 
   const csrfToken = () => qs('[data-release-form] [name="csrf_token"]')?.value || qs('[name="csrf_token"]')?.value || '';
 
-  const refreshJackside = async () => {
-    const response = await fetch('/master/jackside', {
-      headers: { Accept: 'text/html' },
-      credentials: 'same-origin',
-      cache: 'no-store',
+  const setPillStatus = (container, status) => {
+    const pill = qs('.type-pill:not(.ia-legacy-pill)', container) || qs('.type-pill', container);
+    if (!pill) return;
+    pill.dataset.status = status;
+    pill.textContent = statusLabels[status] || status;
+  };
+
+  const markIssueScheduled = (issueId) => {
+    const escaped = CSS.escape(String(issueId));
+    qsa(`[data-jackside-publish="${escaped}"], [data-jackside-check="${escaped}"]`).forEach((button) => button.remove());
+    qsa(`[data-edit-issue="${escaped}"]`).forEach((marker) => {
+      const container = marker.closest('.ia-campaign-card, .ia-release-row');
+      if (container) setPillStatus(container, 'scheduled');
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const html = await response.text();
-    const parsed = new DOMParser().parseFromString(html, 'text/html');
-    const next = qs('[data-jackside-workspace]', parsed);
-    const current = qs('[data-jackside-workspace]');
-    if (!next || !current) throw new Error('Не удалось обновить список выпусков');
-    current.replaceWith(next);
-    enhanceJacksideWorkspace();
-    document.dispatchEvent(new CustomEvent('hj:jackside-workspace-refreshed'));
   };
 
   const issueAction = async (issueId, action, button) => {
@@ -152,8 +151,12 @@
       const error = finalUrl.searchParams.get('error');
       if (!response.ok || error) throw new Error(error || `Ошибка ${response.status}`);
       const message = finalUrl.searchParams.get('ok') || (action === 'schedule' ? 'Выпуск запланирован' : 'Выпуск готов');
+      if (action === 'schedule') markIssueScheduled(issueId);
       toast(message);
-      await refreshJackside();
+      if (action !== 'schedule') {
+        button.disabled = false;
+        button.textContent = original;
+      }
     } catch (error) {
       toast(error?.message || 'Не удалось выполнить действие', 'error');
       button.disabled = false;
@@ -201,10 +204,7 @@
     qsa('.ia-campaign-card', workspace).forEach((card) => {
       const pill = qs('.type-pill:not(.ia-legacy-pill)', card);
       const raw = pill?.textContent.trim() || '';
-      if (pill && statusLabels[raw]) {
-        pill.dataset.status = raw;
-        pill.textContent = statusLabels[raw];
-      }
+      if (pill && statusLabels[raw]) setPillStatus(card, raw);
       const actions = qs('.ia-card-actions', card);
       addDraftActions(card, actions, raw);
       qsa('.ia-card-stats span', card).forEach((stat) => {
@@ -215,10 +215,7 @@
     qsa('.ia-release-row', workspace).forEach((row) => {
       const pill = qs('.type-pill', row);
       const raw = pill?.textContent.trim() || '';
-      if (pill && statusLabels[raw]) {
-        pill.dataset.status = raw;
-        pill.textContent = statusLabels[raw];
-      }
+      if (pill && statusLabels[raw]) setPillStatus(row, raw);
       qsa('span', row).forEach((node) => {
         if (/\d+\/10\s*·\s*финал/i.test(node.textContent)) node.textContent = node.textContent.replace('/10', '');
       });
