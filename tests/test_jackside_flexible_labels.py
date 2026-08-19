@@ -51,3 +51,9 @@ def test_flexible_labels_are_normalized_inside_jackside_validation() -> None:
     assert "install_jackside_flexible_labels" not in (
         ROOT / "app/main.py"
     ).read_text(encoding="utf-8")
+
+
+def test_member_stats_do_not_present_perfect_games_as_ten_of_ten() -> None:
+    source = (ROOT / "app/static/js/member.js").read_text(encoding="utf-8")
+    assert '.member-stat-card, .quiz-stat-board article' in source
+    assert 'replace(/^10\\/10\\s*:/, "идеальных игр:")' in source
