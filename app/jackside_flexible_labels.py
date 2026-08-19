@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import FastAPI
-
-from app.db import transaction
-
 
 BUILTIN_DESCRIPTION_UPDATES = (
     (
@@ -45,17 +41,7 @@ def normalize_builtin_perfect_labels(conn: sqlite3.Connection) -> int:
     return changed
 
 
-def install_jackside_flexible_labels(app: FastAPI) -> FastAPI:
-    if getattr(app.state, "jackside_flexible_labels_installed", False):
-        return app
-    app.state.jackside_flexible_labels_installed = True
-    with transaction(app.state.settings.db_path) as conn:
-        normalize_builtin_perfect_labels(conn)
-    return app
-
-
 __all__ = [
     "BUILTIN_DESCRIPTION_UPDATES",
-    "install_jackside_flexible_labels",
     "normalize_builtin_perfect_labels",
 ]
