@@ -6,6 +6,7 @@ from typing import Any
 import sqlite3
 
 from app import jackside_multi_issue as multi_issue
+from app.jackside_flexible_labels import normalize_builtin_perfect_labels
 from app.services import jackside_copy as copy_service
 from app.services import jackside_issues as issue_service
 
@@ -42,6 +43,7 @@ def validate_issue_for_publish_compat(
     conn: sqlite3.Connection,
     issue: sqlite3.Row | dict[str, Any],
 ) -> list[str]:
+    normalize_builtin_perfect_labels(conn)
     current = issue
     if str(issue["rules_version"] or "") == copy_service.DEFAULT_RULES_VERSION:
         active = issue_service.ensure_default_rules(conn)
