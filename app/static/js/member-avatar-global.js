@@ -13,10 +13,11 @@
       image = document.createElement('img');
       image.dataset.productAvatar = '1';
       image.alt = '';
+      image.decoding = 'async';
       target.prepend(image);
     }
     image.classList.toggle('is-sticker', state?.profile?.avatar_kind === 'sticker');
-    image.src = `${url}?v=${Date.now()}`;
+    image.src = url;
     image.addEventListener('error', () => {
       image.remove();
       target.classList.remove('has-product-avatar');
