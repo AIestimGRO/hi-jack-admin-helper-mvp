@@ -20,8 +20,9 @@ from app.services.quiz_identity import normalize_email
 
 MEMBER_COOKIE_NAME = "hjc_member_session"
 PASSWORD_ITERATIONS = 600_000
-MIN_PASSWORD_LENGTH = 6
+MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
+SESSION_TOUCH_INTERVAL = timedelta(minutes=5)
 
 
 def _timestamp(value: datetime) -> str:
@@ -31,7 +32,9 @@ def _timestamp(value: datetime) -> str:
 def validate_password(password: str) -> str:
     value = str(password or "")
     if not MIN_PASSWORD_LENGTH <= len(value) <= MAX_PASSWORD_LENGTH:
-        raise ValueError("Пароль должен содержать от 6 до 128 символов")
+        raise ValueError(
+            f"Пароль должен содержать от {MIN_PASSWORD_LENGTH} до {MAX_PASSWORD_LENGTH} символов"
+        )
     if not any(character.isalpha() for character in value):
         raise ValueError("Добавьте в пароль хотя бы одну букву")
     return value
@@ -111,6 +114,21 @@ def issue_session(
     return token
 
 
+def _session_touch_due(value: Any, now: datetime) -> bool:
+    raw = str(value or "").strip()
+    if not raw:
+        return True
+    try:
+        touched = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if touched.tzinfo is None:
+        touched = touched.replace(tzinfo=timezone.utc)
+    else:
+        touched = touched.astimezone(timezone.utc)
+    return touched <= now - SESSION_TOUCH_INTERVAL
+
+
 def authenticated_member(
     conn: sqlite3.Connection,
     *,
@@ -120,10 +138,13 @@ def authenticated_member(
 ) -> sqlite3.Row | None:
     if not token:
         return None
-    now = _timestamp(datetime.now(timezone.utc))
+    now_dt = datetime.now(timezone.utc)
+    now = _timestamp(now_dt)
     row = conn.execute(
         """
-        SELECT ma.*, ms.id AS member_session_id, c.first_name, c.nickname, c.username,
+        SELECT ma.*, ms.id AS member_session_id,
+               ms.last_used_at AS member_session_last_used_at,
+               c.first_name, c.nickname, c.username,
                c.phone_raw, c.phone_full, c.phone_local, c.telegram_user_id
         FROM member_sessions ms
         JOIN member_accounts ma ON ma.id = ms.account_id
@@ -133,7 +154,7 @@ def authenticated_member(
         """,
         (session_token_hash(secret_key, token), now),
     ).fetchone()
-    if row and touch:
+    if row and touch and _session_touch_due(row["member_session_last_used_at"], now_dt):
         conn.execute(
             "UPDATE member_sessions SET last_used_at=CURRENT_TIMESTAMP WHERE id=?",
             (row["member_session_id"],),

@@ -55,7 +55,7 @@ def test_log_event_does_not_raise() -> None:
     log_event("quiz_start", status="error", error_code="http_409")
 
 
-def test_health_does_not_write_and_deep_probe_is_explicit(tmp_path: Path) -> None:
+def test_health_does_not_write_and_public_deep_probe_is_disabled(tmp_path: Path) -> None:
     client, settings = make_client(tmp_path)
     with client:
         with connect(settings.db_path) as conn:
@@ -73,13 +73,12 @@ def test_health_does_not_write_and_deep_probe_is_explicit(tmp_path: Path) -> Non
     assert ready.status_code == 200
     assert before is None
     assert after_read_checks is None
-    assert deep.status_code == 200
-    assert deep.json()["db_writable"] is True
+    assert deep.status_code == 404
     with connect(settings.db_path) as conn:
         after_deep = conn.execute(
             "SELECT checked_at FROM health_probes WHERE id=1"
         ).fetchone()
-    assert after_deep is not None
+    assert after_deep is None
 
 
 def test_wal_persists_after_reopening_without_reset(tmp_path: Path) -> None:
