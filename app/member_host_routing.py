@@ -69,9 +69,16 @@ def _with_query(target: str, query: str) -> str:
     return f"{target}{separator}{value}"
 
 
+def _install_member_release_extensions(app: FastAPI) -> FastAPI:
+    secured = install_launch_security_hardening(app)
+    from app.member_performance import install_member_performance
+
+    return install_member_performance(secured)
+
+
 def install_member_host_routing(app: FastAPI) -> FastAPI:
     if getattr(app.state, "member_host_routing_installed", False):
-        return install_launch_security_hardening(app)
+        return _install_member_release_extensions(app)
     app.state.member_host_routing_installed = True
     configured_admin_host = _configured_host(app.state.settings.quiz_public_base_url)
 
@@ -95,7 +102,7 @@ def install_member_host_routing(app: FastAPI) -> FastAPI:
                 )
         return await call_next(request)
 
-    return install_launch_security_hardening(app)
+    return _install_member_release_extensions(app)
 
 
 __all__ = [
