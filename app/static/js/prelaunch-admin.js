@@ -141,7 +141,6 @@
   const installReleaseSubmitGuard = (form) => {
     if (!form || form.dataset.releaseSubmitGuard === 'true') return;
     form.dataset.releaseSubmitGuard = 'true';
-    // admin-ia-v2 has an older guard. Mark this form handled before that file runs.
     form.dataset.sameDayGuard = 'true';
     const confirmed = form.querySelector('[data-same-day-confirm]');
     const dateInput = form.querySelector('[name="issue_date"]');
@@ -161,7 +160,7 @@
         if (button) {
           button.disabled = true;
           button.dataset.originalText = button.textContent || '';
-          button.textContent = 'Создаю…';
+          button.textContent = form.matches('[data-edit-release-form]') ? 'Сохраняю…' : 'Создаю…';
         }
         return;
       }
@@ -172,6 +171,7 @@
       const submitter = event.submitter || form.querySelector('button[type="submit"]');
       try {
         const conflicts = await releaseConflicts(form);
+        let sameDayConfirmed = false;
         if (conflicts.length) {
           const rows = conflicts.map((item) => {
             const time = String(item.starts_at_local || '').slice(11, 16) || 'без времени';
@@ -185,8 +185,9 @@
             'Создать или перенести ещё один выпуск на эту дату?',
           ].join('\n');
           if (!window.confirm(question)) return;
+          sameDayConfirmed = true;
         }
-        if (confirmed) confirmed.value = '1';
+        if (confirmed) confirmed.value = sameDayConfirmed ? '1' : '0';
         form.dataset.releaseReady = '1';
         form.requestSubmit(submitter || undefined);
       } catch (error) {
@@ -263,7 +264,7 @@
     if ((form.method || 'get').toLowerCase() !== 'post') return false;
     if (form.dataset.noAjax === 'true' || form.dataset.fullNavigation === 'true') return false;
     if (form.matches('#quick-question-form, #bulk-question-form, [data-existing-question-form]')) return false;
-    if (form.matches('[data-release-form], [data-edit-release-form]')) return false;
+    if (form.matches('form.campaign-create, [data-release-form], [data-edit-release-form]')) return false;
     if (form.querySelector('input[type="file"]')) return false;
     if ((form.enctype || '').toLowerCase().includes('multipart/form-data')) return false;
     if (form.target && form.target !== '_self') return false;
