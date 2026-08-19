@@ -18,9 +18,10 @@
     <details class="account-security-item" data-security-email>
       <summary><span><small>Почта</small><strong data-security-email-value>—</strong></span><b>Сменить</b></summary>
       <div class="account-security-body">
-        <p>Код подтверждения придёт на новый адрес. После подтверждения новая почта станет логином для входа.</p>
+        <p>Для смены почты подтвердите текущий пароль. Код подтверждения придёт на новый адрес, после чего он станет логином для входа.</p>
         <form class="account-security-form" action="/account/security/email/request" method="post">
           <input type="hidden" name="csrf_token" value="${csrf}">
+          <input type="password" name="current_password" autocomplete="current-password" maxlength="128" placeholder="Текущий пароль" required>
           <input type="email" name="new_email" autocomplete="email" maxlength="254" placeholder="Новая почта" required>
           <button type="submit">Отправить код</button>
         </form>
@@ -64,8 +65,8 @@
         <form class="account-security-form" action="/account/security/password/change" method="post">
           <input type="hidden" name="csrf_token" value="${csrf}">
           <input type="password" name="current_password" autocomplete="current-password" minlength="6" maxlength="128" placeholder="Текущий пароль" required>
-          <input type="password" name="new_password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="Новый пароль" required>
-          <input type="password" name="new_password_confirmation" autocomplete="new-password" minlength="6" maxlength="128" placeholder="Повторите новый пароль" required>
+          <input type="password" name="new_password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Новый пароль" required>
+          <input type="password" name="new_password_confirmation" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Повторите новый пароль" required>
           <button type="submit">Сменить пароль</button>
         </form>
       </div>
