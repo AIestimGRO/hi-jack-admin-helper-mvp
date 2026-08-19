@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import io
 import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.config import Settings
 from app.db import transaction
+from app.launch_security_hardening import _safe_open_image
 from app.main import create_app
 from app.services.member_accounts import _session_touch_due, validate_password
 
@@ -83,6 +86,38 @@ def test_scheme_relative_redirect_is_sanitized_and_headers_are_present(tmp_path)
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["x-frame-options"] == "DENY"
         assert response.headers["referrer-policy"] == "same-origin"
+
+
+def test_private_routes_are_not_browser_cached(tmp_path) -> None:
+    with TestClient(create_app(_settings(tmp_path))) as client:
+        response = client.get("/account/login")
+        assert response.headers["cache-control"] == "no-store"
+
+
+def test_image_dimensions_are_rejected_before_pixel_load(monkeypatch) -> None:
+    original_open = Image.open
+    load_called = False
+
+    class OversizedImage:
+        width = 9000
+        height = 64
+
+        def load(self):
+            nonlocal load_called
+            load_called = True
+
+    monkeypatch.setattr(Image, "open", lambda *_args, **_kwargs: OversizedImage())
+    with pytest.raises(ValueError, match="слишком большое"):
+        _safe_open_image(b"fake")
+    assert load_called is False
+    monkeypatch.setattr(Image, "open", original_open)
+
+
+def test_safe_image_decoder_accepts_normal_image() -> None:
+    output = io.BytesIO()
+    Image.new("RGB", (64, 64), "white").save(output, format="PNG")
+    image = _safe_open_image(output.getvalue())
+    assert image.size == (64, 64)
 
 
 def test_session_touch_is_throttled_to_five_minutes() -> None:
