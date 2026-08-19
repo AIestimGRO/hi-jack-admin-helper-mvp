@@ -52,7 +52,7 @@
       <p class="quiz-schedule-time jackside-welcome-start"></p>
       <ul class="jackside-welcome-points">
         <li>Один стол на весь клуб</li>
-        <li>10 вопросов · 4 минуты 14 секунд · одна попытка · без возврата к ответам</li>
+        <li>Вопросов в выпуске: <strong data-role="main-question-count">{{ jackside.main_question_count if jackside else 0 }}</strong> · общий таймер 4 минуты 14 секунд · одна попытка · без возврата к ответам</li>
         <li>Данный квиз прошли: <strong data-role="completed-count">{{ jackside.completed_count if jackside else 0 }}</strong></li>
         <li>Онлайн сейчас: <strong data-role="online-count">{{ jackside.online_count if jackside else 0 }}</strong></li>
         <li data-role="welcome-prize">414 JACKCOIN победителю</li>
