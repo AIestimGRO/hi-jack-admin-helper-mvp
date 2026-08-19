@@ -44,6 +44,13 @@ def test_fast_member_templates_compile_and_store_page_size_is_six() -> None:
     assert templates.get_template("_vault_catalog_cards_fast.html") is not None
     assert VAULT_PAGE_SIZE == 6
 
+    profile_source = (
+        BASE_DIR / "app" / "templates" / "member_profile_fast.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="member-card account-panel profile-panel-fast"' in profile_source
+    assert 'class="member-card account-panel profile-panel"' not in profile_source
+    assert "Date.now()" not in profile_source
+
 
 def test_member_performance_is_wired_into_runtime(tmp_path) -> None:
     settings = Settings(
