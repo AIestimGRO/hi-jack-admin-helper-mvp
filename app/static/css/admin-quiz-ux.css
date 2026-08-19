@@ -88,37 +88,53 @@
   background: linear-gradient(180deg, rgba(9, 25, 23, .96), rgba(5, 16, 15, .96));
 }
 
-[data-jackside-workspace] .ia-card-actions {
+[data-jackside-workspace] .ia-card-actions,
+[data-jackside-workspace] .ia-row-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-[data-jackside-workspace] .jackside-publish-button {
+[data-jackside-workspace] .jackside-publish-button,
+[data-jackside-workspace] .jackside-check-button,
+[data-jackside-workspace] .jackside-cancel-button {
   min-height: 38px;
-  padding: 8px 14px;
-  border: 1px solid rgba(34, 211, 238, .55);
+  padding: 8px 13px;
   border-radius: 11px;
+  font-weight: 750;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+[data-jackside-workspace] .jackside-publish-button {
+  padding-inline: 14px;
+  border: 1px solid rgba(34, 211, 238, .55);
   background: linear-gradient(135deg, #0e7490, #0891b2);
   color: #fff;
   font-weight: 800;
-  cursor: pointer;
 }
 
 [data-jackside-workspace] .jackside-check-button {
-  min-height: 38px;
-  padding: 8px 13px;
   border: 1px solid rgba(148, 163, 184, .35);
-  border-radius: 11px;
   background: rgba(15, 23, 42, .72);
   color: #e2e8f0;
-  font-weight: 700;
-  cursor: pointer;
+}
+
+[data-jackside-workspace] .jackside-cancel-button {
+  border: 1px solid rgba(248, 113, 113, .42);
+  background: rgba(127, 29, 29, .14);
+  color: #fecaca;
+}
+
+[data-jackside-workspace] .jackside-cancel-button:hover {
+  border-color: rgba(248, 113, 113, .72);
+  background: rgba(127, 29, 29, .26);
 }
 
 [data-jackside-workspace] .jackside-publish-button:disabled,
-[data-jackside-workspace] .jackside-check-button:disabled {
+[data-jackside-workspace] .jackside-check-button:disabled,
+[data-jackside-workspace] .jackside-cancel-button:disabled {
   opacity: .55;
   cursor: wait;
 }
@@ -135,6 +151,11 @@
 [data-jackside-workspace] .type-pill[data-status="scheduled"] {
   border-color: rgba(45, 212, 191, .48);
   color: #99f6e4;
+}
+
+[data-jackside-workspace] .type-pill[data-status="cancelled"],
+[data-jackside-workspace] .type-pill[data-status="closed"] {
+  opacity: .72;
 }
 
 .hj-builder[data-campaign-type="daily_414"] .daily-order-note {
@@ -157,12 +178,15 @@
 
   .quiz-library-actions,
   .jackside-release-actions,
-  [data-jackside-workspace] .ia-card-actions {
+  [data-jackside-workspace] .ia-card-actions,
+  [data-jackside-workspace] .ia-row-actions {
     width: 100%;
   }
 
   .quiz-library-actions > *,
-  .jackside-release-actions > * {
-    flex: 1 1 auto;
+  .jackside-release-actions > *,
+  [data-jackside-workspace] .ia-card-actions > *,
+  [data-jackside-workspace] .ia-row-actions > * {
+    flex: 1 1 145px;
   }
 }
