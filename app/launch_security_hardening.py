@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.routing import APIRoute
+from PIL import Image, UnidentifiedImageError
 
+from app import product_shell
 from app.db import connect
 from app.product_shell import _current_member
 from app.services.member_accounts import verify_password
@@ -17,6 +20,19 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "same-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }
+_PRIVATE_CACHE_PREFIXES = (
+    "/account",
+    "/master",
+    "/admin",
+    "/staff",
+    "/clients",
+    "/login",
+    "/api/account",
+    "/api/admin",
+    "/api/master",
+    "/api/staff",
+    "/api/clients",
+)
 
 
 def _admin_session_valid(request: Request) -> bool:
@@ -68,6 +84,26 @@ def _profile_settings_redirect(message: str, *, error: bool = False) -> Redirect
     return RedirectResponse(f"/account?{urlencode(query)}", status_code=303)
 
 
+def _safe_open_image(data: bytes) -> Image.Image:
+    """Reject oversized raster dimensions before Pillow fully decodes pixels."""
+    try:
+        image = Image.open(io.BytesIO(data))
+        if image.width < 32 or image.height < 32:
+            raise ValueError("Изображение слишком маленькое")
+        if image.width > 8192 or image.height > 8192:
+            raise ValueError("Изображение слишком большое")
+        image.load()
+        return image
+    except ValueError:
+        raise
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
+        raise ValueError("Файл не является поддерживаемым изображением") from exc
+
+
+def _install_safe_image_decoder() -> None:
+    product_shell._open_image = _safe_open_image  # noqa: SLF001
+
+
 def _install_email_change_reauth(app: FastAPI) -> None:
     for route in app.routes:
         if not isinstance(route, APIRoute):
@@ -114,6 +150,7 @@ def install_launch_security_hardening(app: FastAPI) -> FastAPI:
         return app
     app.state.launch_security_hardening_installed = True
     _install_email_change_reauth(app)
+    _install_safe_image_decoder()
 
     @app.middleware("http")
     async def launch_security_middleware(request: Request, call_next):
@@ -134,6 +171,8 @@ def install_launch_security_hardening(app: FastAPI) -> FastAPI:
 
         for name, value in _SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
+        if request.url.path.startswith(_PRIVATE_CACHE_PREFIXES):
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     return app
