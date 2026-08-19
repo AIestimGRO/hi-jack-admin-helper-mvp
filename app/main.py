@@ -33,7 +33,6 @@ from app.hijack_rating_baseline import install_hijack_rating_baseline
 from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.hijack_rating_transfer import install_hijack_rating_transfer
-from app.jackside_flexible_labels import install_jackside_flexible_labels
 from app.jackside_rating_freshness import install_jackside_rating_freshness
 from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
@@ -89,7 +88,6 @@ def _install_extensions(application):
     # installed during app import. init_db is additive/idempotent, so expose the
     # base tables before the legal extension adds its own foreign keys/triggers.
     init_db(application.state.settings.db_path)
-    application = install_jackside_flexible_labels(application)
     application = install_telegram_notifications(application)
     application = install_telegram_transport(application)
     application = install_telegram_scheduler(application)
