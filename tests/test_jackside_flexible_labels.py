@@ -44,9 +44,10 @@ def test_admin_edited_copy_is_not_overwritten(tmp_path) -> None:
     assert row["description"] == "Мой текст"
 
 
-def test_flexible_labels_installed_after_db_init() -> None:
-    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
-    assert "from app.jackside_flexible_labels import install_jackside_flexible_labels" in source
-    assert source.index("init_db(application.state.settings.db_path)") < source.index(
-        "application = install_jackside_flexible_labels(application)"
-    )
+def test_flexible_labels_are_normalized_inside_jackside_validation() -> None:
+    source = (ROOT / "app/jackside_runtime_compat.py").read_text(encoding="utf-8")
+    assert "from app.jackside_flexible_labels import normalize_builtin_perfect_labels" in source
+    assert "normalize_builtin_perfect_labels(conn)" in source
+    assert "install_jackside_flexible_labels" not in (
+        ROOT / "app/main.py"
+    ).read_text(encoding="utf-8")
