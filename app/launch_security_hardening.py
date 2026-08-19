@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
@@ -8,6 +9,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.routing import APIRoute
 from PIL import Image, UnidentifiedImageError
 
+from app import prelaunch_experience as experience
+from app import prelaunch_profile_sharing as profile_sharing
 from app import product_shell
 from app.db import connect
 from app.product_shell import _current_member
@@ -32,6 +35,14 @@ _PRIVATE_CACHE_PREFIXES = (
     "/api/master",
     "/api/staff",
     "/api/clients",
+)
+_PUBLIC_LEGAL_KEYS = (
+    "nickname",
+    "avatar",
+    "result",
+    "place",
+    "titles",
+    "achievements",
 )
 
 
@@ -104,6 +115,50 @@ def _install_safe_image_decoder() -> None:
     product_shell._open_image = _safe_open_image  # noqa: SLF001
 
 
+def _privacy_safe_rating_categories(conn, account_id: int) -> dict[str, bool]:
+    """Visibility may narrow legal consent, never expand it."""
+    consent = conn.execute(
+        """
+        SELECT s.categories_json,s.granted,s.document_version,
+               d.version AS active_version
+        FROM member_public_rating_consent_state s
+        LEFT JOIN legal_reference_documents d
+          ON d.code='public-rating-consent' AND d.is_active=1
+        WHERE s.account_id=?
+        """,
+        (int(account_id),),
+    ).fetchone()
+    if not consent or not int(consent["granted"] or 0):
+        return {}
+    if not consent["active_version"] or str(consent["document_version"]) != str(
+        consent["active_version"]
+    ):
+        return {}
+    try:
+        granted = json.loads(str(consent["categories_json"] or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if not isinstance(granted, dict):
+        return {}
+
+    visibility = profile_sharing._profile_visibility(conn, int(account_id))  # noqa: SLF001
+    result = {
+        key: bool(granted.get(key)) and bool(visibility.get(key))
+        for key in _PUBLIC_LEGAL_KEYS
+    }
+    participation_granted = bool(granted.get("participation_stats"))
+    game_stats = participation_granted and bool(visibility.get("game_stats"))
+    game_history = participation_granted and bool(visibility.get("game_history"))
+    result["participation_stats"] = bool(game_stats or game_history)
+    result["game_stats"] = game_stats
+    result["game_history"] = game_history
+    return result if any(result.values()) else {}
+
+
+def _install_public_profile_consent_guard() -> None:
+    experience._rating_categories = _privacy_safe_rating_categories  # noqa: SLF001
+
+
 def _install_email_change_reauth(app: FastAPI) -> None:
     for route in app.routes:
         if not isinstance(route, APIRoute):
@@ -151,6 +206,7 @@ def install_launch_security_hardening(app: FastAPI) -> FastAPI:
     app.state.launch_security_hardening_installed = True
     _install_email_change_reauth(app)
     _install_safe_image_decoder()
+    _install_public_profile_consent_guard()
 
     @app.middleware("http")
     async def launch_security_middleware(request: Request, call_next):
