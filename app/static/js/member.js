@@ -108,12 +108,14 @@ document.querySelectorAll("[data-reward-activation-countdown]").forEach((output)
 
 // JACKSIDE releases may contain any positive number of main-round questions.
 // Do not present historic /10 notation as if every release had ten questions.
-document.querySelectorAll(".member-stat-card").forEach((card) => {
+document.querySelectorAll(".member-stat-card, .quiz-stat-board article").forEach((card) => {
   const label = card.querySelector("small")?.textContent?.trim() || "";
   if (label !== "Лучший результат") return;
   const value = card.querySelector("strong");
   if (!value) return;
   value.textContent = value.textContent.replace(/\s*\/\s*10\s*$/, "");
   const hint = card.querySelector("span");
-  if (hint && !hint.textContent.trim()) hint.textContent = "правильных ответов";
+  if (!hint) return;
+  hint.textContent = hint.textContent.replace(/^10\/10\s*:/, "идеальных игр:");
+  if (!hint.textContent.trim()) hint.textContent = "правильных ответов";
 });
