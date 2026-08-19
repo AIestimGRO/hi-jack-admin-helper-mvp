@@ -36,6 +36,7 @@ from app.hijack_rating_transfer import install_hijack_rating_transfer
 from app.jackside_rating_freshness import install_jackside_rating_freshness
 from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
+from app.launch_security_hardening import install_launch_security_hardening
 from app.main_impl import *  # noqa: F403,E402
 from app.main_impl import app as _base_app  # noqa: E402
 from app.main_impl import create_app as _base_create_app  # noqa: E402
@@ -120,6 +121,7 @@ def _install_extensions(application):
     application = install_admin_information_architecture(application)
     application = install_admin_access_control(application)
     application = install_member_host_routing(application)
+    application = install_launch_security_hardening(application)
     return _session_middleware_outermost(application)
 
 
