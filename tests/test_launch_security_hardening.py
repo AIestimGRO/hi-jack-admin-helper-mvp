@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import re
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.responses import RedirectResponse
@@ -13,6 +13,9 @@ from PIL import Image
 from app.config import Settings
 from app.db import transaction
 from app.launch_security_hardening import (
+    _AUTH_RATE_RULES,
+    _SlidingWindowLimiter,
+    _is_adult_birth_date,
     _privacy_safe_rating_categories,
     _safe_open_image,
 )
@@ -198,3 +201,57 @@ def test_new_passwords_require_at_least_eight_characters() -> None:
     with pytest.raises(ValueError, match="8 до 128"):
         validate_password("abc1234")
     assert validate_password("abc12345") == "abc12345"
+
+
+def test_sensitive_email_and_auth_routes_have_rate_limits() -> None:
+    assert _AUTH_RATE_RULES[("POST", "/login")] == (30, 60)
+    assert _AUTH_RATE_RULES[("POST", "/account/login")] == (30, 60)
+    for path in (
+        "/account/register/request-code",
+        "/account/register/resend-code",
+        "/account/forgot-password",
+        "/account/security/email/request",
+        "/account/security/phone/request",
+        "/account/security/delete/request",
+    ):
+        assert _AUTH_RATE_RULES[("POST", path)] == (5, 300)
+
+
+def test_sliding_window_limiter_blocks_then_recovers() -> None:
+    limiter = _SlidingWindowLimiter()
+    for moment in (0.0, 1.0, 2.0):
+        assert (
+            limiter.check(
+                bucket="POST:/account/forgot-password",
+                client_key="203.0.113.10",
+                now=moment,
+                limit=3,
+                window_seconds=60,
+            )
+            is None
+        )
+    retry_after = limiter.check(
+        bucket="POST:/account/forgot-password",
+        client_key="203.0.113.10",
+        now=3.0,
+        limit=3,
+        window_seconds=60,
+    )
+    assert retry_after == 57
+    assert (
+        limiter.check(
+            bucket="POST:/account/forgot-password",
+            client_key="203.0.113.10",
+            now=61.0,
+            limit=3,
+            window_seconds=60,
+        )
+        is None
+    )
+
+
+def test_legacy_birthday_gate_rejects_under_18() -> None:
+    today = date(2026, 8, 19)
+    assert _is_adult_birth_date("2008-08-19", today=today) is True
+    assert _is_adult_birth_date("2008-08-20", today=today) is False
+    assert _is_adult_birth_date("not-a-date", today=today) is False
