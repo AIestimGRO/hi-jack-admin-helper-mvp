@@ -1,4 +1,4 @@
-const players = Array.from(document.querySelectorAll("[data-reward-animation-src]"));
+let dotlottieModulePromise = null;
 
 function isStaticSticker(source) {
   try {
@@ -29,18 +29,34 @@ function renderStaticSticker(host, source) {
   host.replaceChildren(image);
 }
 
-const animationPlayers = players.filter((host) => {
-  const source = host.dataset.rewardAnimationSrc;
-  if (!source) return false;
-  if (!isStaticSticker(source)) return true;
-  renderStaticSticker(host, source);
-  return false;
-});
+function dotlottieModule() {
+  if (!dotlottieModulePromise) {
+    dotlottieModulePromise = import("./vendor/dotlottie/dotlottie-wc.js").then((module) => {
+      module.setWasmUrl("/static/js/vendor/dotlottie/dotlottie-player.wasm");
+      return module;
+    });
+  }
+  return dotlottieModulePromise;
+}
 
-if (animationPlayers.length) {
-  import("./vendor/dotlottie/dotlottie-wc.js").then(({ setWasmUrl }) => {
-    setWasmUrl("/static/js/vendor/dotlottie/dotlottie-player.wasm");
-    animationPlayers.forEach((host) => {
+function mountRewardAnimations(root = document) {
+  const hosts = Array.from(root.querySelectorAll("[data-reward-animation-src]"))
+    .filter((host) => !host.dataset.rewardAnimationReady);
+  const animated = [];
+
+  hosts.forEach((host) => {
+    const source = host.dataset.rewardAnimationSrc;
+    if (!source) return;
+    if (isStaticSticker(source)) {
+      renderStaticSticker(host, source);
+      return;
+    }
+    animated.push(host);
+  });
+
+  if (!animated.length) return;
+  dotlottieModule().then(() => {
+    animated.forEach((host) => {
       const source = host.dataset.rewardAnimationSrc;
       if (!source || host.dataset.rewardAnimationReady) return;
       const player = document.createElement("dotlottie-wc");
@@ -55,6 +71,9 @@ if (animationPlayers.length) {
       host.replaceChildren(player);
     });
   }).catch(() => {
-    animationPlayers.forEach((host) => host.classList.add("reward-animation-error"));
+    animated.forEach((host) => host.classList.add("reward-animation-error"));
   });
 }
+
+window.HJCRewardAnimations = { mount: mountRewardAnimations };
+mountRewardAnimations(document);
