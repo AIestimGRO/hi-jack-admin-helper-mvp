@@ -34,6 +34,41 @@ def _sendable_chat_id(value: Any) -> str | None:
         return None
 
 
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+    )
+
+
+def _marketing_allowed_client_ids(conn: sqlite3.Connection) -> set[int]:
+    required = {
+        "member_accounts",
+        "member_optional_consent_state",
+        "legal_reference_documents",
+    }
+    if not all(_table_exists(conn, table) for table in required):
+        return set()
+    rows = conn.execute(
+        """
+        SELECT DISTINCT ma.client_id
+        FROM member_accounts ma
+        JOIN member_optional_consent_state consent
+          ON consent.account_id=ma.id
+        JOIN legal_reference_documents document
+          ON document.code='marketing-consent'
+         AND document.is_active=1
+         AND document.version=consent.document_version
+        WHERE ma.is_active=1
+          AND consent.code='marketing-consent'
+          AND consent.granted=1
+        """
+    ).fetchall()
+    return {int(row["client_id"]) for row in rows}
+
+
 def safe_audience_count(
     conn: sqlite3.Connection,
     category: str = "club_updates",
@@ -44,7 +79,8 @@ def safe_audience_count(
     )
     rows = conn.execute(
         f"""
-        SELECT COALESCE(
+        SELECT c.id,
+               COALESCE(
                    NULLIF(c.telegram_user_id,''),
                    NULLIF(c.telegram_id,'')
                ) AS telegram_chat_id
@@ -59,7 +95,18 @@ def safe_audience_count(
           AND COALESCE(c.client_status,'existing')<>'deleted'
         """
     ).fetchall()
-    return sum(1 for row in rows if _sendable_chat_id(row["telegram_chat_id"]))
+    marketing_allowed = (
+        _marketing_allowed_client_ids(conn) if category == "marketing" else None
+    )
+    return sum(
+        1
+        for row in rows
+        if _sendable_chat_id(row["telegram_chat_id"])
+        and (
+            marketing_allowed is None
+            or int(row["id"]) in marketing_allowed
+        )
+    )
 
 
 def safe_queue_manual_campaign(
@@ -121,6 +168,9 @@ def safe_queue_manual_campaign(
         params,
     ).fetchall()
 
+    marketing_allowed = (
+        _marketing_allowed_client_ids(conn) if category == "marketing" else None
+    )
     payload = {
         "text": str(campaign["message_text"]),
         "category": category,
@@ -129,6 +179,8 @@ def safe_queue_manual_campaign(
     }
     queued = 0
     for row in rows:
+        if marketing_allowed is not None and int(row["id"]) not in marketing_allowed:
+            continue
         chat_id = _sendable_chat_id(row["telegram_chat_id"])
         if not chat_id:
             continue
