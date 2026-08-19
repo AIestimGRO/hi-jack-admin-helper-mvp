@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.db import transaction
 from app.main import create_app
+from app.services.member_accounts import _session_touch_due, validate_password
 
 
 def _settings(tmp_path) -> Settings:
@@ -80,3 +83,16 @@ def test_scheme_relative_redirect_is_sanitized_and_headers_are_present(tmp_path)
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["x-frame-options"] == "DENY"
         assert response.headers["referrer-policy"] == "same-origin"
+
+
+def test_session_touch_is_throttled_to_five_minutes() -> None:
+    now = datetime(2026, 8, 19, 6, 30, tzinfo=timezone.utc)
+    assert _session_touch_due(None, now) is True
+    assert _session_touch_due((now - timedelta(minutes=6)).isoformat(), now) is True
+    assert _session_touch_due((now - timedelta(minutes=1)).isoformat(), now) is False
+
+
+def test_new_passwords_require_at_least_eight_characters() -> None:
+    with pytest.raises(ValueError, match="8 до 128"):
+        validate_password("abc1234")
+    assert validate_password("abc12345") == "abc12345"
