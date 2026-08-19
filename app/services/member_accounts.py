@@ -32,7 +32,9 @@ def _timestamp(value: datetime) -> str:
 def validate_password(password: str) -> str:
     value = str(password or "")
     if not MIN_PASSWORD_LENGTH <= len(value) <= MAX_PASSWORD_LENGTH:
-        raise ValueError("Пароль должен содержать от 8 до 128 символов")
+        raise ValueError(
+            f"Пароль должен содержать от {MIN_PASSWORD_LENGTH} до {MAX_PASSWORD_LENGTH} символов"
+        )
     if not any(character.isalpha() for character in value):
         raise ValueError("Добавьте в пароль хотя бы одну букву")
     return value
