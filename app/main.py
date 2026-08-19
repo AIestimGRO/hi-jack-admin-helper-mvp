@@ -57,6 +57,7 @@ from app.referral_registration_integrity import install_referral_registration_in
 from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
 from app.staff_quiz_admin import install_staff_quiz_admin
+from app.store_card_tab_hotfix import install_store_card_tab_hotfix
 from app.telegram_notifications import install_telegram_notifications
 from app.telegram_safety_hotfix import install_telegram_safety_hotfix
 from app.telegram_scheduler import install_telegram_scheduler
@@ -122,6 +123,7 @@ def _install_extensions(application):
     application = install_admin_information_architecture(application)
     application = install_admin_access_control(application)
     application = install_member_host_routing(application)
+    application = install_store_card_tab_hotfix(application)
     return _session_middleware_outermost(application)
 
 
