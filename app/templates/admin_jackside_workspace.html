@@ -51,7 +51,7 @@
       <article class="ia-release-row">
         <div><strong>{{ issue.issue_date }}</strong><span>{{ issue.title }}</span></div>
         <span class="type-pill">{{ issue.status }}</span>
-        <span>{{ issue.main_question_count }}/10 · финал {{ issue.final_question_count }}</span>
+        <span>{{ issue.main_question_count }} осн. · финал {{ issue.final_question_count }}</span>
         <div class="ia-row-actions">
           {% if issue.campaign_id %}<a href="/master/quiz-builder/{{ issue.campaign_id }}">Вопросы</a>{% endif %}
           {% if issue.status in ['draft','scheduled','lobby'] %}<button type="button" class="ia-link-button" data-edit-issue="{{ issue.id }}">Изменить</button>{% endif %}
@@ -75,7 +75,7 @@
         <select name="source" data-release-source>
           <option value="">Пустой новый выпуск</option>
           <optgroup label="Готовые выпуски">
-            {% for issue in issues %}{% if issue.main_question_count or issue.final_question_count %}<option value="issue:{{ issue.id }}" {% if selected_source == 'issue:' ~ issue.id %}selected{% endif %}>{{ issue.issue_date }} · {{ issue.title }} · {{ issue.main_question_count }}/10 + финал {{ issue.final_question_count }}</option>{% endif %}{% endfor %}
+            {% for issue in issues %}{% if issue.main_question_count or issue.final_question_count %}<option value="issue:{{ issue.id }}" {% if selected_source == 'issue:' ~ issue.id %}selected{% endif %}>{{ issue.issue_date }} · {{ issue.title }} · {{ issue.main_question_count }} осн. + финал {{ issue.final_question_count }}</option>{% endif %}{% endfor %}
           </optgroup>
           <optgroup label="Старые квизы — можно использовать как шаблон повторно">
             {% for item in legacy %}<option value="legacy:{{ item.id }}" {% if selected_source == 'legacy:' ~ item.id %}selected{% endif %}>{{ item.title }} · {{ item.main_question_count }} осн. · финал {{ item.final_question_count }} · {{ item.submission_count }} прохожд.</option>{% endfor %}
