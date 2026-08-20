@@ -39,6 +39,12 @@
     return app.querySelector('[data-screen].active')?.dataset.screen || '';
   }
 
+  function showScreen(name) {
+    app.querySelectorAll('[data-screen]').forEach((screen) => {
+      screen.classList.toggle('active', screen.dataset.screen === name);
+    });
+  }
+
   function applyScreenBackground() {
     const screen = activeScreenName();
     if (screen === 'final-question') {
@@ -54,107 +60,6 @@
       minutes: String(Math.floor(totalSeconds / 60)).padStart(2, '0'),
       seconds: String(totalSeconds % 60).padStart(2, '0'),
     };
-  }
-
-  function ensureIntroUrgencyStyles() {
-    if (document.getElementById('jackside-intro-urgency-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'jackside-intro-urgency-styles';
-    style.textContent = `
-      .jackside-intro-urgency {
-        position: relative;
-        overflow: hidden;
-        margin: 20px 0 18px;
-        padding: 16px 14px 18px;
-        border: 1px solid rgba(64, 224, 208, .42);
-        border-radius: 22px;
-        text-align: center;
-        background:
-          radial-gradient(circle at 50% 0%, rgba(29, 211, 198, .14), transparent 58%),
-          linear-gradient(180deg, rgba(7, 30, 28, .92), rgba(2, 12, 12, .94));
-        box-shadow:
-          0 0 0 1px rgba(255,255,255,.025) inset,
-          0 16px 36px rgba(0,0,0,.24),
-          0 0 26px rgba(21, 190, 184, .08);
-      }
-      .jackside-intro-urgency::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.055) 48%, transparent 64%);
-      }
-      .jackside-intro-urgency .urgency-kicker {
-        position: relative;
-        display: block;
-        margin: 0 0 8px;
-        color: #8df4e9;
-        font-size: 12px;
-        font-weight: 800;
-        letter-spacing: .12em;
-        text-transform: uppercase;
-      }
-      .jackside-intro-urgency .urgency-title {
-        position: relative;
-        display: block;
-        margin: 0;
-        color: #fff;
-        font-size: clamp(18px, 5vw, 24px);
-        font-weight: 850;
-        line-height: 1.08;
-      }
-      .jackside-intro-urgency .urgency-caption {
-        position: relative;
-        display: block;
-        margin: 9px 0 11px;
-        color: rgba(222, 247, 243, .72);
-        font-size: 12px;
-        line-height: 1.25;
-      }
-      .jackside-intro-clock {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 176px;
-        padding: 10px 20px 11px;
-        border: 1px solid rgba(78, 235, 222, .52);
-        border-radius: 999px;
-        background: rgba(2, 15, 15, .88);
-        box-shadow:
-          0 0 22px rgba(38, 222, 209, .16),
-          inset 0 0 18px rgba(25, 180, 172, .08);
-        color: #b9fff8;
-        font-variant-numeric: tabular-nums;
-        font-weight: 900;
-        letter-spacing: .04em;
-        line-height: 1;
-      }
-      .jackside-intro-clock .urgency-mm,
-      .jackside-intro-clock .urgency-ss {
-        display: inline-block;
-        min-width: 2.1ch;
-        font-size: clamp(30px, 9vw, 42px);
-        text-shadow: 0 0 16px rgba(80, 244, 229, .28);
-      }
-      .jackside-intro-clock .urgency-colon {
-        display: inline-block;
-        margin: 0 5px 3px;
-        color: #47d8cc;
-        font-size: clamp(26px, 7vw, 36px);
-        animation: jacksideUrgencyBlink 1s steps(2,end) infinite;
-      }
-      @keyframes jacksideUrgencyBlink { 50% { opacity: .28; } }
-      @media (prefers-reduced-motion: reduce) {
-        .jackside-intro-clock .urgency-colon { animation: none; }
-      }
-      .final-outcome-actions {
-        display: grid;
-        gap: 10px;
-        width: 100%;
-      }
-    `;
-    document.head.append(style);
   }
 
   function ensureIntroUrgency(screen) {
@@ -200,6 +105,21 @@
     });
   }
 
+  function cleanLobbyMinimumCopy() {
+    const lobby = app.querySelector('[data-screen="final-lobby"]');
+    if (!lobby) return;
+    lobby.querySelectorAll('*').forEach((node) => {
+      if (node.children.length) return;
+      const value = node.textContent || '';
+      if (!value.includes('нужно минимум')) return;
+      node.textContent = value
+        .replace(/\s*\(нужно минимум\s+\d+\)/gi, '')
+        .replace(/нужно минимум\s+\d+/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    });
+  }
+
   function decorateFinalOutcomeActions() {
     const screen = app.querySelector('[data-screen="final-outcome"]');
     const existing = screen?.querySelector('.final-account-link');
@@ -222,6 +142,32 @@
       rating.textContent = 'Открыть рейтинг';
       actions.append(rating);
     }
+  }
+
+  function renderRecoveredFinalOutcome(data) {
+    if (!data || data.state === 'pending' || data.state === 'final_question') return false;
+    const screen = app.querySelector('[data-screen="final-outcome"]');
+    if (!screen) return false;
+    const mark = screen.querySelector('.final-outcome-mark');
+    const kicker = screen.querySelector('.final-outcome-kicker');
+    const title = screen.querySelector('.final-outcome-title');
+    const message = screen.querySelector('.final-outcome-message');
+    if (kicker) kicker.textContent = 'Финальный стол';
+    if (mark) mark.textContent = data.state === 'winner' ? '★' : '♠';
+    if (title) {
+      if (data.state === 'winner') title.textContent = 'Победа!';
+      else if (data.state === 'cancelled') title.textContent = 'Финальный стол не состоялся';
+      else title.textContent = 'Финальный стол завершён';
+    }
+    if (message) message.textContent = data.message || 'Результат сохранён.';
+    if (data.state === 'winner') app.classList.add('quiz-winner');
+    finalDeadline = null;
+    finalQuestionIndex = null;
+    finalBackground = '';
+    clearBackground();
+    showScreen('final-outcome');
+    decorateFinalOutcomeActions();
+    return true;
   }
 
   function rememberMeta(data) {
@@ -254,6 +200,19 @@
     applyScreenBackground();
   }
 
+  async function fetchPersistedFinal() {
+    try {
+      const response = await originalFetch(
+        `/api/jackside/final-result?campaign=${encodeURIComponent(campaign)}`,
+        { headers: { Accept: 'application/json' }, cache: 'no-store' },
+      );
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (_) {
+      return null;
+    }
+  }
+
   window.fetch = async (...args) => {
     const response = await originalFetch(...args);
     const target = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
@@ -261,6 +220,16 @@
       response.clone().json().then(rememberMeta).catch(() => {});
     }
     if (target.includes('/api/quiz/final-table/status')) {
+      if (response.status === 404) {
+        const recovered = await fetchPersistedFinal();
+        if (recovered) {
+          rememberStatus(recovered);
+          return new Response(JSON.stringify(recovered), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
       response.clone().json().then(rememberStatus).catch(() => {});
     }
     return response;
@@ -281,7 +250,7 @@
       for (let attempt = 0; attempt < 30; attempt += 1) {
         if (activeScreenName() !== 'final-question') return;
         try {
-          const response = await originalFetch(
+          const response = await window.fetch(
             `/api/quiz/final-table/status?campaign=${encodeURIComponent(campaign)}`,
             { headers: { Accept: 'application/json' }, cache: 'no-store' },
           );
@@ -289,23 +258,25 @@
             const data = await response.json();
             const previousIndex = finalQuestionIndex;
             rememberStatus(data);
+            if (renderRecoveredFinalOutcome(data)) return;
             const changedQuestion = (
               data.state === 'final_question'
               && Number(data.question_index) !== Number(previousIndex)
             );
-            if (data.state !== 'final_question' || changedQuestion) {
+            if (changedQuestion) {
               window.location.reload();
               return;
             }
-          } else if (response.status === 404 && attempt >= 2) {
-            window.location.reload();
-            return;
           }
         } catch (_) {
           // Retry while the server remains authoritative for final resolution.
         }
         await new Promise((resolve) => window.setTimeout(resolve, attempt < 8 ? 350 : 750));
       }
+
+      const recovered = await fetchPersistedFinal();
+      if (recovered && renderRecoveredFinalOutcome(recovered)) return;
+      if (waiting) waiting.textContent = 'Результат сохраняется. Попробуйте обновить через несколько секунд.';
     } finally {
       resolving = false;
     }
@@ -314,6 +285,7 @@
   function deadlineTick() {
     applyScreenBackground();
     updateIntroUrgency();
+    cleanLobbyMinimumCopy();
     decorateFinalOutcomeActions();
     if (activeScreenName() !== 'final-question' || !Number.isFinite(finalDeadline)) return;
     if (Date.now() + serverOffset < finalDeadline) return;
@@ -325,6 +297,7 @@
   const screenObserver = new MutationObserver(() => {
     applyScreenBackground();
     updateIntroUrgency();
+    cleanLobbyMinimumCopy();
     decorateFinalOutcomeActions();
     deadlineTick();
   });
@@ -339,8 +312,8 @@
     }
   });
 
-  ensureIntroUrgencyStyles();
   decorateFinalOutcomeActions();
+  cleanLobbyMinimumCopy();
   clearBackground();
   updateIntroUrgency();
   window.setInterval(deadlineTick, 250);
