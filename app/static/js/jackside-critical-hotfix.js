@@ -103,6 +103,13 @@
               window.location.reload();
               return;
             }
+          } else if (response.status === 404 && attempt >= 2) {
+            // The issue-backed campaign can fall out of the normal active lookup
+            // immediately after its final window. Server middleware reconciles the
+            // stored final table before this response, so reload the quiz shell and
+            // let it render the persisted completed/no-winner outcome.
+            window.location.reload();
+            return;
           }
         } catch (_) {
           // The regular poll and this watchdog both retry; keep the player on a
