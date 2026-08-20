@@ -7,6 +7,7 @@ import pytest
 
 from app.db import init_db, transaction
 from app.jackside_critical_hotfix import (
+    reconcile_expired_jackside_final,
     refresh_jackside_issue_question_counts,
     rewrite_jackside_quiz_html,
 )
@@ -240,6 +241,72 @@ def test_solo_jackside_final_always_resolves_after_deadline(
     assert final_status == expected_finalist_status
 
 
+def test_expired_multiplayer_final_reconciles_without_active_campaign_lookup(tmp_path) -> None:
+    db_path = tmp_path / "expired-multi.sqlite3"
+    init_db(db_path)
+    start = datetime(2026, 8, 20, 8, 0, 14, tzinfo=timezone.utc)
+    campaign_code = "jackside_20260820_1055"
+    with transaction(db_path) as conn:
+        for number in range(1, 5):
+            _seed_candidate(conn, campaign_code=campaign_code, number=number)
+        table = ensure_final_table(
+            conn,
+            campaign_code=campaign_code,
+            campaign_version=1,
+            starts_at=start,
+            questions=[{"id": "f1", "time_limit_seconds": 44}],
+            question_time_seconds=44,
+            prize_type="jackcoin",
+            prize_jackcoin_amount=500,
+        )
+        live = reconcile_final_table(
+            conn,
+            final_table_id=int(table["id"]),
+            now=start,
+        )
+        assert live["status"] == "live"
+        finalists = conn.execute(
+            "SELECT * FROM daily_414_finalists WHERE final_table_id=? ORDER BY seed",
+            (table["id"],),
+        ).fetchall()
+        for index, finalist in enumerate(finalists[:2], start=1):
+            conn.execute(
+                """
+                INSERT INTO daily_414_final_answers(
+                    final_table_id,finalist_id,question_index,question_code,
+                    answer_json,is_correct,response_time_ms,answered_at
+                ) VALUES (?, ?, 0, 'f1', '"wrong"', 0, ?, ?)
+                """,
+                (
+                    table["id"],
+                    finalist["id"],
+                    20000 + index * 1000,
+                    (start + timedelta(seconds=20 + index)).isoformat(),
+                ),
+            )
+        changed = reconcile_expired_jackside_final(
+            conn,
+            campaign_code=campaign_code,
+            now=start + timedelta(seconds=45),
+        )
+        completed = conn.execute(
+            "SELECT * FROM daily_414_final_tables WHERE id=?",
+            (table["id"],),
+        ).fetchone()
+        statuses = [
+            row[0]
+            for row in conn.execute(
+                "SELECT status FROM daily_414_finalists WHERE final_table_id=? ORDER BY seed",
+                (table["id"],),
+            ).fetchall()
+        ]
+
+    assert changed is True
+    assert completed["status"] == "completed"
+    assert completed["outcome"] == "no_winner"
+    assert statuses == ["eliminated", "eliminated", "eliminated", "eliminated"]
+
+
 def test_jackside_section_background_is_not_promoted_to_campaign_background() -> None:
     source = (
         '<html><body><main id="quiz-app" data-campaign-type="daily_414" '
@@ -267,4 +334,5 @@ def test_final_watchdog_tracks_server_deadline_and_section_background() -> None:
     assert "question_deadline_at" in source
     assert "question?.section?.background_image" in source
     assert "visibilitychange" in source
+    assert "response.status === 404" in source
     assert "Подводим итог" in source
