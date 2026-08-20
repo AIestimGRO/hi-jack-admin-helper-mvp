@@ -3,14 +3,16 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Request
 
 from app.db import transaction
+from app.services.daily_414_final import final_table_needs_reconcile, reconcile_final_table
 
 
-ASSET_VERSION = "jackside-critical-20260819-2"
+ASSET_VERSION = "jackside-critical-20260820-3"
 _SCRIPT_TAG = (
     '<script src="/static/js/jackside-critical-hotfix.js?'
     f'v={ASSET_VERSION}"></script>'
@@ -69,6 +71,38 @@ def refresh_jackside_issue_question_counts(conn: sqlite3.Connection) -> int:
     return changed
 
 
+def reconcile_expired_jackside_final(
+    conn: sqlite3.Connection,
+    *,
+    campaign_code: str,
+    now: datetime | None = None,
+) -> bool:
+    """Resolve a stale JACKSIDE final even if the normal status lookup later 404s."""
+    code = str(campaign_code or "").strip()
+    if not code.startswith("jackside_"):
+        return False
+    table = conn.execute(
+        """
+        SELECT * FROM daily_414_final_tables
+        WHERE campaign_code=?
+        ORDER BY campaign_version DESC,id DESC
+        LIMIT 1
+        """,
+        (code,),
+    ).fetchone()
+    if not table or table["status"] in {"completed", "unavailable"}:
+        return False
+    current = now or datetime.now(timezone.utc)
+    if not final_table_needs_reconcile(table, now=current):
+        return False
+    reconcile_final_table(
+        conn,
+        final_table_id=int(table["id"]),
+        now=current,
+    )
+    return True
+
+
 def rewrite_jackside_quiz_html(html: str) -> str:
     """Keep section artwork section-scoped and load the final-flow watchdog."""
     if 'id="quiz-app"' not in html or 'data-campaign-type="daily_414"' not in html:
@@ -106,6 +140,18 @@ def install_jackside_critical_hotfix(app: FastAPI) -> FastAPI:
             with transaction(settings.db_path) as conn:
                 refresh_jackside_issue_question_counts(conn)
 
+        if (
+            request.method == "GET"
+            and request.url.path == "/api/quiz/final-table/status"
+        ):
+            campaign = str(request.query_params.get("campaign") or "").strip()
+            if campaign.startswith("jackside_"):
+                with transaction(settings.db_path) as conn:
+                    reconcile_expired_jackside_final(
+                        conn,
+                        campaign_code=campaign,
+                    )
+
         response = await call_next(request)
         if request.method != "GET":
             return response
@@ -140,6 +186,7 @@ def install_jackside_critical_hotfix(app: FastAPI) -> FastAPI:
 __all__ = [
     "ASSET_VERSION",
     "install_jackside_critical_hotfix",
+    "reconcile_expired_jackside_final",
     "refresh_jackside_issue_question_counts",
     "rewrite_jackside_builder_html",
     "rewrite_jackside_quiz_html",
