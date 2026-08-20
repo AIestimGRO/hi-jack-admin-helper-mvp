@@ -1,0 +1,113 @@
+.jackside-intro-urgency {
+  position: relative !important;
+  display: block !important;
+  overflow: hidden;
+  margin: 22px 0 20px !important;
+  padding: 18px 16px 20px !important;
+  border: 1px solid rgba(78,235,222,.42) !important;
+  border-radius: 24px !important;
+  text-align: center !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(48,229,215,.16), transparent 58%),
+    linear-gradient(180deg, rgba(7,31,29,.96), rgba(2,12,12,.96)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.025),
+    0 18px 42px rgba(0,0,0,.28),
+    0 0 30px rgba(27,205,194,.10) !important;
+}
+
+.jackside-intro-urgency::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(118deg, transparent 28%, rgba(255,255,255,.05) 48%, transparent 66%);
+}
+
+.jackside-intro-urgency .urgency-kicker {
+  position: relative;
+  display: block !important;
+  margin: 0 0 7px !important;
+  color: #6ce8dc !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: .18em !important;
+  line-height: 1.2 !important;
+  text-transform: uppercase;
+}
+
+.jackside-intro-urgency .urgency-title {
+  position: relative;
+  display: block !important;
+  margin: 0 auto !important;
+  max-width: 420px;
+  color: #fff !important;
+  font-size: clamp(21px, 6vw, 28px) !important;
+  font-weight: 900 !important;
+  line-height: 1.06 !important;
+  letter-spacing: -.02em !important;
+}
+
+.jackside-intro-urgency .urgency-caption {
+  position: relative;
+  display: block !important;
+  margin: 10px 0 12px !important;
+  color: rgba(218,246,242,.76) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+}
+
+.jackside-intro-clock {
+  position: relative;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 190px;
+  padding: 11px 22px 12px !important;
+  border: 1px solid rgba(84,244,231,.62) !important;
+  border-radius: 999px !important;
+  background: rgba(1,14,14,.95) !important;
+  box-shadow:
+    inset 0 0 22px rgba(33,210,199,.10),
+    0 0 26px rgba(37,224,210,.18) !important;
+  color: #bafff8 !important;
+  font-variant-numeric: tabular-nums;
+  line-height: 1 !important;
+}
+
+.jackside-intro-clock .urgency-mm,
+.jackside-intro-clock .urgency-ss {
+  display: inline-block !important;
+  min-width: 2.1ch;
+  color: #c7fff9 !important;
+  font-size: clamp(34px, 10vw, 46px) !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  letter-spacing: .035em !important;
+  text-shadow: 0 0 18px rgba(80,244,229,.36);
+}
+
+.jackside-intro-clock .urgency-colon {
+  display: inline-block !important;
+  margin: 0 6px 4px !important;
+  color: #4ce6d8 !important;
+  font-size: clamp(28px, 8vw, 38px) !important;
+  font-style: normal !important;
+  font-weight: 900 !important;
+  animation: jacksideUrgencyBlink 1s steps(2,end) infinite;
+}
+
+@keyframes jacksideUrgencyBlink {
+  50% { opacity: .28; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jackside-intro-clock .urgency-colon { animation: none; }
+}
+
+.final-outcome-actions {
+  display: grid !important;
+  gap: 10px !important;
+  width: 100% !important;
+}
