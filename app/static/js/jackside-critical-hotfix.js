@@ -12,6 +12,9 @@
   let resolving = false;
   let lastForcedAt = 0;
 
+  const initialServerNow = Date.parse(app.dataset.serverNow || '');
+  if (Number.isFinite(initialServerNow)) serverOffset = initialServerNow - Date.now();
+
   app.dataset.campaignBackground = '';
 
   function clearBackground() {
@@ -42,6 +45,99 @@
       return;
     }
     if (screen !== 'question') clearBackground();
+  }
+
+  function formatCountdown(milliseconds) {
+    const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function ensureIntroUrgencyStyles() {
+    if (document.getElementById('jackside-intro-urgency-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'jackside-intro-urgency-styles';
+    style.textContent = `
+      .jackside-intro-urgency {
+        margin: 16px 0;
+        padding: 14px 16px;
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 16px;
+        text-align: center;
+        background: rgba(0,0,0,.24);
+      }
+      .jackside-intro-urgency strong,
+      .jackside-intro-urgency span { display: block; }
+      .jackside-intro-urgency strong { font-size: 1rem; }
+      .jackside-intro-urgency span { margin-top: 6px; opacity: .86; }
+      .jackside-intro-urgency b {
+        font-size: 1.45rem;
+        letter-spacing: .04em;
+        animation: jacksideUrgencyBlink 1s steps(2,end) infinite;
+      }
+      @keyframes jacksideUrgencyBlink { 50% { opacity: .35; } }
+      @media (prefers-reduced-motion: reduce) {
+        .jackside-intro-urgency b { animation: none; }
+      }
+      .final-outcome-actions {
+        display: grid;
+        gap: 10px;
+        width: 100%;
+      }
+    `;
+    document.head.append(style);
+  }
+
+  function ensureIntroUrgency(screen) {
+    let box = screen.querySelector('.jackside-intro-urgency');
+    if (box) return box;
+    box = document.createElement('div');
+    box.className = 'jackside-intro-urgency';
+    box.hidden = true;
+    box.innerHTML = '<strong>Торопитесь, квиз уже начался</strong><span>До конца квиза осталось</span><b>0:00</b>';
+    const firstAction = screen.querySelector('button, .quiz-primary, .quiz-actions');
+    if (firstAction) firstAction.before(box);
+    else screen.append(box);
+    return box;
+  }
+
+  function updateIntroUrgency() {
+    const start = Date.parse(app.dataset.activeFrom || '');
+    const end = Date.parse(app.dataset.activeUntil || '');
+    const now = Date.now() + serverOffset;
+    const active = Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end;
+    ['welcome', 'daily-prize', 'daily-jackcoin'].forEach((name) => {
+      const screen = app.querySelector(`[data-screen="${name}"]`);
+      if (!screen) return;
+      const box = ensureIntroUrgency(screen);
+      box.hidden = !active;
+      if (active) box.querySelector('b').textContent = formatCountdown(end - now);
+    });
+  }
+
+  function decorateFinalOutcomeActions() {
+    const screen = app.querySelector('[data-screen="final-outcome"]');
+    const existing = screen?.querySelector('.final-account-link');
+    if (!screen || !existing) return;
+    existing.href = '/account';
+    existing.textContent = 'Вернуться в JACKSIDE';
+
+    let actions = screen.querySelector('.final-outcome-actions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.className = 'final-outcome-actions';
+      existing.replaceWith(actions);
+      actions.append(existing);
+    }
+
+    if (!actions.querySelector('.final-rating-link')) {
+      const rating = document.createElement('a');
+      rating.className = 'quiz-secondary final-rating-link';
+      rating.href = '/account?tab=rating';
+      rating.textContent = 'Открыть рейтинг';
+      actions.append(rating);
+    }
   }
 
   function rememberStatus(data) {
@@ -104,16 +200,11 @@
               return;
             }
           } else if (response.status === 404 && attempt >= 2) {
-            // The issue-backed campaign can fall out of the normal active lookup
-            // immediately after its final window. Server middleware reconciles the
-            // stored final table before this response, so reload the quiz shell and
-            // let it render the persisted completed/no-winner outcome.
             window.location.reload();
             return;
           }
         } catch (_) {
-          // The regular poll and this watchdog both retry; keep the player on a
-          // controlled resolving state instead of leaving a dead 0:00 screen.
+          // Retry while the server remains authoritative for final resolution.
         }
         await new Promise((resolve) => window.setTimeout(resolve, attempt < 8 ? 350 : 750));
       }
@@ -124,6 +215,8 @@
 
   function deadlineTick() {
     applyScreenBackground();
+    updateIntroUrgency();
+    decorateFinalOutcomeActions();
     if (activeScreenName() !== 'final-question' || !Number.isFinite(finalDeadline)) return;
     if (Date.now() + serverOffset < finalDeadline) return;
     const button = app.querySelector('.final-answer-button');
@@ -133,6 +226,8 @@
 
   const screenObserver = new MutationObserver(() => {
     applyScreenBackground();
+    updateIntroUrgency();
+    decorateFinalOutcomeActions();
     deadlineTick();
   });
   app.querySelectorAll('[data-screen]').forEach((screen) => {
@@ -146,6 +241,9 @@
     }
   });
 
+  ensureIntroUrgencyStyles();
+  decorateFinalOutcomeActions();
   clearBackground();
+  updateIntroUrgency();
   window.setInterval(deadlineTick, 250);
 })();
