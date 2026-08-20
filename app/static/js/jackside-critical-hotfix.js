@@ -11,6 +11,7 @@
   let finalBackground = '';
   let resolving = false;
   let lastForcedAt = 0;
+  let mainRoundSeconds = 254;
 
   const initialServerNow = Date.parse(app.dataset.serverNow || '');
   if (Number.isFinite(initialServerNow)) serverOffset = initialServerNow - Date.now();
@@ -47,11 +48,12 @@
     if (screen !== 'question') clearBackground();
   }
 
-  function formatCountdown(milliseconds) {
+  function countdownParts(milliseconds) {
     const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    return {
+      minutes: String(Math.floor(totalSeconds / 60)).padStart(2, '0'),
+      seconds: String(totalSeconds % 60).padStart(2, '0'),
+    };
   }
 
   function ensureIntroUrgencyStyles() {
@@ -60,25 +62,91 @@
     style.id = 'jackside-intro-urgency-styles';
     style.textContent = `
       .jackside-intro-urgency {
-        margin: 16px 0;
-        padding: 14px 16px;
-        border: 1px solid rgba(255,255,255,.18);
-        border-radius: 16px;
+        position: relative;
+        overflow: hidden;
+        margin: 20px 0 18px;
+        padding: 16px 14px 18px;
+        border: 1px solid rgba(64, 224, 208, .42);
+        border-radius: 22px;
         text-align: center;
-        background: rgba(0,0,0,.24);
+        background:
+          radial-gradient(circle at 50% 0%, rgba(29, 211, 198, .14), transparent 58%),
+          linear-gradient(180deg, rgba(7, 30, 28, .92), rgba(2, 12, 12, .94));
+        box-shadow:
+          0 0 0 1px rgba(255,255,255,.025) inset,
+          0 16px 36px rgba(0,0,0,.24),
+          0 0 26px rgba(21, 190, 184, .08);
       }
-      .jackside-intro-urgency strong,
-      .jackside-intro-urgency span { display: block; }
-      .jackside-intro-urgency strong { font-size: 1rem; }
-      .jackside-intro-urgency span { margin-top: 6px; opacity: .86; }
-      .jackside-intro-urgency b {
-        font-size: 1.45rem;
+      .jackside-intro-urgency::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.055) 48%, transparent 64%);
+      }
+      .jackside-intro-urgency .urgency-kicker {
+        position: relative;
+        display: block;
+        margin: 0 0 8px;
+        color: #8df4e9;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+      .jackside-intro-urgency .urgency-title {
+        position: relative;
+        display: block;
+        margin: 0;
+        color: #fff;
+        font-size: clamp(18px, 5vw, 24px);
+        font-weight: 850;
+        line-height: 1.08;
+      }
+      .jackside-intro-urgency .urgency-caption {
+        position: relative;
+        display: block;
+        margin: 9px 0 11px;
+        color: rgba(222, 247, 243, .72);
+        font-size: 12px;
+        line-height: 1.25;
+      }
+      .jackside-intro-clock {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 176px;
+        padding: 10px 20px 11px;
+        border: 1px solid rgba(78, 235, 222, .52);
+        border-radius: 999px;
+        background: rgba(2, 15, 15, .88);
+        box-shadow:
+          0 0 22px rgba(38, 222, 209, .16),
+          inset 0 0 18px rgba(25, 180, 172, .08);
+        color: #b9fff8;
+        font-variant-numeric: tabular-nums;
+        font-weight: 900;
         letter-spacing: .04em;
+        line-height: 1;
+      }
+      .jackside-intro-clock .urgency-mm,
+      .jackside-intro-clock .urgency-ss {
+        display: inline-block;
+        min-width: 2.1ch;
+        font-size: clamp(30px, 9vw, 42px);
+        text-shadow: 0 0 16px rgba(80, 244, 229, .28);
+      }
+      .jackside-intro-clock .urgency-colon {
+        display: inline-block;
+        margin: 0 5px 3px;
+        color: #47d8cc;
+        font-size: clamp(26px, 7vw, 36px);
         animation: jacksideUrgencyBlink 1s steps(2,end) infinite;
       }
-      @keyframes jacksideUrgencyBlink { 50% { opacity: .35; } }
+      @keyframes jacksideUrgencyBlink { 50% { opacity: .28; } }
       @media (prefers-reduced-motion: reduce) {
-        .jackside-intro-urgency b { animation: none; }
+        .jackside-intro-clock .urgency-colon { animation: none; }
       }
       .final-outcome-actions {
         display: grid;
@@ -95,16 +163,29 @@
     box = document.createElement('div');
     box.className = 'jackside-intro-urgency';
     box.hidden = true;
-    box.innerHTML = '<strong>Торопитесь, квиз уже начался</strong><span>До конца квиза осталось</span><b>0:00</b>';
+    box.innerHTML = [
+      '<span class="urgency-kicker">JACKSIDE 4:14</span>',
+      '<strong class="urgency-title">Торопитесь, квиз уже начался</strong>',
+      '<span class="urgency-caption">До конца квиза осталось</span>',
+      '<span class="jackside-intro-clock" aria-live="polite">',
+      '<b class="urgency-mm">04</b><i class="urgency-colon">:</i><b class="urgency-ss">14</b>',
+      '</span>',
+    ].join('');
     const firstAction = screen.querySelector('button, .quiz-primary, .quiz-actions');
     if (firstAction) firstAction.before(box);
     else screen.append(box);
     return box;
   }
 
+  function mainRoundEndMs() {
+    const start = Date.parse(app.dataset.activeFrom || '');
+    if (!Number.isFinite(start)) return null;
+    return start + Math.max(1, Number(mainRoundSeconds || 254)) * 1000;
+  }
+
   function updateIntroUrgency() {
     const start = Date.parse(app.dataset.activeFrom || '');
-    const end = Date.parse(app.dataset.activeUntil || '');
+    const end = mainRoundEndMs();
     const now = Date.now() + serverOffset;
     const active = Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end;
     ['welcome', 'daily-prize', 'daily-jackcoin'].forEach((name) => {
@@ -112,7 +193,10 @@
       if (!screen) return;
       const box = ensureIntroUrgency(screen);
       box.hidden = !active;
-      if (active) box.querySelector('b').textContent = formatCountdown(end - now);
+      if (!active) return;
+      const parts = countdownParts(end - now);
+      box.querySelector('.urgency-mm').textContent = parts.minutes;
+      box.querySelector('.urgency-ss').textContent = parts.seconds;
     });
   }
 
@@ -140,6 +224,17 @@
     }
   }
 
+  function rememberMeta(data) {
+    if (!data || typeof data !== 'object') return;
+    const seconds = Number(data.time_limit_seconds || 0);
+    if (Number.isFinite(seconds) && seconds > 0 && seconds < 3600) {
+      mainRoundSeconds = seconds;
+    }
+    const serverNow = Date.parse(data.server_now || '');
+    if (Number.isFinite(serverNow)) serverOffset = serverNow - Date.now();
+    updateIntroUrgency();
+  }
+
   function rememberStatus(data) {
     if (!data || typeof data !== 'object') return;
     const serverNow = Date.parse(data.server_now || '');
@@ -162,6 +257,9 @@
   window.fetch = async (...args) => {
     const response = await originalFetch(...args);
     const target = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+    if (target.includes('/api/quiz/questions')) {
+      response.clone().json().then(rememberMeta).catch(() => {});
+    }
     if (target.includes('/api/quiz/final-table/status')) {
       response.clone().json().then(rememberStatus).catch(() => {});
     }
