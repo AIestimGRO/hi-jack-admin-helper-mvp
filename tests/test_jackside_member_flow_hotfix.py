@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.jackside_critical_hotfix import rewrite_jackside_member_html
+from app.jackside_critical_hotfix import rewrite_jackside_member_html, rewrite_jackside_quiz_html
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,9 +26,12 @@ def test_intro_urgency_counts_down_to_main_round_end() -> None:
     source = (ROOT / 'app/static/js/jackside-critical-hotfix.js').read_text(encoding='utf-8')
     assert 'Торопитесь, квиз уже начался' in source
     assert 'До конца квиза осталось' in source
-    assert 'app.dataset.activeUntil' in source
+    assert 'mainRoundSeconds = 254' in source
+    assert 'start + Math.max(1, Number(mainRoundSeconds || 254)) * 1000' in source
     assert "['welcome', 'daily-prize', 'daily-jackcoin']" in source
-    assert 'jacksideUrgencyBlink' in source
+    assert 'jackside-intro-clock' in source
+    assert 'urgency-mm' in source
+    assert 'urgency-ss' in source
 
 
 def test_final_outcome_returns_to_jackside_and_opens_rating() -> None:
@@ -37,3 +40,32 @@ def test_final_outcome_returns_to_jackside_and_opens_rating() -> None:
     assert "existing.textContent = 'Вернуться в JACKSIDE'" in source
     assert "rating.href = '/account?tab=rating'" in source
     assert "rating.textContent = 'Открыть рейтинг'" in source
+
+
+def test_jackside_brand_replaces_old_member_logo_and_pwa_links() -> None:
+    source = (
+        '<html><head><link rel="icon" href="/favicon.ico">'
+        '<link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png">'
+        '<link rel="manifest" href="/manifest.webmanifest"></head>'
+        '<body><div data-account-tab="home">JACKSIDE</div>'
+        '<img src="/static/img/brand/hi-jack-mark.webp?v=old"></body></html>'
+    )
+    rewritten = rewrite_jackside_member_html(source)
+    assert '/jackside-brand/logo.webp?v=old' in rewritten
+    assert '/jackside-brand/favicon.png' in rewritten
+    assert '/jackside-brand/apple-touch-icon.png' in rewritten
+    assert '/jackside.webmanifest' in rewritten
+    assert '/favicon.ico' not in rewritten
+    assert '/pwa/apple-touch-icon.png' not in rewritten
+
+
+def test_jackside_quiz_shell_gets_new_brand_and_browser_icons() -> None:
+    source = (
+        '<html><head></head><body><main id="quiz-app" '
+        'data-campaign-type="daily_414" data-campaign-background="">'
+        '<img src="/static/img/brand/hi-jack-mark.webp"></main></body></html>'
+    )
+    rewritten = rewrite_jackside_quiz_html(source)
+    assert '/jackside-brand/logo.webp' in rewritten
+    assert '/jackside-brand/favicon.png' in rewritten
+    assert '/jackside.webmanifest' in rewritten
