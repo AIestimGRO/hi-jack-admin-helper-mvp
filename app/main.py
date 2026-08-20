@@ -34,6 +34,7 @@ from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.hijack_rating_transfer import install_hijack_rating_transfer
 from app.jackside_critical_hotfix import install_jackside_critical_hotfix
+from app.jackside_final_recovery import install_jackside_final_recovery
 from app.jackside_rating_freshness import install_jackside_rating_freshness
 from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
@@ -97,6 +98,7 @@ def _install_extensions(application):
     # before extensions install triggers; IDs, child FKs and all rows are kept.
     ensure_multi_issue_schema(application.state.settings.db_path)
     application = install_jackside_critical_hotfix(application)
+    application = install_jackside_final_recovery(application)
     application = install_legal_registration(application)
     application = install_registration_flow_hotfix(application)
     application = install_public_rating_consent_policy(application)
