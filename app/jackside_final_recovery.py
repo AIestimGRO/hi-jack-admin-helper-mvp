@@ -20,12 +20,77 @@ from app.services.daily_414_final import (
 from app.services.member_accounts import MEMBER_COOKIE_NAME, authenticated_member
 
 
-ASSET_VERSION = "jackside-final-recovery-20260820-2"
+ASSET_VERSION = "jackside-final-recovery-20260820-3"
 _STYLE_TAG = (
     '<link rel="stylesheet" data-jackside-final-recovery '
     'href="/static/css/jackside-final-recovery.css?'
     f'v={ASSET_VERSION}">'
 )
+_SCRIPT_TAG = (
+    '<script data-jackside-final-polish '
+    'src="/static/js/jackside-final-polish.js?'
+    f'v={ASSET_VERSION}"></script>'
+)
+
+
+def _issue_jackcoin_breakdown(
+    conn,
+    *,
+    table,
+    submission,
+    client_id: int,
+) -> dict[str, int]:
+    main = int(submission["jackcoin_awarded"] or 0) if submission else 0
+    final_correct = int(
+        conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.amount),0)
+            FROM jackcoin_ledger jl
+            JOIN daily_414_final_answers a
+              ON CAST(a.id AS TEXT)=jl.source_id
+            JOIN daily_414_finalists f ON f.id=a.finalist_id
+            WHERE jl.client_id=?
+              AND jl.source_type='jackside_final_correct'
+              AND a.final_table_id=?
+              AND f.client_id=?
+            """,
+            (client_id, int(table["id"]), client_id),
+        ).fetchone()[0]
+        or 0
+    )
+    final_win = int(
+        conn.execute(
+            """
+            SELECT COALESCE(SUM(amount),0)
+            FROM jackcoin_ledger
+            WHERE client_id=?
+              AND source_type='jackside_final_win'
+              AND source_id=?
+            """,
+            (client_id, str(table["id"])),
+        ).fetchone()[0]
+        or 0
+    )
+    final_prize = int(
+        conn.execute(
+            """
+            SELECT COALESCE(SUM(amount),0)
+            FROM jackcoin_ledger
+            WHERE client_id=?
+              AND source_type='final_prize'
+              AND source_id=?
+            """,
+            (client_id, str(table["id"])),
+        ).fetchone()[0]
+        or 0
+    )
+    return {
+        "main": main,
+        "final_correct": final_correct,
+        "final_win": final_win,
+        "final_prize": final_prize,
+        "total": main + final_correct + final_win + final_prize,
+    }
 
 
 def _persisted_final_payload(
@@ -52,6 +117,7 @@ def _persisted_final_payload(
         if not member:
             return None
 
+        client_id = int(member["client_id"])
         table = conn.execute(
             """
             SELECT * FROM daily_414_final_tables
@@ -79,7 +145,7 @@ def _persisted_final_payload(
             SELECT * FROM daily_414_finalists
             WHERE final_table_id=? AND client_id=?
             """,
-            (int(table["id"]), int(member["client_id"])),
+            (int(table["id"]), client_id),
         ).fetchone()
         submission = conn.execute(
             """
@@ -88,8 +154,14 @@ def _persisted_final_payload(
             ORDER BY campaign_version DESC,id DESC
             LIMIT 1
             """,
-            (code, int(member["client_id"])),
+            (code, client_id),
         ).fetchone()
+        jc = _issue_jackcoin_breakdown(
+            conn,
+            table=table,
+            submission=submission,
+            client_id=client_id,
+        )
 
         base: dict[str, Any] = {
             "ok": True,
@@ -98,6 +170,8 @@ def _persisted_final_payload(
             "server_now": now.isoformat(timespec="milliseconds"),
             "status": str(table["status"] or ""),
             "outcome": str(table["outcome"] or "") or None,
+            "issue_jackcoin_total": jc["total"],
+            "issue_jackcoin_breakdown": jc,
         }
 
         if table["status"] not in {"completed", "unavailable"}:
@@ -139,14 +213,14 @@ def _persisted_final_payload(
                         WHERE source_type='final_prize' AND source_id=? AND client_id=?
                         ORDER BY id DESC LIMIT 1
                         """,
-                        (str(table["id"]), int(member["client_id"])),
+                        (str(table["id"]), client_id),
                     ).fetchone()
                     my_share = int(row["amount"] or 0) if row else 0
                 else:
                     my_share = total
             message = announcement
             if my_share:
-                message += f" {my_share} JACKCOIN уже начислены на баланс."
+                message += f" Главный приз: {my_share} JACKCOIN."
             return {
                 **base,
                 "state": "winner",
@@ -185,14 +259,31 @@ def _result_title(payload: dict[str, Any]) -> tuple[str, str]:
         return "★", "Победа!"
     if state == "cancelled":
         return "♠", "Финальный стол не состоялся"
-    if state == "not_qualified":
-        return "♠", "Финальный стол завершён"
     return "♠", "Финальный стол завершён"
 
 
 def _result_html(payload: dict[str, Any]) -> str:
     mark, title = _result_title(payload)
     message = html_module.escape(str(payload.get("message") or "Результат сохранён."))
+    total = int(payload.get("issue_jackcoin_total") or 0)
+    breakdown = payload.get("issue_jackcoin_breakdown") or {}
+    detail_parts = []
+    labels = (
+        ("main", "Основная часть"),
+        ("final_correct", "Ответы финала"),
+        ("final_win", "Победа в финале"),
+        ("final_prize", "Главный приз"),
+    )
+    for key, label in labels:
+        amount = int(breakdown.get(key) or 0)
+        if amount:
+            detail_parts.append(f"{label}: +{amount} JC")
+    details = " · ".join(detail_parts)
+    jc_html = (
+        f'<div class="jackside-issue-jc"><small>За этот выпуск</small>'
+        f'<strong>+{total} JC</strong>'
+        f'{f"<span>{html_module.escape(details)}</span>" if details else ""}</div>'
+    )
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -212,6 +303,7 @@ def _result_html(payload: dict[str, Any]) -> str:
       <p class="jackside-recovered-kicker">Финальный стол</p>
       <h1>{html_module.escape(title)}</h1>
       <p>{message}</p>
+      {jc_html}
       <div class="jackside-recovered-actions">
         <a class="jackside-recovered-primary" href="/account">Вернуться в JACKSIDE</a>
         <a class="jackside-recovered-secondary" href="/account?tab=rating">Открыть рейтинг</a>
@@ -275,6 +367,8 @@ def install_jackside_final_recovery(app: FastAPI) -> FastAPI:
             return response
         if "data-jackside-final-recovery" not in html:
             html = html.replace("</head>", f"{_STYLE_TAG}\n</head>", 1)
+        if "data-jackside-final-polish" not in html:
+            html = html.replace("</body>", f"{_SCRIPT_TAG}\n</body>", 1)
         rewritten = html.encode("utf-8")
         response.body_iterator = _single_chunk(rewritten)
         response.headers["content-length"] = str(len(rewritten))
