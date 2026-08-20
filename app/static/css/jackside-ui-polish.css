@@ -1,0 +1,234 @@
+.jackside-intro-urgency{position:relative!important;display:block!important;overflow:hidden;margin:22px 0 20px!important;padding:20px 18px 22px!important;border:1px solid rgba(78,235,222,.46)!important;border-radius:24px!important;text-align:center!important;background:radial-gradient(circle at 50% 0%,rgba(48,229,215,.18),transparent 58%),linear-gradient(180deg,rgba(7,31,29,.98),rgba(2,12,12,.98))!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03),0 18px 42px rgba(0,0,0,.3),0 0 34px rgba(27,205,194,.13)!important}.jackside-intro-urgency .urgency-kicker{display:block!important;margin:0 0 8px!important;color:#6ce8dc!important;font-size:11px!important;font-weight:900!important;letter-spacing:.18em!important;line-height:1.2!important;text-transform:uppercase}.jackside-intro-urgency .urgency-title{display:block!important;margin:0 auto!important;max-width:420px;color:#fff!important;font-size:clamp(23px,6.5vw,30px)!important;font-weight:950!important;line-height:1.05!important;letter-spacing:-.025em!important;text-shadow:0 0 20px rgba(255,255,255,.06)}.jackside-intro-urgency .urgency-caption{display:block!important;margin:11px 0 13px!important;color:rgba(218,246,242,.8)!important;font-size:14px!important;font-weight:700!important;line-height:1.25!important}.jackside-intro-clock{display:inline-flex!important;align-items:center;justify-content:center;min-width:204px;padding:12px 24px 13px!important;border:1px solid rgba(84,244,231,.7)!important;border-radius:999px!important;background:rgba(1,14,14,.98)!important;box-shadow:inset 0 0 24px rgba(33,210,199,.12),0 0 30px rgba(37,224,210,.21)!important;font-variant-numeric:tabular-nums;line-height:1!important}.jackside-intro-clock .urgency-mm,.jackside-intro-clock .urgency-ss{display:inline-block!important;min-width:2.1ch;color:#c7fff9!important;font-size:clamp(38px,10.5vw,50px)!important;font-weight:950!important;line-height:1!important;letter-spacing:.035em!important;text-shadow:0 0 20px rgba(80,244,229,.42)}.jackside-intro-clock .urgency-colon{display:inline-block!important;margin:0 7px 5px!important;color:#4ce6d8!important;font-size:clamp(30px,8.5vw,40px)!important;font-style:normal!important;font-weight:900!important;animation:jacksideUrgencyBlink 1s steps(2,end) infinite}@keyframes jacksideUrgencyBlink{50%{opacity:.28}}@media(prefers-reduced-motion:reduce){.jackside-intro-clock .urgency-colon{animation:none}}
+
+.jackside-final-jc-summary{display:block!important;overflow:hidden;margin:22px 0 18px!important;border:1px solid rgba(73,224,211,.28)!important;border-radius:22px!important;background:radial-gradient(circle at 85% 0%,rgba(54,218,204,.13),transparent 44%),linear-gradient(180deg,rgba(7,29,27,.96),rgba(3,15,14,.98))!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.025),0 16px 36px rgba(0,0,0,.22)!important;text-align:left!important}.jackside-final-jc-head{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;padding:17px 16px 16px!important}.jackside-final-jc-head span{color:rgba(213,244,239,.7)!important;font-size:11px!important;font-weight:900!important;letter-spacing:.13em!important;line-height:1.25!important;text-transform:uppercase!important}.jackside-final-jc-head strong{flex:0 0 auto;color:#bffbf4!important;font-size:clamp(28px,8vw,38px)!important;font-weight:950!important;line-height:1!important;letter-spacing:-.025em!important;text-shadow:0 0 18px rgba(65,226,212,.2)!important}.jackside-final-jc-rows{border-top:1px solid rgba(128,224,215,.11)!important;padding:7px 16px 9px!important;background:rgba(0,0,0,.08)!important}.jackside-final-jc-row{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:16px!important;min-height:34px!important}.jackside-final-jc-row span{color:rgba(226,242,240,.66)!important;font-size:13px!important;font-weight:650!important;line-height:1.35!important}.jackside-final-jc-row b{flex:0 0 auto;color:#e3fffb!important;font-size:13px!important;font-weight:850!important;line-height:1.35!important}.final-outcome-actions{display:grid!important;grid-template-columns:1fr!important;gap:10px!important;margin:18px 0 0!important}.jackside-final-action{box-sizing:border-box!important;display:flex!important;width:100%!important;min-height:52px!important;align-items:center!important;justify-content:center!important;padding:13px 18px!important;border-radius:17px!important;text-align:center!important;text-decoration:none!important;text-underline-offset:0!important;font-size:15px!important;font-weight:850!important;line-height:1.2!important;letter-spacing:0!important}.jackside-final-action:hover,.jackside-final-action:focus,.jackside-final-action:active,.jackside-final-action:visited{text-decoration:none!important}.jackside-final-action-primary{border:1px solid rgba(81,228,217,.32)!important;color:#fff!important;background:linear-gradient(135deg,#0b9da3,#08798c)!important;box-shadow:0 10px 24px rgba(0,116,124,.18)!important}.jackside-final-action-secondary{border:1px solid rgba(104,214,205,.22)!important;color:#c8f6f1!important;background:rgba(7,31,29,.82)!important;box-shadow:none!important}
+
+/* JACKSIDE_FINAL_UI_V2 */
+
+/*
+ * The lobby explanation is intentionally absent in JACKSIDE.
+ * quiz.js no longer generates it; this is only a paint-level safeguard.
+ */
+.final-lobby-message {
+  display: none !important;
+}
+
+/* Final screen action buttons */
+.final-outcome-actions {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 10px !important;
+  margin: 18px 0 0 !important;
+}
+
+.final-outcome-actions a,
+.final-outcome-actions .button,
+.jackside-final-action {
+  box-sizing: border-box !important;
+  display: flex !important;
+  width: 100% !important;
+  min-height: 52px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 13px 18px !important;
+  border-radius: 17px !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  font-size: 15px !important;
+  font-weight: 850 !important;
+  line-height: 1.2 !important;
+}
+
+.final-outcome-actions a:hover,
+.final-outcome-actions a:focus,
+.final-outcome-actions a:active,
+.final-outcome-actions a:visited,
+.jackside-final-action:hover,
+.jackside-final-action:focus,
+.jackside-final-action:active,
+.jackside-final-action:visited {
+  text-decoration: none !important;
+}
+
+/* JACKCOIN result card */
+.jackside-final-jc-summary {
+  display: block !important;
+  overflow: hidden !important;
+  margin: 22px 0 18px !important;
+  border: 1px solid rgba(73,224,211,.28) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 85% 0%, rgba(54,218,204,.13), transparent 44%),
+    linear-gradient(180deg, rgba(7,29,27,.96), rgba(3,15,14,.98)) !important;
+}
+
+.jackside-final-jc-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  padding: 17px 16px 16px !important;
+}
+
+.jackside-final-jc-head span {
+  color: rgba(213,244,239,.70) !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: .13em !important;
+  text-transform: uppercase !important;
+}
+
+.jackside-final-jc-head strong {
+  color: #bffbf4 !important;
+  font-size: clamp(28px,8vw,38px) !important;
+  font-weight: 950 !important;
+}
+
+.jackside-final-jc-rows {
+  padding: 7px 16px 9px !important;
+  border-top: 1px solid rgba(128,224,215,.11) !important;
+}
+
+.jackside-final-jc-row {
+  display: flex !important;
+  min-height: 34px !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+}
+
+.jackside-final-jc-row span {
+  color: rgba(226,242,240,.66) !important;
+  font-size: 13px !important;
+}
+
+.jackside-final-jc-row b {
+  flex: 0 0 auto !important;
+  color: #e3fffb !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+
+
+/* JACKSIDE_FINAL_SCREEN_STYLE_V2 */
+
+.final-outcome-actions {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 10px !important;
+  width: 100% !important;
+  margin: 18px 0 0 !important;
+}
+
+.final-outcome-actions .jackside-final-native-action {
+  box-sizing: border-box !important;
+  display: flex !important;
+  width: 100% !important;
+  min-height: 52px !important;
+  margin: 0 !important;
+  padding: 13px 18px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 17px !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  font-size: 15px !important;
+  font-weight: 850 !important;
+  line-height: 1.2 !important;
+}
+
+.final-outcome-actions .jackside-final-native-action:hover,
+.final-outcome-actions .jackside-final-native-action:focus,
+.final-outcome-actions .jackside-final-native-action:active,
+.final-outcome-actions .jackside-final-native-action:visited {
+  text-decoration: none !important;
+}
+
+.final-outcome-actions .quiz-primary {
+  color: #fff !important;
+}
+
+.final-outcome-actions .quiz-secondary {
+  text-decoration: none !important;
+}
+
+.jackside-final-jc-summary {
+  display: block !important;
+  overflow: hidden !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 20px 0 18px !important;
+  border: 1px solid rgba(73,224,211,.28) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(
+      circle at 88% 0%,
+      rgba(54,218,204,.14),
+      transparent 46%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(7,29,27,.97),
+      rgba(3,15,14,.99)
+    ) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.025),
+    0 16px 36px rgba(0,0,0,.22) !important;
+}
+
+.jackside-final-jc-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  padding: 17px 16px 16px !important;
+}
+
+.jackside-final-jc-head span {
+  color: rgba(213,244,239,.70) !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: .13em !important;
+  line-height: 1.25 !important;
+  text-transform: uppercase !important;
+}
+
+.jackside-final-jc-head strong {
+  flex: 0 0 auto !important;
+  color: #bffbf4 !important;
+  font-size: clamp(29px,8vw,39px) !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  letter-spacing: -.025em !important;
+  text-shadow:
+    0 0 18px rgba(65,226,212,.20) !important;
+}
+
+.jackside-final-jc-rows {
+  padding: 7px 16px 9px !important;
+  border-top:
+    1px solid rgba(128,224,215,.11) !important;
+  background: rgba(0,0,0,.08) !important;
+}
+
+.jackside-final-jc-row {
+  display: flex !important;
+  min-height: 34px !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+}
+
+.jackside-final-jc-row span {
+  color: rgba(226,242,240,.66) !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+}
+
+.jackside-final-jc-row b {
+  flex: 0 0 auto !important;
+  color: #e3fffb !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+

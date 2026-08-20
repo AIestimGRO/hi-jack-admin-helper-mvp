@@ -826,8 +826,8 @@
     const questionCount = data.final_question_count
       ?? state.finalResult?.final_question_count;
     if (!state.openingFinal) {
-      message.textContent = data.message
-        || 'Основной раунд завершён. Собираем десятку лучших игроков.';
+      message.textContent = '';
+      message.hidden = true;
     }
     if (result?.correct_count != null) {
       setLobbyStat(
@@ -866,11 +866,10 @@
       setLobbyStat('.final-lobby-cutoff', null);
     }
     const candidates = data.candidate_count ?? result?.candidate_count;
-    const minFinalists = data.min_finalists ?? result?.min_finalists ?? 2;
     setLobbyStat(
       '.final-lobby-candidates',
       candidates != null
-        ? `В отборе на финал: ${candidates} (нужно минимум ${minFinalists})`
+        ? `В отборе на финал: ${candidates}`
         : null,
     );
     const online = data.online_count ?? result?.online_count;
@@ -1037,6 +1036,125 @@
     }
   }
 
+  /* JACKSIDE_FINAL_SCREEN_V2 */
+
+  function normalizeFinalActions() {
+    const screen = app.querySelector('[data-screen="final-outcome"]');
+    if (!screen) return;
+
+    const actions = screen.querySelector('.final-outcome-actions');
+    if (!actions) return;
+
+    const links = [...actions.querySelectorAll('a')];
+
+    if (links[0]) {
+      links[0].className = 'quiz-primary jackside-final-native-action';
+      links[0].href = '/account';
+      links[0].textContent = 'Вернуться в JACKSIDE';
+    }
+
+    if (links[1]) {
+      links[1].className = 'quiz-secondary jackside-final-native-action';
+      links[1].href = '/account#rating';
+      links[1].textContent = 'Открыть рейтинг';
+    }
+  }
+
+  function renderFinalJackcoinSummary(data) {
+    const screen = app.querySelector('[data-screen="final-outcome"]');
+    if (!screen || !data) return;
+
+    let box = screen.querySelector('.jackside-final-jc-summary');
+
+    if (!box) {
+      box = document.createElement('section');
+      box.className = 'jackside-final-jc-summary';
+
+      const message = screen.querySelector('.final-outcome-message');
+
+      if (message) {
+        message.after(box);
+      } else {
+        const actions = screen.querySelector('.final-outcome-actions');
+
+        if (actions) {
+          actions.before(box);
+        } else {
+          screen.append(box);
+        }
+      }
+    }
+
+    const breakdown = data.issue_jackcoin_breakdown || {};
+    const total = Number(data.issue_jackcoin_total || 0);
+
+    const definitions = [
+      ['main', 'Основная часть'],
+      ['final_correct', 'Ответы финала'],
+      ['final_win', 'Победа в финале'],
+      ['final_prize', 'Доп. приз выпуска'],
+    ];
+
+    const rows = definitions
+      .map(([key, label]) => {
+        const amount = Number(breakdown[key] || 0);
+
+        if (amount <= 0) return '';
+
+        return `
+          <div class="jackside-final-jc-row">
+            <span>${label}</span>
+            <b>+${amount} JC</b>
+          </div>
+        `;
+      })
+      .filter(Boolean)
+      .join('');
+
+    box.innerHTML = `
+      <div class="jackside-final-jc-head">
+        <span>JACKCOIN за выпуск</span>
+        <strong>+${total} JC</strong>
+      </div>
+      ${rows ? `<div class="jackside-final-jc-rows">${rows}</div>` : ''}
+    `;
+
+    box.hidden = false;
+  }
+
+  async function loadFinalJackcoinSummary() {
+    if (!isDaily414 || !campaign) return;
+
+    try {
+      const response = await fetch(
+        `/api/jackside/final-outcome?campaign=${encodeURIComponent(campaign)}`,
+        {
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+        },
+      );
+
+      if (!response.ok) {
+        console.warn(
+          '[JACKSIDE] final JC endpoint HTTP',
+          response.status,
+        );
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!data || data.state === 'pending') return;
+
+      renderFinalJackcoinSummary(data);
+    } catch (error) {
+      console.warn(
+        '[JACKSIDE] final JC render failed',
+        error,
+      );
+    }
+  }
+
   function renderFinalOutcome(data) {
     stopFinalFlow();
     const mark = app.querySelector('.final-outcome-mark');
@@ -1073,6 +1191,11 @@
       message.textContent = data.message || 'Результат сохранён.';
     }
     show('final-outcome');
+
+    if (isDaily414) {
+      normalizeFinalActions();
+      void loadFinalJackcoinSummary();
+    }
   }
 
   function handleFinalStatus(data) {

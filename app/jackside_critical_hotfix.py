@@ -21,6 +21,20 @@ _SCRIPT_TAG = (
     '<script src="/static/js/jackside-critical-hotfix.js?'
     f'v={ASSET_VERSION}"></script>'
 )
+_UI_STYLE_TAG = (
+    '<link rel="stylesheet" data-jackside-ui-polish '
+    'href="/static/css/jackside-ui-polish.css?v=jackside-ui-20260820-10">'
+)
+_UI_SCRIPT_TAG = (
+    '<script data-jackside-ui-polish '
+    'src="/static/js/jackside-ui-polish.js?v=jackside-ui-20260820-10"></script>'
+)
+
+_FINAL_OUTCOME_SCRIPT_TAG = (
+    '<script data-jackside-final-outcome '
+    'src="/static/js/jackside-final-outcome-only.js?v=jackside-final-ui-20260820-10"></script>'
+)
+
 _MEMBER_SCRIPT_TAG = (
     '<script src="/static/js/jackside-member-critical-hotfix.js?'
     f'v={ASSET_VERSION}"></script>'
