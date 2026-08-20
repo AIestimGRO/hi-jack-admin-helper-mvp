@@ -12,9 +12,13 @@ from app.db import transaction
 from app.services.daily_414_final import final_table_needs_reconcile, reconcile_final_table
 
 
-ASSET_VERSION = "jackside-critical-20260820-3"
+ASSET_VERSION = "jackside-critical-20260820-4"
 _SCRIPT_TAG = (
     '<script src="/static/js/jackside-critical-hotfix.js?'
+    f'v={ASSET_VERSION}"></script>'
+)
+_MEMBER_SCRIPT_TAG = (
+    '<script src="/static/js/jackside-member-critical-hotfix.js?'
     f'v={ASSET_VERSION}"></script>'
 )
 _ADMIN_SCRIPT_TAG = (
@@ -115,6 +119,15 @@ def rewrite_jackside_quiz_html(html: str) -> str:
     return rewritten
 
 
+def rewrite_jackside_member_html(html: str) -> str:
+    """Load JACKSIDE lobby/rules action labels on member account pages."""
+    if 'data-account-tab=' not in html or 'JACKSIDE' not in html:
+        return html
+    if _MEMBER_SCRIPT_TAG not in html:
+        return html.replace("</body>", f"{_MEMBER_SCRIPT_TAG}\n</body>", 1)
+    return html
+
+
 def rewrite_jackside_builder_html(html: str) -> str:
     """Load JACKSIDE-only admin fixes in the quiz builder."""
     if 'data-quiz-builder' not in html or 'data-campaign-type="daily_414"' not in html:
@@ -156,8 +169,9 @@ def install_jackside_critical_hotfix(app: FastAPI) -> FastAPI:
         if request.method != "GET":
             return response
         is_quiz = request.url.path == "/quiz"
+        is_account = request.url.path == "/account"
         is_builder = request.url.path.startswith("/master/quiz-builder/")
-        if not is_quiz and not is_builder:
+        if not is_quiz and not is_account and not is_builder:
             return response
         content_type = str(response.headers.get("content-type") or "").lower()
         if "text/html" not in content_type:
@@ -170,11 +184,12 @@ def install_jackside_critical_hotfix(app: FastAPI) -> FastAPI:
             response.body_iterator = _single_chunk(body)
             return response
 
-        rewritten_html = (
-            rewrite_jackside_quiz_html(html)
-            if is_quiz
-            else rewrite_jackside_builder_html(html)
-        )
+        if is_quiz:
+            rewritten_html = rewrite_jackside_quiz_html(html)
+        elif is_account:
+            rewritten_html = rewrite_jackside_member_html(html)
+        else:
+            rewritten_html = rewrite_jackside_builder_html(html)
         rewritten = rewritten_html.encode("utf-8")
         response.body_iterator = _single_chunk(rewritten)
         response.headers["content-length"] = str(len(rewritten))
@@ -189,5 +204,6 @@ __all__ = [
     "reconcile_expired_jackside_final",
     "refresh_jackside_issue_question_counts",
     "rewrite_jackside_builder_html",
+    "rewrite_jackside_member_html",
     "rewrite_jackside_quiz_html",
 ]
