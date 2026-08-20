@@ -12,6 +12,8 @@
   let resolving = false;
   let lastForcedAt = 0;
   let mainRoundSeconds = 254;
+  let finalOutcomeRefining = false;
+  let finalOutcomeRefined = false;
 
   const initialServerNow = Date.parse(app.dataset.serverNow || '');
   if (Number.isFinite(initialServerNow)) serverOffset = initialServerNow - Date.now();
@@ -144,6 +146,48 @@
     }
   }
 
+  async function refineFinalOutcome() {
+    if (
+      finalOutcomeRefined
+      || finalOutcomeRefining
+      || !campaign
+      || activeScreenName() !== 'final-outcome'
+    ) return;
+
+    finalOutcomeRefining = true;
+    try {
+      const response = await originalFetch(
+        `/api/jackside/final-outcome?campaign=${encodeURIComponent(campaign)}`,
+        { headers: { Accept: 'application/json' }, cache: 'no-store' },
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data || data.state === 'pending') return;
+
+      const screen = app.querySelector('[data-screen="final-outcome"]');
+      if (!screen || !screen.classList.contains('active')) return;
+      const mark = screen.querySelector('.final-outcome-mark');
+      const title = screen.querySelector('.final-outcome-title');
+      const message = screen.querySelector('.final-outcome-message');
+
+      if (data.state === 'correct_not_first') {
+        if (mark) mark.textContent = '✓';
+        if (title) title.textContent = 'Ответ верный, но не первым';
+        app.classList.remove('quiz-winner');
+      } else if (data.state === 'eliminated' && data.answer_correct === false) {
+        if (mark) mark.textContent = '×';
+        if (title) title.textContent = 'Ответ неверный';
+        app.classList.remove('quiz-winner');
+      }
+      if (message && data.message) message.textContent = data.message;
+      finalOutcomeRefined = true;
+    } catch (_) {
+      // Keep the native final outcome if the refinement endpoint is unavailable.
+    } finally {
+      finalOutcomeRefining = false;
+    }
+  }
+
   function renderRecoveredFinalOutcome(data) {
     if (!data || data.state === 'pending' || data.state === 'final_question') return false;
     const screen = app.querySelector('[data-screen="final-outcome"]');
@@ -167,6 +211,7 @@
     clearBackground();
     showScreen('final-outcome');
     decorateFinalOutcomeActions();
+    void refineFinalOutcome();
     return true;
   }
 
@@ -287,6 +332,7 @@
     updateIntroUrgency();
     cleanLobbyMinimumCopy();
     decorateFinalOutcomeActions();
+    void refineFinalOutcome();
     if (activeScreenName() !== 'final-question' || !Number.isFinite(finalDeadline)) return;
     if (Date.now() + serverOffset < finalDeadline) return;
     const button = app.querySelector('.final-answer-button');

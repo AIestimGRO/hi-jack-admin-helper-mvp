@@ -32,27 +32,6 @@
     actions.append(back, rating);
   }
 
-  function renderOutcomeState(screen, data) {
-    const mark = screen.querySelector('.final-outcome-mark');
-    const title = screen.querySelector('.final-outcome-title');
-    const message = screen.querySelector('.final-outcome-message');
-
-    if (data.state === 'correct_not_first') {
-      if (mark) mark.textContent = '✓';
-      if (title) title.textContent = 'Ответ верный, но не первым';
-      if (message) message.textContent = data.message || '';
-      app.classList.remove('quiz-winner');
-      return;
-    }
-
-    if (data.state === 'eliminated') {
-      if (mark) mark.textContent = '×';
-      if (title) title.textContent = 'Ответ неверный';
-      if (message) message.textContent = data.message || '';
-      app.classList.remove('quiz-winner');
-    }
-  }
-
   function renderBreakdown(screen, data) {
     let box = screen.querySelector('.jackside-final-jc-summary');
     if (!box) {
@@ -67,13 +46,12 @@
     const rows = [
       ['main', 'Основная часть'],
       ['final_correct', 'Ответы финала'],
-      ['final_win', 'Фиксация награды победителя'],
+      ['final_win', 'Победа в финале'],
       ['final_prize', 'Доп. приз выпуска'],
     ].map(([key, label]) => {
       const amount = Number(breakdown[key] || 0);
-      if (amount === 0) return '';
-      const formatted = amount > 0 ? `+${amount} JC` : `${amount} JC`;
-      return `<div class="jackside-final-jc-row"><span>${label}</span><b>${formatted}</b></div>`;
+      if (amount <= 0) return '';
+      return `<div class="jackside-final-jc-row"><span>${label}</span><b>+${amount} JC</b></div>`;
     }).filter(Boolean).join('');
 
     const total = Number(data.issue_jackcoin_total || 0);
@@ -90,7 +68,6 @@
   function enhanceOutcome(data) {
     const screen = outcomeScreen();
     if (!screen || !screen.classList.contains('active')) return;
-    renderOutcomeState(screen, data);
     renderBreakdown(screen, data);
     ensureActions(screen);
   }
@@ -108,7 +85,7 @@
       if (!response.ok) return;
       const data = await response.json();
       if (!data || data.state === 'pending') return;
-      const key = `${data.state}:${data.message || ''}:${data.issue_jackcoin_total}:${JSON.stringify(data.issue_jackcoin_breakdown || {})}`;
+      const key = `${data.state}:${data.issue_jackcoin_total}:${JSON.stringify(data.issue_jackcoin_breakdown || {})}`;
       if (key === renderedKey && screen.querySelector('.jackside-final-jc-summary')) return;
       renderedKey = key;
       enhanceOutcome(data);

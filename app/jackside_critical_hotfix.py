@@ -32,7 +32,7 @@ _UI_SCRIPT_TAG = (
 
 _FINAL_OUTCOME_SCRIPT_TAG = (
     '<script data-jackside-final-outcome '
-    'src="/static/js/jackside-final-outcome-only.js?v=jackside-final-ui-20260820-11"></script>'
+    'src="/static/js/jackside-final-outcome-only.js?v=jackside-final-ui-20260820-10"></script>'
 )
 
 _MEMBER_SCRIPT_TAG = (
@@ -75,7 +75,7 @@ def refresh_jackside_issue_question_counts(conn: sqlite3.Connection) -> int:
         SELECT id, campaign_code, main_question_count, final_question_count
         FROM jackside_issues
         WHERE COALESCE(campaign_code,'')<>''
-        """,
+        """
     ).fetchall()
     for row in rows:
         counts = conn.execute(
@@ -183,8 +183,6 @@ def rewrite_jackside_quiz_html(html: str) -> str:
         rewritten = rewritten.replace("</head>", f"{_UI_STYLE_TAG}\n</head>", 1)
     if _SCRIPT_TAG not in rewritten:
         rewritten = rewritten.replace("</body>", f"{_SCRIPT_TAG}\n</body>", 1)
-    if _FINAL_OUTCOME_SCRIPT_TAG not in rewritten:
-        rewritten = rewritten.replace("</body>", f"{_FINAL_OUTCOME_SCRIPT_TAG}\n</body>", 1)
     return rewritten
 
 

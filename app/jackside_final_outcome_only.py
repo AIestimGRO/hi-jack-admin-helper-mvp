@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.db import connect
+from app.prelaunch_economy_compat import JACKSIDE_WINNER_ISSUE_TOTAL
 from app.services.daily_414_final import final_winner_announcement
 from app.services.member_accounts import MEMBER_COOKIE_NAME, authenticated_member
 
@@ -190,7 +191,10 @@ def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] |
             return {
                 **base,
                 "state": "winner",
-                "message": final_winner_announcement(1),
+                "message": (
+                    f"{final_winner_announcement(1)} "
+                    f"Итог JACKCOIN за квиз — {JACKSIDE_WINNER_ISSUE_TOTAL} JC."
+                ),
             }
 
         answer_correct, correct_award = _final_answer_result(
@@ -202,6 +206,7 @@ def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] |
             return {
                 **base,
                 "state": "correct_not_first",
+                "answer_correct": True,
                 "message": (
                     "Ответ верный! "
                     f"За правильный ответ на финальный вопрос вы получаете {correct_award} JC. "
@@ -213,6 +218,7 @@ def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] |
             return {
                 **base,
                 "state": "eliminated",
+                "answer_correct": False,
                 "message": (
                     "Ответ на финальный вопрос неверный. Финальный стол для вас завершён. "
                     "Ниже — итог: сколько JACKCOIN вы получили за выпуск и за что."
@@ -222,6 +228,7 @@ def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] |
         return {
             **base,
             "state": "eliminated",
+            "answer_correct": None,
             "message": (
                 "Финальный стол для вас завершён. "
                 "Ниже — итог: сколько JACKCOIN вы получили за выпуск и за что."
