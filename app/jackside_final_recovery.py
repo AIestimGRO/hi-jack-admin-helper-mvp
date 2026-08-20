@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import sqlite3
+import html as html_module
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.db import transaction
 from app.services.daily_414_final import (
@@ -17,13 +17,10 @@ from app.services.daily_414_final import (
     list_final_winners,
     reconcile_final_table,
 )
-from app.services.member_accounts import (
-    MEMBER_COOKIE_NAME,
-    authenticated_member,
-)
+from app.services.member_accounts import MEMBER_COOKIE_NAME, authenticated_member
 
 
-ASSET_VERSION = "jackside-final-recovery-20260820-1"
+ASSET_VERSION = "jackside-final-recovery-20260820-2"
 _STYLE_TAG = (
     '<link rel="stylesheet" data-jackside-final-recovery '
     'href="/static/css/jackside-final-recovery.css?'
@@ -182,6 +179,49 @@ def _persisted_final_payload(
         }
 
 
+def _result_title(payload: dict[str, Any]) -> tuple[str, str]:
+    state = str(payload.get("state") or "")
+    if state == "winner":
+        return "★", "Победа!"
+    if state == "cancelled":
+        return "♠", "Финальный стол не состоялся"
+    if state == "not_qualified":
+        return "♠", "Финальный стол завершён"
+    return "♠", "Финальный стол завершён"
+
+
+def _result_html(payload: dict[str, Any]) -> str:
+    mark, title = _result_title(payload)
+    message = html_module.escape(str(payload.get("message") or "Результат сохранён."))
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07110f">
+  <title>JACKSIDE — результат</title>
+  <link rel="icon" type="image/png" href="/jackside-brand/favicon.png">
+  <link rel="apple-touch-icon" href="/jackside-brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/css/jackside-final-recovery.css?v={ASSET_VERSION}">
+</head>
+<body class="jackside-recovered-result-page">
+  <main class="jackside-recovered-result">
+    <img class="jackside-recovered-logo" src="/jackside-brand/logo.webp" alt="JACKSIDE">
+    <section class="jackside-recovered-card">
+      <div class="jackside-recovered-mark">{mark}</div>
+      <p class="jackside-recovered-kicker">Финальный стол</p>
+      <h1>{html_module.escape(title)}</h1>
+      <p>{message}</p>
+      <div class="jackside-recovered-actions">
+        <a class="jackside-recovered-primary" href="/account">Вернуться в JACKSIDE</a>
+        <a class="jackside-recovered-secondary" href="/account?tab=rating">Открыть рейтинг</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
 async def _single_chunk(payload: bytes) -> AsyncIterator[bytes]:
     yield payload
 
@@ -210,6 +250,17 @@ def install_jackside_final_recovery(app: FastAPI) -> FastAPI:
         response = await call_next(request)
         if request.method != "GET" or request.url.path != "/quiz":
             return response
+
+        campaign = str(request.query_params.get("campaign") or "").strip()
+        if response.status_code == 404 and campaign.startswith("jackside_"):
+            payload = _persisted_final_payload(settings, request, campaign)
+            if payload and payload.get("state") != "pending":
+                return HTMLResponse(
+                    _result_html(payload),
+                    status_code=200,
+                    headers={"Cache-Control": "private, no-store"},
+                )
+
         content_type = str(response.headers.get("content-type") or "").lower()
         if "text/html" not in content_type:
             return response
