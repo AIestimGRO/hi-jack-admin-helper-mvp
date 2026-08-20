@@ -179,6 +179,8 @@ def rewrite_jackside_quiz_html(html: str) -> str:
         'data-campaign-background=""', html, count=1
     )
     rewritten = _brand_html(rewritten)
+    if _UI_STYLE_TAG not in rewritten:
+        rewritten = rewritten.replace("</head>", f"{_UI_STYLE_TAG}\n</head>", 1)
     if _SCRIPT_TAG not in rewritten:
         rewritten = rewritten.replace("</body>", f"{_SCRIPT_TAG}\n</body>", 1)
     return rewritten
