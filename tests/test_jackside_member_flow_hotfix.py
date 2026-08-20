@@ -24,6 +24,7 @@ def test_member_actions_use_lobby_and_participate_labels_and_keep_rules() -> Non
 
 def test_intro_urgency_counts_down_to_main_round_end() -> None:
     source = (ROOT / 'app/static/js/jackside-critical-hotfix.js').read_text(encoding='utf-8')
+    css = (ROOT / 'app/static/css/jackside-final-recovery.css').read_text(encoding='utf-8')
     assert 'Торопитесь, квиз уже начался' in source
     assert 'До конца квиза осталось' in source
     assert 'mainRoundSeconds = 254' in source
@@ -32,6 +33,8 @@ def test_intro_urgency_counts_down_to_main_round_end() -> None:
     assert 'jackside-intro-clock' in source
     assert 'urgency-mm' in source
     assert 'urgency-ss' in source
+    assert '.jackside-intro-urgency' in css
+    assert '.jackside-intro-clock' in css
 
 
 def test_final_outcome_returns_to_jackside_and_opens_rating() -> None:
@@ -40,6 +43,26 @@ def test_final_outcome_returns_to_jackside_and_opens_rating() -> None:
     assert "existing.textContent = 'Вернуться в JACKSIDE'" in source
     assert "rating.href = '/account?tab=rating'" in source
     assert "rating.textContent = 'Открыть рейтинг'" in source
+
+
+def test_closed_final_uses_persisted_recovery_instead_of_404_reload() -> None:
+    source = (ROOT / 'app/static/js/jackside-critical-hotfix.js').read_text(encoding='utf-8')
+    recovery = (ROOT / 'app/jackside_final_recovery.py').read_text(encoding='utf-8')
+    assert '/api/jackside/final-result' in source
+    assert 'renderRecoveredFinalOutcome' in source
+    assert 'response.status === 404' in source
+    assert 'window.location.reload();\n            return;' not in source[source.find('response.status === 404'):source.find('response.status === 404') + 180]
+    assert '@app.get("/api/jackside/final-result")' in recovery
+    assert 'response.status_code == 404' in recovery
+    assert 'Вернуться в JACKSIDE' in recovery
+    assert 'Открыть рейтинг' in recovery
+
+
+def test_lobby_copy_does_not_show_need_minimum_phrase() -> None:
+    source = (ROOT / 'app/static/js/jackside-critical-hotfix.js').read_text(encoding='utf-8')
+    assert 'cleanLobbyMinimumCopy' in source
+    assert 'нужно минимум' in source
+    assert "replace(/\\s*\\(нужно минимум\\s+\\d+\\)/gi, '')" in source
 
 
 def test_jackside_brand_replaces_old_member_logo_and_pwa_links() -> None:
