@@ -7,6 +7,24 @@ from fastapi import FastAPI
 from app.db import transaction
 
 
+JACKSIDE_WINNER_ISSUE_TOTAL = 414
+
+
+def _winner_issue_adjustment_sql() -> str:
+    main_award = (
+        "COALESCE((SELECT qs.jackcoin_awarded FROM quiz_submissions qs "
+        "WHERE qs.id=NEW.submission_id), 0)"
+    )
+    final_correct_award = (
+        "COALESCE((SELECT SUM(jl.amount) FROM jackcoin_ledger jl "
+        "JOIN daily_414_final_answers a ON CAST(a.id AS TEXT)=jl.source_id "
+        "WHERE jl.client_id=NEW.client_id "
+        "AND jl.source_type='jackside_final_correct' "
+        "AND a.final_table_id=NEW.final_table_id), 0)"
+    )
+    return f"({JACKSIDE_WINNER_ISSUE_TOTAL} - {main_award} - {final_correct_award})"
+
+
 def ensure_prelaunch_economy_compat(conn: sqlite3.Connection) -> None:
     """Rebuild launch-only triggers with legacy-safe and Unicode-safe guards."""
     from app.prelaunch_experience import _amount_sql, _jackside_referral_trigger_sql
@@ -54,11 +72,7 @@ def ensure_prelaunch_economy_compat(conn: sqlite3.Connection) -> None:
         entity_type="jackside",
         entity_id_sql="ft.campaign_code",
     )
-    final_win_amount = _amount_sql(
-        "jackside_final_win",
-        entity_type="jackside",
-        entity_id_sql="ft.campaign_code",
-    )
+    winner_adjustment = _winner_issue_adjustment_sql()
     conn.executescript(
         f"""
         DROP TRIGGER IF EXISTS trg_prelaunch_final_correct_jc;
@@ -92,14 +106,15 @@ def ensure_prelaunch_economy_compat(conn: sqlite3.Connection) -> None:
                 idempotency_key, comment
             )
             SELECT NEW.client_id,
-                   {final_win_amount},
-                   'earn', 'jackside_final_win', CAST(NEW.final_table_id AS TEXT),
+                   {winner_adjustment},
+                   CASE WHEN ({winner_adjustment}) > 0 THEN 'earn' ELSE 'adjust' END,
+                   'jackside_final_win', CAST(NEW.final_table_id AS TEXT),
                    'jackside:final-win:' || NEW.id,
-                   'JACKSIDE: победа в суперфинале'
+                   'JACKSIDE: итог победителя за выпуск доведён до 414 JC'
             FROM daily_414_final_tables ft
             WHERE ft.id=NEW.final_table_id
               AND ft.campaign_code LIKE 'jackside_%'
-              AND ({final_win_amount}) > 0;
+              AND ({winner_adjustment}) <> 0;
         END;
 
         DROP TRIGGER IF EXISTS trg_prelaunch_final_win_insert_jc;
@@ -112,14 +127,15 @@ def ensure_prelaunch_economy_compat(conn: sqlite3.Connection) -> None:
                 idempotency_key, comment
             )
             SELECT NEW.client_id,
-                   {final_win_amount},
-                   'earn', 'jackside_final_win', CAST(NEW.final_table_id AS TEXT),
+                   {winner_adjustment},
+                   CASE WHEN ({winner_adjustment}) > 0 THEN 'earn' ELSE 'adjust' END,
+                   'jackside_final_win', CAST(NEW.final_table_id AS TEXT),
                    'jackside:final-win:' || NEW.id,
-                   'JACKSIDE: победа в суперфинале'
+                   'JACKSIDE: итог победителя за выпуск доведён до 414 JC'
             FROM daily_414_final_tables ft
             WHERE ft.id=NEW.final_table_id
               AND ft.campaign_code LIKE 'jackside_%'
-              AND ({final_win_amount}) > 0;
+              AND ({winner_adjustment}) <> 0;
         END;
 
         DROP TRIGGER IF EXISTS trg_prelaunch_jackside_referral_jc;

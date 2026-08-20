@@ -64,6 +64,38 @@ def _issue_jackcoin_breakdown(conn, *, table_id: int, submission, client_id: int
     }
 
 
+def _final_answer_result(conn, *, table_id: int, finalist) -> tuple[bool | None, int]:
+    question_index = finalist["eliminated_question_index"]
+    if question_index is None:
+        return None, 0
+    answer = conn.execute(
+        """
+        SELECT id, is_correct
+        FROM daily_414_final_answers
+        WHERE final_table_id=? AND finalist_id=? AND question_index=?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (table_id, int(finalist["id"]), int(question_index)),
+    ).fetchone()
+    if not answer:
+        return None, 0
+    awarded = int(
+        conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0)
+            FROM jackcoin_ledger
+            WHERE client_id=?
+              AND source_type='jackside_final_correct'
+              AND source_id=?
+            """,
+            (int(finalist["client_id"]), str(answer["id"])),
+        ).fetchone()[0]
+        or 0
+    )
+    return bool(answer["is_correct"]), awarded
+
+
 def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] | None:
     code = str(campaign or "").strip()
     if not code.startswith("jackside_"):
@@ -161,10 +193,39 @@ def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] |
                 "message": final_winner_announcement(1),
             }
 
+        answer_correct, correct_award = _final_answer_result(
+            conn,
+            table_id=table_id,
+            finalist=finalist,
+        )
+        if answer_correct is True:
+            return {
+                **base,
+                "state": "correct_not_first",
+                "message": (
+                    "Ответ верный! "
+                    f"За правильный ответ на финальный вопрос вы получаете {correct_award} JC. "
+                    "Но, к сожалению, другой участник ответил правильно раньше и стал "
+                    "победителем финального стола."
+                ),
+            }
+        if answer_correct is False:
+            return {
+                **base,
+                "state": "eliminated",
+                "message": (
+                    "Ответ на финальный вопрос неверный. Финальный стол для вас завершён. "
+                    "Ниже — итог: сколько JACKCOIN вы получили за выпуск и за что."
+                ),
+            }
+
         return {
             **base,
             "state": "eliminated",
-            "message": "Финальный стол для вас завершён. Результат и JACKCOIN сохранены.",
+            "message": (
+                "Финальный стол для вас завершён. "
+                "Ниже — итог: сколько JACKCOIN вы получили за выпуск и за что."
+            ),
         }
 
 
