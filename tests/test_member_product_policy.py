@@ -21,7 +21,7 @@ def test_jackside_copy_and_lobby_match_current_rules() -> None:
     template = (ROOT / "app/templates/quiz.html").read_text(encoding="utf-8")
     assert "414 JACKCOIN" in template
     assert "Начисление победителю сразу после завершения финала" in template
-    assert template.count("Вернуться в приложение") >= 2
+    assert template.count("Вернуться в JACKSIDE") >= 2
     assert "Отбор открыт первые 5 минут" not in template
     assert "Топ-10: сначала точность, затем скорость" not in template
     assert "Игра проходит каждый день в 18:14" not in template
