@@ -201,28 +201,44 @@ def seed_finalists(
     ).fetchone():
         return
     campaign_code = str(final_table["campaign_code"] or "")
-    requires_perfect_score = campaign_code.startswith("jackside_")
-    submissions = conn.execute(
-        """
-        SELECT id, client_id
-        FROM quiz_submissions
-        WHERE campaign_code=? AND campaign_version=?
-          AND main_prize_eligible=1
-          AND IFNULL(main_round_completed, 1)=1
-          AND (?=0 OR correct_count=?)
-        ORDER BY correct_count DESC,
-                 IFNULL(completion_time_ms, 2147483647) ASC,
-                 id ASC
-        LIMIT ?
-        """,
-        (
-            campaign_code,
-            final_table["campaign_version"],
-            int(requires_perfect_score),
-            DAILY_414_QUESTION_COUNT,
-            DAILY_414_FINAL_TABLE_SIZE,
-        ),
-    ).fetchall()
+    if campaign_code.startswith("jackside_"):
+        submissions = conn.execute(
+            """
+            SELECT id, client_id
+            FROM quiz_submissions
+            WHERE campaign_code=? AND campaign_version=?
+              AND main_prize_eligible=1
+              AND IFNULL(main_round_completed, 1)=1
+              AND correct_count=?
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            (
+                campaign_code,
+                final_table["campaign_version"],
+                DAILY_414_QUESTION_COUNT,
+                DAILY_414_FINAL_TABLE_SIZE,
+            ),
+        ).fetchall()
+    else:
+        submissions = conn.execute(
+            """
+            SELECT id, client_id
+            FROM quiz_submissions
+            WHERE campaign_code=? AND campaign_version=?
+              AND main_prize_eligible=1
+              AND IFNULL(main_round_completed, 1)=1
+            ORDER BY correct_count DESC,
+                     IFNULL(completion_time_ms, 2147483647) ASC,
+                     id ASC
+            LIMIT ?
+            """,
+            (
+                campaign_code,
+                final_table["campaign_version"],
+                DAILY_414_FINAL_TABLE_SIZE,
+            ),
+        ).fetchall()
     conn.executemany(
         """
         INSERT OR IGNORE INTO daily_414_finalists(
