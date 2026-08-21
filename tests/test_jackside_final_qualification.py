@@ -17,6 +17,7 @@ def _seed_submission(
     number: int,
     correct_count: int,
     completion_time_ms: int,
+    created_at: str | None = None,
 ) -> int:
     client_id = int(
         conn.execute(
@@ -31,8 +32,9 @@ def _seed_submission(
                 campaign_code, campaign_version, client_id, phone_raw,
                 phone_local, answers_json, correct_count, max_correct_count,
                 completion_time_ms, main_prize_eligible, main_round_completed,
-                ip_hash
-            ) VALUES (?, 1, ?, ?, ?, '{}', ?, 10, ?, 1, 1, ?)
+                ip_hash, created_at
+            ) VALUES (?, 1, ?, ?, ?, '{}', ?, 10, ?, 1, 1, ?,
+                      COALESCE(?, CURRENT_TIMESTAMP))
             """,
             (
                 campaign_code,
@@ -42,12 +44,13 @@ def _seed_submission(
                 correct_count,
                 completion_time_ms,
                 f"ip-{number}",
+                created_at,
             ),
         ).lastrowid
     )
 
 
-def test_jackside_final_uses_only_fastest_ten_perfect_scores(tmp_path) -> None:
+def test_jackside_final_uses_first_ten_perfect_finishes(tmp_path) -> None:
     db_path = tmp_path / "jackside-perfect-top-ten.sqlite3"
     init_db(db_path)
     campaign_code = "jackside_20260821"
@@ -55,18 +58,22 @@ def test_jackside_final_uses_only_fastest_ten_perfect_scores(tmp_path) -> None:
 
     with transaction(db_path) as conn:
         perfect = []
-        for number, completion_time_ms in enumerate(
-            (7200, 3100, 8600, 2500, 4300, 6900, 1200, 5400, 9800, 3600, 6100, 4700),
+        finish_seconds = (12, 3, 15, 2, 7, 11, 1, 9, 18, 5, 10, 8)
+        personal_durations = (100, 9000, 200, 8000, 300, 7000, 6000, 400, 500, 5000, 600, 4000)
+        for number, (finish_second, completion_time_ms) in enumerate(
+            zip(finish_seconds, personal_durations),
             start=1,
         ):
+            created_at = f"2026-08-21 15:18:{finish_second:02d}"
             submission_id = _seed_submission(
                 conn,
                 campaign_code=campaign_code,
                 number=number,
                 correct_count=10,
                 completion_time_ms=completion_time_ms,
+                created_at=created_at,
             )
-            perfect.append((submission_id, completion_time_ms))
+            perfect.append((submission_id, created_at))
 
         fast_nine_of_ten = _seed_submission(
             conn,
@@ -74,6 +81,7 @@ def test_jackside_final_uses_only_fastest_ten_perfect_scores(tmp_path) -> None:
             number=99,
             correct_count=9,
             completion_time_ms=1,
+            created_at="2026-08-21 15:18:00",
         )
 
         table = ensure_final_table(
@@ -86,7 +94,7 @@ def test_jackside_final_uses_only_fastest_ten_perfect_scores(tmp_path) -> None:
         seed_finalists(conn, final_table=table)
         finalists = conn.execute(
             """
-            SELECT df.submission_id, df.seed, qs.correct_count, qs.completion_time_ms
+            SELECT df.submission_id, df.seed, qs.correct_count, qs.created_at
             FROM daily_414_finalists df
             JOIN quiz_submissions qs ON qs.id=df.submission_id
             WHERE df.final_table_id=?
