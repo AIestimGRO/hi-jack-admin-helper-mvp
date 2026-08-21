@@ -200,6 +200,8 @@ def seed_finalists(
         (final_table["id"],),
     ).fetchone():
         return
+    campaign_code = str(final_table["campaign_code"] or "")
+    requires_perfect_score = campaign_code.startswith("jackside_")
     submissions = conn.execute(
         """
         SELECT id, client_id
@@ -207,14 +209,16 @@ def seed_finalists(
         WHERE campaign_code=? AND campaign_version=?
           AND main_prize_eligible=1
           AND IFNULL(main_round_completed, 1)=1
-          AND correct_count=?
-        ORDER BY IFNULL(completion_time_ms, 2147483647) ASC,
+          AND (?=0 OR correct_count=?)
+        ORDER BY correct_count DESC,
+                 IFNULL(completion_time_ms, 2147483647) ASC,
                  id ASC
         LIMIT ?
         """,
         (
-            final_table["campaign_code"],
+            campaign_code,
             final_table["campaign_version"],
+            int(requires_perfect_score),
             DAILY_414_QUESTION_COUNT,
             DAILY_414_FINAL_TABLE_SIZE,
         ),
