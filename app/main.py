@@ -26,6 +26,7 @@ from app.admin_access_control import install_admin_access_control
 from app.admin_account_lifecycle import install_admin_account_lifecycle
 from app.admin_information_architecture import install_admin_information_architecture
 from app.admin_telegram_unlink import install_admin_telegram_unlink
+from app.admin_vault_scanner import install_admin_vault_scanner
 from app.club_links_hotfix import install_club_links_hotfix
 from app.db import init_db
 from app.hijack_extensions import install_hijack_extensions
@@ -128,6 +129,7 @@ def _install_extensions(application):
     application = install_admin_information_architecture(application)
     application = install_admin_access_control(application)
     application = install_member_host_routing(application)
+    application = install_admin_vault_scanner(application)
     return _session_middleware_outermost(application)
 
 
