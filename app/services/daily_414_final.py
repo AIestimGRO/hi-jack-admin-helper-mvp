@@ -210,6 +210,8 @@ def seed_finalists(
             WHERE campaign_code=? AND campaign_version=?
               AND main_prize_eligible=1
               AND IFNULL(main_round_completed, 1)=1
+              AND max_correct_count > 0
+              AND correct_count = max_correct_count
             ORDER BY created_at ASC, id ASC
             """,
             (campaign_code, final_table["campaign_version"]),
