@@ -6,18 +6,17 @@ from typing import Any
 import sqlite3
 
 from app import jackside_multi_issue as multi_issue
+from app import jackside_multi_runtime as multi_runtime
 from app.jackside_flexible_labels import normalize_builtin_perfect_labels
 from app.services import daily_414_final as final_service
 from app.services import jackside_copy as copy_service
 from app.services import jackside_issues as issue_service
 
 
+# jackside_multi_runtime is the canonical current JACKSIDE policy layer and is
+# imported explicitly above. Compatibility must never depend on import order.
 _PREVIOUS_EFFECTIVE_SCHEDULE = issue_service.effective_campaign_schedule
-_PREVIOUS_VALIDATE_ISSUE = issue_service.validate_issue_for_publish
-_PREVIOUS_ENSURE_DEFAULT_RULES = issue_service.ensure_default_rules
 _PREVIOUS_RESCHEDULE = multi_issue.reschedule_future_issue
-_PREVIOUS_SEED_FINALISTS = final_service.seed_finalists
-_PREVIOUS_RESULT_COPY = copy_service.result_copy_for_score
 
 
 def effective_campaign_schedule_compat(
@@ -44,17 +43,17 @@ def effective_campaign_schedule_compat(
 
 
 def ensure_default_rules_compat(conn: sqlite3.Connection) -> sqlite3.Row:
-    """Backward-compatible entry point; policy lives in jackside_multi_runtime."""
-    return _PREVIOUS_ENSURE_DEFAULT_RULES(conn)
+    """Backward-compatible alias for the canonical JACKSIDE rules policy."""
+    return multi_runtime.ensure_default_rules_flexible(conn)
 
 
 def validate_issue_for_publish_compat(
     conn: sqlite3.Connection,
     issue: sqlite3.Row | dict[str, Any],
 ) -> list[str]:
-    """Compatibility wrapper around the canonical JACKSIDE validation policy."""
+    """Backward-compatible alias for canonical JACKSIDE publish validation."""
     normalize_builtin_perfect_labels(conn)
-    _PREVIOUS_ENSURE_DEFAULT_RULES(conn)
+    multi_runtime.ensure_default_rules_flexible(conn)
     current = issue
     try:
         issue_id = int(issue["id"])
@@ -64,7 +63,7 @@ def validate_issue_for_publish_compat(
         refreshed = issue_service.get_issue(conn, issue_id)
         if refreshed:
             current = refreshed
-    return _PREVIOUS_VALIDATE_ISSUE(conn, current)
+    return multi_runtime.validate_issue_for_publish_flexible(conn, current)
 
 
 def reschedule_future_issue_compat(
@@ -102,8 +101,8 @@ def seed_finalists_compat(
     *,
     final_table: sqlite3.Row,
 ) -> None:
-    """Backward-compatible name for the canonical final seeding function."""
-    _PREVIOUS_SEED_FINALISTS(conn, final_table=final_table)
+    """Backward-compatible alias for canonical final seeding."""
+    final_service.seed_finalists(conn, final_table=final_table)
 
 
 def result_copy_for_score_compat(
@@ -111,14 +110,16 @@ def result_copy_for_score_compat(
     *,
     final_eligible: bool = True,
 ) -> dict[str, str]:
-    """Backward-compatible name for the centralized JACKSIDE result copy."""
-    return _PREVIOUS_RESULT_COPY(correct_count, final_eligible=final_eligible)
+    """Backward-compatible alias for centralized JACKSIDE result copy."""
+    return copy_service.result_copy_for_score(
+        correct_count, final_eligible=final_eligible
+    )
 
 
-# Keep only compatibility that still has a separate transport/runtime purpose.
-# Rules, finalist selection and result copy now live in their canonical modules.
+# Keep only compatibility with a separate transport/runtime purpose. Current
+# rules, publish validation, finalist selection and result copy are not
+# reimplemented or re-bound here.
 issue_service.effective_campaign_schedule = effective_campaign_schedule_compat
-issue_service.validate_issue_for_publish = validate_issue_for_publish_compat
 multi_issue.reschedule_future_issue = reschedule_future_issue_compat
 
 
