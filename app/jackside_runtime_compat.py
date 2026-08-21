@@ -18,6 +18,9 @@ _PREVIOUS_ENSURE_DEFAULT_RULES = issue_service.ensure_default_rules
 _PREVIOUS_RESCHEDULE = multi_issue.reschedule_future_issue
 _PREVIOUS_SEED_FINALISTS = final_service.seed_finalists
 _LEGACY_DEFAULT_RULES_VERSION = "1.1"
+_LEGACY_DEFAULT_RULES_MARKER = (
+    "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;"
+)
 
 
 def effective_campaign_schedule_compat(
@@ -44,7 +47,7 @@ def effective_campaign_schedule_compat(
 
 
 def ensure_default_rules_compat(conn: sqlite3.Connection) -> sqlite3.Row:
-    """Migrate the built-in 1.1 rules to the current built-in version only."""
+    """Migrate only the known built-in 1.1 rules to the current built-in version."""
     current = _PREVIOUS_ENSURE_DEFAULT_RULES(conn)
     target_version = copy_service.DEFAULT_RULES_VERSION
     if str(current["version"] or "") == target_version:
@@ -53,6 +56,7 @@ def ensure_default_rules_compat(conn: sqlite3.Connection) -> sqlite3.Row:
     is_previous_builtin = bool(
         str(current["version"] or "") == _LEGACY_DEFAULT_RULES_VERSION
         and str(current["title"] or "") == copy_service.DEFAULT_RULES_TITLE
+        and _LEGACY_DEFAULT_RULES_MARKER in str(current["content"] or "")
     )
     if not is_previous_builtin:
         return current
