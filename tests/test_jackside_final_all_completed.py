@@ -8,6 +8,9 @@ from app.services.jackside_copy import DEFAULT_RULES_CONTENT, DEFAULT_RULES_VERS
 
 
 ROOT = Path(__file__).resolve().parents[1]
+LEGACY_BUILTIN_MARKER = (
+    "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;"
+)
 
 
 def _seed_submission(
@@ -120,8 +123,9 @@ def test_builtin_rules_migrate_from_11_to_12(tmp_path) -> None:
         conn.execute(
             """
             INSERT INTO jackside_rules_versions(version, title, content, is_active)
-            VALUES ('1.1', 'Правила JACKSIDE 4:14', 'old built-in rules', 1)
-            """
+            VALUES ('1.1', 'Правила JACKSIDE 4:14', ?, 1)
+            """,
+            (f"Built-in rules. {LEGACY_BUILTIN_MARKER}",),
         )
         migrated = ensure_default_rules_compat(conn)
         active = conn.execute(
@@ -139,6 +143,34 @@ def test_builtin_rules_migrate_from_11_to_12(tmp_path) -> None:
     assert "проходят все участники" in active["content"]
     assert "скорость прохождения основной части на допуск в финал не влияют" in active["content"]
     assert active["content"] == DEFAULT_RULES_CONTENT
+
+
+def test_custom_rules_version_11_is_not_auto_migrated(tmp_path) -> None:
+    db_path = tmp_path / "jackside-custom-rules-11.sqlite3"
+    init_db(db_path)
+    custom_content = "Обновлённые правила JACKSIDE. " + ("подробности " * 10)
+    with transaction(db_path) as conn:
+        conn.execute("UPDATE jackside_rules_versions SET is_active=0")
+        conn.execute(
+            """
+            INSERT INTO jackside_rules_versions(version, title, content, is_active)
+            VALUES ('1.1', 'Правила JACKSIDE 4:14', ?, 1)
+            """,
+            (custom_content,),
+        )
+        current = ensure_default_rules_compat(conn)
+        active = conn.execute(
+            """
+            SELECT version, content
+            FROM jackside_rules_versions
+            WHERE is_active=1
+            ORDER BY id DESC LIMIT 1
+            """
+        ).fetchone()
+
+    assert current["version"] == "1.1"
+    assert active["version"] == "1.1"
+    assert active["content"] == custom_content
 
 
 def test_jackside_ui_hides_late_entry_warning_before_real_start() -> None:
