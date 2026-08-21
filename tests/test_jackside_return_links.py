@@ -16,12 +16,14 @@ def test_jackside_return_links_are_native_and_prestyled() -> None:
     assert old_rating_text not in html
     assert html.index(".jackside-return-link {") < html.index("</head>")
     assert ".jackside-return-link[hidden] { display: none; }" in html
+    assert html.count("telegram-login-button jackside-return-link") == 3
     assert (
-        'class="quiz-secondary quiz-account-return jackside-return-link" href="/account"'
+        'class="quiz-secondary quiz-account-return telegram-login-button '
+        'jackside-return-link" href="/account"'
         in html
     )
     assert (
-        'class="quiz-secondary jackside-day-rating jackside-return-link" '
-        'href="/account" hidden'
+        'class="quiz-secondary jackside-day-rating telegram-login-button '
+        'jackside-return-link" href="/account" hidden'
         in html
     )
