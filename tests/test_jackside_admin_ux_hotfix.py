@@ -24,6 +24,16 @@ from app.services import jackside_issues as issue_service
 
 ROOT = Path(__file__).resolve().parents[1]
 MOSCOW = ZoneInfo("Europe/Moscow")
+LEGACY_RULES_VERSION = "1.2"
+LEGACY_RULES_CONTENT = """\
+JACKSIDE — один общий стол на весь клуб Hi, Jack.
+
+Каждый выпуск:
+• количество вопросов основной части задаёт мастер для конкретного выпуска;
+• один общий таймер 4 минуты 14 секунд начинается для всего клуба одновременно;
+• в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;
+• после закрытия основной части идёт 1 минута ожидания, затем начинается финальный стол.
+"""
 
 
 def _add_choice_question(
@@ -205,7 +215,7 @@ def test_publish_validation_accepts_three_main_questions(tmp_path) -> None:
     assert errors == []
 
 
-def test_existing_builtin_draft_upgrades_to_flexible_rules_on_validation(tmp_path) -> None:
+def test_existing_builtin_draft_upgrades_to_current_rules_on_validation(tmp_path) -> None:
     db_path = tmp_path / "rules-upgrade.sqlite3"
     init_db(db_path)
     ensure_multi_issue_schema(db_path)
@@ -219,17 +229,21 @@ def test_existing_builtin_draft_upgrades_to_flexible_rules_on_validation(tmp_pat
         issue_service.ensure_issue_campaign(conn, issue=issue)
         _seed_publishable_questions(conn, str(issue["campaign_code"]), main_count=3)
         conn.execute("UPDATE jackside_rules_versions SET is_active=0")
-        old_cursor = conn.execute(
+        conn.execute(
             """
-            INSERT OR IGNORE INTO jackside_rules_versions(
+            INSERT OR REPLACE INTO jackside_rules_versions(
                 version, title, content, is_active
-            ) VALUES (?, 'Old built-in rules', ?, 0)
+            ) VALUES (?, ?, ?, 1)
             """,
-            (copy_service.DEFAULT_RULES_VERSION, copy_service.DEFAULT_RULES_CONTENT),
+            (
+                LEGACY_RULES_VERSION,
+                copy_service.DEFAULT_RULES_TITLE,
+                LEGACY_RULES_CONTENT,
+            ),
         )
         old_rules = conn.execute(
             "SELECT * FROM jackside_rules_versions WHERE version=?",
-            (copy_service.DEFAULT_RULES_VERSION,),
+            (LEGACY_RULES_VERSION,),
         ).fetchone()
         assert old_rules is not None
         conn.execute(
@@ -238,19 +252,20 @@ def test_existing_builtin_draft_upgrades_to_flexible_rules_on_validation(tmp_pat
             SET rules_version_id=?, rules_version=?
             WHERE id=?
             """,
-            (int(old_rules["id"]), str(old_rules["version"]), int(issue["id"])),
-        )
-        conn.execute(
-            "UPDATE jackside_rules_versions SET is_active=1 WHERE id=?",
-            (int(old_rules["id"]),),
+            (int(old_rules["id"]), LEGACY_RULES_VERSION, int(issue["id"])),
         )
         legacy_draft = issue_service.refresh_issue_question_counts(conn, int(issue["id"]))
         errors = validate_issue_for_publish_compat(conn, legacy_draft)
         upgraded = issue_service.get_issue(conn, int(issue["id"]))
-        assert old_cursor is not None
+        active = conn.execute(
+            "SELECT * FROM jackside_rules_versions WHERE is_active=1"
+        ).fetchone()
     assert errors == []
     assert upgraded is not None
+    assert active is not None
     assert str(upgraded["rules_version"]) == copy_service.DEFAULT_RULES_VERSION
+    assert str(active["version"]) == copy_service.DEFAULT_RULES_VERSION
+    assert str(active["content"]) == copy_service.DEFAULT_RULES_CONTENT
 
 
 def test_admin_release_form_is_not_captured_by_generic_ajax() -> None:
