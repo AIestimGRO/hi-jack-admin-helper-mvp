@@ -18,7 +18,7 @@ def test_vault_scanner_reuses_existing_redeem_action() -> None:
     assert "/css/admin-vault-scanner.css" in html
 
 
-def test_scanner_extracts_card_code_without_auto_redeem() -> None:
+def test_scanner_extracts_card_code_and_requests_confirmed_redeem() -> None:
     source = (ROOT / "app/static/js/admin-vault-scanner.js").read_text(
         encoding="utf-8"
     )
@@ -30,7 +30,8 @@ def test_scanner_extracts_card_code_without_auto_redeem() -> None:
     assert "parsed.pathname.replace(/\\/+$/, '') !== '/admin/vault'" in source
     assert "parsed.searchParams.get('code')" in source
     assert "form.submit(" not in source
-    assert "form.requestSubmit(" not in source
+    assert "form.requestSubmit()" in source
+    assert "Подтвердите сжигание JACK CARD" in source
 
 
 def test_camera_permission_is_scoped_to_admin_vault() -> None:
