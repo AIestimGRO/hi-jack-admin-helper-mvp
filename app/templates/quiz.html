@@ -14,7 +14,7 @@
       min-height: 54px;
       align-items: center;
       justify-content: center;
-      margin-top: 12px;
+      margin-top: 10px;
       padding: 0 22px;
       color: #c8f6f1;
       text-align: center;
@@ -48,7 +48,7 @@
         <span><strong data-countdown-seconds>00</strong><small>секунд</small></span>
       </div>
       <p class="quiz-schedule-time"></p>
-      {% if campaign_type == 'daily_414' %}<a class="quiz-secondary quiz-account-return jackside-return-link" href="/account">Вернуться в JACKSIDE</a>{% endif %}
+      {% if campaign_type == 'daily_414' %}<a class="quiz-secondary quiz-account-return telegram-login-button jackside-return-link" href="/account">Вернуться в JACKSIDE</a>{% endif %}
     </section>
 
     <section class="quiz-screen quiz-schedule-screen" data-screen="ended">
@@ -82,7 +82,7 @@
         <li data-role="welcome-award">{{ jackside.base_award_hint if jackside else 'JACKCOIN за правильные ответы' }}</li>
       </ul>
       <p class="quiz-rules-link"><a href="/jackside/rules">Полные правила</a></p>
-      {% if schedule_state == 'upcoming' %}<a class="quiz-secondary quiz-account-return jackside-return-link" href="/account">Вернуться в JACKSIDE</a>{% endif %}
+      {% if schedule_state == 'upcoming' %}<a class="quiz-secondary quiz-account-return telegram-login-button jackside-return-link" href="/account">Вернуться в JACKSIDE</a>{% endif %}
       {% endif %}
       {% if telegram_error %}<p class="quiz-validation">{{ telegram_error }}</p>{% endif %}
       <button class="quiz-primary" type="button" data-action="identify">Начать</button>
@@ -240,7 +240,7 @@
         <button class="quiz-method-back" type="button" data-action="copy-share">Скопировать ссылку</button>
         <small class="quiz-share-status" aria-live="polite"></small>
       </div>
-      <a class="quiz-secondary jackside-day-rating jackside-return-link" href="/account" hidden>Вернуться в JACKSIDE</a>
+      <a class="quiz-secondary jackside-day-rating telegram-login-button jackside-return-link" href="/account" hidden>Вернуться в JACKSIDE</a>
       <button class="quiz-primary quiz-retry" type="button" data-action="new-attempt" hidden>Попробовать ещё раз</button>
     </section>
 
