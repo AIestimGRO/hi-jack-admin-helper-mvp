@@ -115,8 +115,8 @@ def test_jackside_final_includes_every_completed_player_without_score_or_speed_c
     assert outside_deadline_id not in finalist_ids
 
 
-def test_builtin_rules_migrate_from_11_to_12(tmp_path) -> None:
-    db_path = tmp_path / "jackside-rules-12.sqlite3"
+def test_builtin_rules_migrate_from_11_to_13(tmp_path) -> None:
+    db_path = tmp_path / "jackside-rules-13.sqlite3"
     init_db(db_path)
     with transaction(db_path) as conn:
         conn.execute("UPDATE jackside_rules_versions SET is_active=0")
@@ -137,12 +137,37 @@ def test_builtin_rules_migrate_from_11_to_12(tmp_path) -> None:
             """
         ).fetchone()
 
-    assert DEFAULT_RULES_VERSION == "1.2"
-    assert migrated["version"] == "1.2"
-    assert active["version"] == "1.2"
+    assert DEFAULT_RULES_VERSION == "1.3"
+    assert migrated["version"] == "1.3"
+    assert active["version"] == "1.3"
     assert "проходят все участники" in active["content"]
     assert "скорость прохождения основной части на допуск в финал не влияют" in active["content"]
+    assert "ответили на все вопросы основной части" in active["content"]
     assert active["content"] == DEFAULT_RULES_CONTENT
+
+
+def test_builtin_flexible_rules_12_migrate_to_13(tmp_path) -> None:
+    db_path = tmp_path / "jackside-rules-12-to-13.sqlite3"
+    init_db(db_path)
+    old_content = (
+        "JACKSIDE built-in.\n"
+        "• количество вопросов основной части задаёт мастер для конкретного выпуска;\n"
+        "• один общий таймер 4 минуты 14 секунд начинается для всего клуба одновременно;\n"
+        f"• {LEGACY_BUILTIN_MARKER}\n"
+    )
+    with transaction(db_path) as conn:
+        conn.execute("UPDATE jackside_rules_versions SET is_active=0")
+        conn.execute(
+            """
+            INSERT INTO jackside_rules_versions(version, title, content, is_active)
+            VALUES ('1.2', 'Правила JACKSIDE 4:14', ?, 1)
+            """,
+            (old_content,),
+        )
+        migrated = ensure_default_rules_compat(conn)
+
+    assert migrated["version"] == "1.3"
+    assert migrated["content"] == DEFAULT_RULES_CONTENT
 
 
 def test_custom_rules_version_11_is_not_auto_migrated(tmp_path) -> None:
