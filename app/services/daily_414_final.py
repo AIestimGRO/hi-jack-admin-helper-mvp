@@ -8,6 +8,7 @@ from typing import Any
 from app.services.daily_414 import (
     DAILY_414_FINAL_QUESTION_SECONDS,
     DAILY_414_FINAL_TABLE_SIZE,
+    DAILY_414_QUESTION_COUNT,
 )
 
 
@@ -206,14 +207,15 @@ def seed_finalists(
         WHERE campaign_code=? AND campaign_version=?
           AND main_prize_eligible=1
           AND IFNULL(main_round_completed, 1)=1
-        ORDER BY correct_count DESC,
-                 IFNULL(completion_time_ms, 2147483647) ASC,
+          AND correct_count=?
+        ORDER BY IFNULL(completion_time_ms, 2147483647) ASC,
                  id ASC
         LIMIT ?
         """,
         (
             final_table["campaign_code"],
             final_table["campaign_version"],
+            DAILY_414_QUESTION_COUNT,
             DAILY_414_FINAL_TABLE_SIZE,
         ),
     ).fetchall()
