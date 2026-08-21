@@ -209,13 +209,14 @@ def seed_finalists(
             WHERE campaign_code=? AND campaign_version=?
               AND main_prize_eligible=1
               AND IFNULL(main_round_completed, 1)=1
-              AND correct_count=?
+              AND correct_count=? AND max_correct_count=?
             ORDER BY created_at ASC, id ASC
             LIMIT ?
             """,
             (
                 campaign_code,
                 final_table["campaign_version"],
+                DAILY_414_QUESTION_COUNT,
                 DAILY_414_QUESTION_COUNT,
                 DAILY_414_FINAL_TABLE_SIZE,
             ),
