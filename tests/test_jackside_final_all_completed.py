@@ -198,6 +198,25 @@ def test_custom_rules_version_11_is_not_auto_migrated(tmp_path) -> None:
     assert active["content"] == custom_content
 
 
+def test_jackside_policy_is_not_reimplemented_in_runtime_compat() -> None:
+    compat_source = (ROOT / "app/jackside_runtime_compat.py").read_text(
+        encoding="utf-8"
+    )
+    multi_source = (ROOT / "app/jackside_multi_runtime.py").read_text(
+        encoding="utf-8"
+    )
+    final_source = (ROOT / "app/services/daily_414_final.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "final_service.seed_finalists = seed_finalists_compat" not in compat_source
+    assert "copy_service.result_copy_for_score = result_copy_for_score_compat" not in compat_source
+    assert "issue_service.ensure_default_rules = ensure_default_rules_compat" not in compat_source
+    assert LEGACY_BUILTIN_MARKER not in multi_source
+    assert 'if campaign_code.startswith("jackside_"):' in final_source
+    assert "ORDER BY created_at ASC, id ASC" in final_source
+
+
 def test_jackside_ui_hides_late_entry_warning_before_real_start() -> None:
     source = (ROOT / "app/static/js/jackside-critical-hotfix.js").read_text(
         encoding="utf-8"
