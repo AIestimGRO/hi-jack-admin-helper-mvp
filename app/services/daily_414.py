@@ -229,12 +229,20 @@ def final_table_candidate_eligible(
 def rank_final_candidates(
     rows: list[sqlite3.Row] | list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Order eligible submissions: more correct first, then faster, then earlier id."""
+    """Keep only 10/10 submissions, ordered by fastest completion then id."""
+    perfect = [
+        row
+        for row in rows
+        if int(row["correct_count"] or 0) == DAILY_414_QUESTION_COUNT
+    ]
     ordered = sorted(
-        rows,
+        perfect,
         key=lambda row: (
-            -int(row["correct_count"] or 0),
-            int(row["completion_time_ms"] if row["completion_time_ms"] is not None else 2_147_483_647),
+            int(
+                row["completion_time_ms"]
+                if row["completion_time_ms"] is not None
+                else 2_147_483_647
+            ),
             int(row["id"]),
         ),
     )
