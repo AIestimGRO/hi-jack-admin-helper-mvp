@@ -2,6 +2,7 @@
 {% from "_reward_animation.html" import reward_animation %}
 {% block title %}THE VAULT — Hi Jack Club{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/admin-vault-scanner.css') }}?v={{ asset_version }}">
 <div class="page-head">
   <div><p class="eyebrow">THE VAULT · Хранилище</p><h1>Награды и JACK CARDS</h1></div>
 </div>
@@ -15,11 +16,23 @@
 {% endfor %}
 
 <section class="card vault-redeem-card">
-  <div><p class="eyebrow">Выдача в клубе</p><h2>Погасить цифровую карту</h2><p class="muted">Сканирование QR только подставляет код. Награда списывается после подтверждения администратором.</p></div>
-  <form action="/api/vault/redeem" method="post" onsubmit="return confirm('Погасить эту карту? Повторное использование будет невозможно.');">
+  <div><p class="eyebrow">Выдача в клубе</p><h2>Сканировать и сжечь JACK CARD</h2><p class="muted">Наведите камеру на QR активированной карты. Сканер только подставит код — карта сгорит только после отдельного подтверждения администратора.</p></div>
+  <div class="vault-scanner" data-vault-scanner>
+    <div class="vault-scanner-actions">
+      <button class="primary" type="button" data-vault-scan-start>Сканировать QR</button>
+      <button class="button" type="button" data-vault-scan-stop hidden>Закрыть камеру</button>
+    </div>
+    <div class="vault-scanner-panel" data-vault-scan-panel hidden>
+      <video class="vault-scanner-video" data-vault-scan-video autoplay muted playsinline></video>
+      <div class="vault-scanner-guide" aria-hidden="true"></div>
+    </div>
+    <canvas data-vault-scan-canvas hidden></canvas>
+    <p class="vault-scanner-status" data-vault-scan-status aria-live="polite">Нажмите «Сканировать QR» и разрешите доступ к камере.</p>
+  </div>
+  <form class="vault-redeem-form" data-vault-redeem-form action="/api/vault/redeem" method="post" onsubmit="return confirm('Сжечь эту JACK CARD? Повторное использование будет невозможно.');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input name="code" value="{{ filters.code }}" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="4 цифры или QR" required autofocus>
-    <button class="primary" type="submit">Погасить карту</button>
+    <input name="code" value="{{ filters.code }}" maxlength="64" inputmode="text" autocomplete="off" placeholder="Код JACK CARD" required>
+    <button class="primary vault-burn-button" type="submit">Сжечь JACK CARD</button>
   </form>
 </section>
 
@@ -128,4 +141,6 @@
   <summary>Журнал THE VAULT</summary>
   <div class="table-wrap"><table><thead><tr><th>Время</th><th>Код</th><th>Действие</th><th>Администратор</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.code }}</td><td>{{ event.action }}</td><td>{{ event.admin_name }}</td></tr>{% else %}<tr><td colspan="4" class="empty">Событий пока нет</td></tr>{% endfor %}</tbody></table></div>
 </details>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" defer></script>
+<script src="{{ url_for('static', path='/js/admin-vault-scanner.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}
