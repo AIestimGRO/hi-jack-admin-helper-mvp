@@ -109,10 +109,13 @@ def result_copy_for_score_compat(
     correct_count: int,
     *,
     final_eligible: bool = True,
+    max_correct_count: int | None = None,
 ) -> dict[str, str]:
     """Backward-compatible alias for centralized JACKSIDE result copy."""
     return copy_service.result_copy_for_score(
-        correct_count, final_eligible=final_eligible
+        correct_count,
+        final_eligible=final_eligible,
+        max_correct_count=max_correct_count,
     )
 
 
