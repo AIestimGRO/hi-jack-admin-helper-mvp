@@ -44,7 +44,7 @@ RESULT_COPY_BY_RANGE: tuple[dict[str, Any], ...] = (
     },
 )
 
-DEFAULT_RULES_VERSION = "1.3"
+DEFAULT_RULES_VERSION = "1.4"
 DEFAULT_RULES_TITLE = "Правила JACKSIDE 4:14"
 DEFAULT_RULES_CONTENT = """\
 JACKSIDE — один общий стол на весь клуб Hi, Jack.
@@ -53,11 +53,9 @@ JACKSIDE — один общий стол на весь клуб Hi, Jack.
 • количество вопросов основной части задаёт мастер для конкретного выпуска;
 • один общий таймер 4 минуты 14 секунд начинается для всего клуба одновременно;
 • войти можно и после старта, но дополнительное время не даётся: если прошло 2 минуты, на ответы остаётся 2 минуты 14 секунд;
-• зачётное время считается от общего старта выпуска, а не от момента входа игрока;
 • одна попытка без возврата к уже сохранённым ответам;
 • в зачёт попадает только полностью завершённая до общего дедлайна основная часть;
-• в финальный стол проходят все участники, которые ответили на все вопросы основной части до общего дедлайна 4:14;
-• количество правильных ответов и скорость прохождения основной части на допуск в финал не влияют;
+• в финальный стол проходят все участники, которые правильно ответили на все вопросы основной части до общего дедлайна 4:14;
 • после закрытия основной части идёт 1 минута ожидания, затем начинается финальный стол;
 • финальный стол проводится даже если в него прошёл только один игрок — автоматической победы нет;
 • до последнего вопроса финала ошибка или отсутствие ответа выбивает игрока;
@@ -75,23 +73,30 @@ JACKCOIN начисляются только за полностью завер�
 
 
 def result_copy_for_score(
-    correct_count: int, *, final_eligible: bool = True
+    correct_count: int,
+    *,
+    final_eligible: bool = True,
+    max_correct_count: int | None = None,
 ) -> dict[str, str]:
     score = max(0, int(correct_count))
+    maximum = int(max_correct_count) if max_correct_count is not None else 10
+    perfect = maximum > 0 and score == maximum
+    qualified = bool(final_eligible and perfect)
     for item in RESULT_COPY_BY_RANGE:
         if item["min_correct"] <= score <= item["max_correct"]:
             message = item["message"]
-            if not final_eligible and item.get("message_no_final"):
+            if not qualified and item.get("message_no_final"):
                 message = item["message_no_final"]
-            if final_eligible:
+            if qualified:
                 message = (
-                    f"{message} Вы в финальном столе: на допуск в финал "
-                    "не влияют ни количество правильных ответов, ни скорость."
+                    f"{message} Все вопросы основной части отвечены правильно — "
+                    "вы в финальном столе."
                 )
             else:
                 message = (
-                    f"{message} Финальный стол доступен только тем, кто успел "
-                    "ответить на все вопросы основной части до общего дедлайна 4:14."
+                    f"{message} В финальный стол проходят только участники, которые "
+                    "правильно ответили на все вопросы основной части до общего "
+                    "дедлайна 4:14."
                 )
             return {"code": item["code"], "title": item["title"], "message": message}
     return {
