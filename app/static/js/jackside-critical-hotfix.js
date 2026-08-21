@@ -120,7 +120,7 @@
     if (points && !points.querySelector('[data-role="welcome-final-rule"]')) {
       const item = document.createElement('li');
       item.dataset.role = 'welcome-final-rule';
-      item.textContent = 'Ответили на все 10 вопросов до конца общего таймера — вы в финальном столе. Правильность и скорость на допуск не влияют.';
+      item.textContent = 'Правильно ответили на все вопросы основной части до конца общего таймера — вы в финальном столе.';
       const award = points.querySelector('[data-role="welcome-award"]');
       if (award) award.before(item);
       else points.append(item);
@@ -140,7 +140,7 @@
     const lobby = app.querySelector('[data-screen="final-lobby"]');
     if (!lobby) return;
 
-    // Score, main-round speed and top-10 position no longer affect admission.
+    // Main-round speed and top-10 position do not affect admission.
     lobby.querySelector('.final-lobby-time')?.remove();
     lobby.querySelector('.final-lobby-place')?.remove();
     lobby.querySelector('.final-lobby-cutoff')?.remove();
