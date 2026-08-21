@@ -33,7 +33,7 @@ def _seed_candidate(conn, *, campaign_code: str, number: int = 1) -> tuple[int, 
                 phone_local, answers_json, correct_count, max_correct_count,
                 completion_time_ms, main_prize_eligible, main_round_completed,
                 ip_hash
-            ) VALUES (?, 1, ?, ?, ?, '{}', 1, 1, 1000, 1, 1, ?)
+            ) VALUES (?, 1, ?, ?, ?, '{}', 10, 10, 1000, 1, 1, ?)
             """,
             (
                 campaign_code,
