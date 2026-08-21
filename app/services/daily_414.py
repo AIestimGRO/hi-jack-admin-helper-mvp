@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -21,6 +22,14 @@ LEGACY_DAILY_414_FINAL_TABLE_DELAY_SECONDS = (
 )
 DAILY_414_FINAL_QUESTION_SECONDS = 30
 DAILY_414_FINAL_TABLE_SIZE = 10
+
+# Keep the score decision request-local while preserving the historic boolean
+# completion API used by the economy and rating code. The live finish flow calls
+# daily_main_round_completed() immediately before final_table_candidate_eligible().
+_MAIN_ROUND_PERFECT: ContextVar[bool | None] = ContextVar(
+    "daily_414_main_round_perfect",
+    default=None,
+)
 
 # Compatibility defaults for direct/legacy callers. The pre-launch economy
 # extension snapshots the launch defaults (10/10/30) onto each new JACKSIDE
@@ -191,8 +200,21 @@ def daily_main_round_completed(
     questions: list[dict[str, Any]],
     answers: dict[str, Any],
 ) -> bool:
-    """Economy/rating/final eligibility requires a finished, fully answered run."""
-    return (not timed_out) and main_round_answers_complete(questions, answers)
+    """Return completion for economy/rating and remember perfect-score state."""
+    completed = (not timed_out) and main_round_answers_complete(questions, answers)
+    perfect = False
+    if completed:
+        # Local import avoids coupling quiz parsing to the daily service at import time.
+        from app.services.quiz import score_answers
+
+        scoring = score_answers(questions, answers)
+        maximum = int(scoring["max_correct_count"] or 0)
+        perfect = bool(
+            maximum > 0
+            and int(scoring["correct_count"] or 0) == maximum
+        )
+    _MAIN_ROUND_PERFECT.set(perfect if completed else None)
+    return completed
 
 
 def final_table_candidate_eligible(
@@ -204,6 +226,8 @@ def final_table_candidate_eligible(
     main_round_completed: bool = True,
     timezone_name: str = DEFAULT_CAMPAIGN_TIMEZONE,
 ) -> bool:
+    perfect = _MAIN_ROUND_PERFECT.get()
+    _MAIN_ROUND_PERFECT.set(None)
     final_start = final_table_starts_at(campaign, timezone_name=timezone_name)
     local_finished = campaign_local_datetime(
         finished_at, timezone_name=timezone_name
@@ -213,7 +237,7 @@ def final_table_candidate_eligible(
         if _is_legacy_daily_campaign(campaign)
         else main_round_deadline(campaign, timezone_name=timezone_name)
     )
-    return bool(
+    eligible = bool(
         main_round_completed
         and not timed_out
         and final_start
@@ -224,6 +248,12 @@ def final_table_candidate_eligible(
         )
         and local_finished <= completion_cutoff
     )
+    # Current JACKSIDE final admission requires every main-round answer to be
+    # correct. Direct/legacy callers that did not run the completion scorer keep
+    # the historic timing-only contract; the live finish flow always supplies it.
+    if _campaign_code(campaign).startswith("jackside_") and perfect is not None:
+        return bool(eligible and perfect)
+    return eligible
 
 
 def rank_final_candidates(
