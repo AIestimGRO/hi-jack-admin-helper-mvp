@@ -194,29 +194,46 @@ def seed_finalists(
     *,
     final_table: sqlite3.Row,
 ) -> None:
+    """Seed finalists from completed main rounds using the campaign's own policy."""
     if conn.execute(
         "SELECT 1 FROM daily_414_finalists WHERE final_table_id=? LIMIT 1",
         (final_table["id"],),
     ).fetchone():
         return
-    submissions = conn.execute(
-        """
-        SELECT id, client_id
-        FROM quiz_submissions
-        WHERE campaign_code=? AND campaign_version=?
-          AND main_prize_eligible=1
-          AND IFNULL(main_round_completed, 1)=1
-        ORDER BY correct_count DESC,
-                 IFNULL(completion_time_ms, 2147483647) ASC,
-                 id ASC
-        LIMIT ?
-        """,
-        (
-            final_table["campaign_code"],
-            final_table["campaign_version"],
-            DAILY_414_FINAL_TABLE_SIZE,
-        ),
-    ).fetchall()
+
+    campaign_code = str(final_table["campaign_code"] or "")
+    if campaign_code.startswith("jackside_"):
+        submissions = conn.execute(
+            """
+            SELECT id, client_id
+            FROM quiz_submissions
+            WHERE campaign_code=? AND campaign_version=?
+              AND main_prize_eligible=1
+              AND IFNULL(main_round_completed, 1)=1
+            ORDER BY created_at ASC, id ASC
+            """,
+            (campaign_code, final_table["campaign_version"]),
+        ).fetchall()
+    else:
+        submissions = conn.execute(
+            """
+            SELECT id, client_id
+            FROM quiz_submissions
+            WHERE campaign_code=? AND campaign_version=?
+              AND main_prize_eligible=1
+              AND IFNULL(main_round_completed, 1)=1
+            ORDER BY correct_count DESC,
+                     IFNULL(completion_time_ms, 2147483647) ASC,
+                     id ASC
+            LIMIT ?
+            """,
+            (
+                campaign_code,
+                final_table["campaign_version"],
+                DAILY_414_FINAL_TABLE_SIZE,
+            ),
+        ).fetchall()
+
     conn.executemany(
         """
         INSERT OR IGNORE INTO daily_414_finalists(
