@@ -18,33 +18,15 @@ _ORIGINAL_RESCHEDULE_FUTURE_ISSUE = multi_issue.reschedule_future_issue
 _ORIGINAL_CREATE_ISSUE_MULTI = multi_issue.create_issue_multi
 _ORIGINAL_VALIDATE_ISSUE = issue_service.validate_issue_for_publish
 _ORIGINAL_ENSURE_DEFAULT_RULES = issue_service.ensure_default_rules
+_ORIGINAL_RESULT_COPY = copy_service.result_copy_for_score
 
-FLEX_RULES_VERSION = "1.2"
-FLEX_RULES_CONTENT = """\
-JACKSIDE — один общий стол на весь клуб Hi, Jack.
+FLEX_RULES_VERSION = copy_service.DEFAULT_RULES_VERSION
+FLEX_RULES_CONTENT = copy_service.DEFAULT_RULES_CONTENT
 
-Каждый выпуск:
-• количество вопросов основной части задаёт мастер для конкретного выпуска;
-• один общий таймер 4 минуты 14 секунд начинается для всего клуба одновременно;
-• войти можно и после старта, но дополнительное время не даётся;
-• зачётное время считается от общего старта выпуска, а не от момента входа игрока;
-• одна попытка без возврата к уже сохранённым ответам;
-• в зачёт попадает только полностью завершённая до общего дедлайна основная часть;
-• в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;
-• после закрытия основной части идёт 1 минута ожидания, затем начинается финальный стол;
-• финальный стол проводится даже если в него прошёл только один игрок — автоматической победы нет;
-• до последнего вопроса финала ошибка или отсутствие ответа выбивает игрока;
-• единственный финалист также обязан пройти финальные вопросы и правильно ответить на последний вопрос, чтобы победить;
-• победитель — тот, кто первым правильно ответил на последний вопрос финального стола;
-• если финальный стол состоит из одного вопроса, побеждает первый правильный ответ на этот вопрос;
-• если на последнем вопросе правильного ответа нет — победителя нет и главный приз не выдаётся.
-
-JACKCOIN начисляются только за полностью завершённую основную часть.
-Идеальный результат означает правильные ответы на все вопросы основной части конкретного выпуска.
-Главный приз выпуска указывается в карточке дня.
-
-Время сервера и момент приёма ответа сервером являются источником истины для таймеров, зачётного времени и определения победителя.
-"""
+_LEGACY_BUILTIN_RULES = {
+    "1.1": "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;",
+    "1.2": "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;",
+}
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -56,36 +38,68 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
 
 
 def ensure_default_rules_flexible(conn: sqlite3.Connection) -> sqlite3.Row:
-    row = _ORIGINAL_ENSURE_DEFAULT_RULES(conn)
-    if str(row["version"] or "") != copy_service.DEFAULT_RULES_VERSION:
-        return row
-    if str(row["content"] or "").strip() != str(copy_service.DEFAULT_RULES_CONTENT).strip():
-        return row
+    """Keep one active JACKSIDE rules source and migrate only known built-ins."""
+    current = _ORIGINAL_ENSURE_DEFAULT_RULES(conn)
+    current_version = str(current["version"] or "")
+    if current_version == FLEX_RULES_VERSION:
+        return current
+
+    legacy_marker = _LEGACY_BUILTIN_RULES.get(current_version)
+    content = str(current["content"] or "")
+    is_known_builtin = bool(
+        legacy_marker
+        and str(current["title"] or "") == copy_service.DEFAULT_RULES_TITLE
+        and legacy_marker in content
+    )
+    if not is_known_builtin:
+        return current
+
     existing = conn.execute(
-        "SELECT * FROM jackside_rules_versions WHERE version=?",
+        "SELECT * FROM jackside_rules_versions WHERE version=? ORDER BY id DESC LIMIT 1",
         (FLEX_RULES_VERSION,),
     ).fetchone()
-    if existing:
-        conn.execute("UPDATE jackside_rules_versions SET is_active=0 WHERE is_active=1")
-        conn.execute(
-            "UPDATE jackside_rules_versions SET is_active=1 WHERE id=?",
-            (int(existing["id"]),),
-        )
-        return conn.execute(
-            "SELECT * FROM jackside_rules_versions WHERE id=?",
-            (int(existing["id"]),),
-        ).fetchone()
     conn.execute("UPDATE jackside_rules_versions SET is_active=0 WHERE is_active=1")
-    cursor = conn.execute(
+    if existing:
+        rules_id = int(existing["id"])
+        conn.execute(
+            """
+            UPDATE jackside_rules_versions
+            SET title=?, content=?, is_active=1
+            WHERE id=?
+            """,
+            (
+                copy_service.DEFAULT_RULES_TITLE,
+                FLEX_RULES_CONTENT,
+                rules_id,
+            ),
+        )
+    else:
+        rules_id = int(
+            conn.execute(
+                """
+                INSERT INTO jackside_rules_versions(version, title, content, is_active)
+                VALUES (?, ?, ?, 1)
+                """,
+                (
+                    FLEX_RULES_VERSION,
+                    copy_service.DEFAULT_RULES_TITLE,
+                    FLEX_RULES_CONTENT,
+                ),
+            ).lastrowid
+        )
+
+    conn.execute(
         """
-        INSERT INTO jackside_rules_versions(version, title, content, is_active)
-        VALUES (?, ?, ?, 1)
+        UPDATE jackside_issues
+        SET rules_version_id=?, rules_version=?, updated_at=CURRENT_TIMESTAMP
+        WHERE rules_version=?
+          AND status NOT IN ('closed', 'cancelled')
         """,
-        (FLEX_RULES_VERSION, "Правила JACKSIDE 4:14", FLEX_RULES_CONTENT),
+        (rules_id, FLEX_RULES_VERSION, current_version),
     )
     return conn.execute(
         "SELECT * FROM jackside_rules_versions WHERE id=?",
-        (int(cursor.lastrowid),),
+        (rules_id,),
     ).fetchone()
 
 
@@ -93,6 +107,7 @@ def validate_issue_for_publish_flexible(
     conn: sqlite3.Connection,
     issue: sqlite3.Row | dict[str, Any],
 ) -> list[str]:
+    """JACKSIDE allows any positive number of main-round questions."""
     errors = [
         error
         for error in _ORIGINAL_VALIDATE_ISSUE(conn, issue)
@@ -237,22 +252,8 @@ def result_copy_for_score_flexible(
     *,
     final_eligible: bool = True,
 ) -> dict[str, str]:
-    score = max(0, int(correct_count))
-    if score <= 3:
-        title = "Тёплый стол"
-        message = "Сегодня раздача сложилась иначе. JACKCOIN за завершённую игру уже на балансе."
-        code = "low"
-    elif score <= 6:
-        title = "Достойный результат"
-        message = "Хороший ход. JACKCOIN за правильные ответы уже начислены."
-        code = "middle"
-    else:
-        title = "Сильная раздача"
-        message = "Сильный результат основной части. Ждём итогового отбора финального стола."
-        code = "high"
-    if not final_eligible and score >= 7:
-        message = "Сильный результат основной части. В отбор финала этот заход не вошёл. JACKCOIN уже на балансе."
-    return {"code": code, "title": title, "message": message}
+    """Backward-compatible name for the canonical JACKSIDE result copy."""
+    return _ORIGINAL_RESULT_COPY(correct_count, final_eligible=final_eligible)
 
 
 def create_issue_multi_guarded(
@@ -556,7 +557,6 @@ def apply_runtime_overrides() -> None:
     daily_service.validate_daily_questions = validate_daily_questions_flexible
     daily_service.public_daily_questions = public_daily_questions_flexible
     daily_service.award_daily_jackcoin = award_daily_jackcoin_flexible
-    copy_service.result_copy_for_score = result_copy_for_score_flexible
 
 
 apply_runtime_overrides()
@@ -577,7 +577,9 @@ __all__ = [
     "create_issue_multi_guarded",
     "current_featured_issue_runtime",
     "effective_campaign_schedule_multi",
+    "ensure_default_rules_flexible",
     "reschedule_future_issue_runtime",
+    "result_copy_for_score_flexible",
     "validate_daily_questions_flexible",
     "validate_issue_for_publish_flexible",
 ]
