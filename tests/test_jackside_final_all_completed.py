@@ -212,7 +212,12 @@ def test_jackside_policy_is_not_reimplemented_in_runtime_compat() -> None:
     assert "final_service.seed_finalists = seed_finalists_compat" not in compat_source
     assert "copy_service.result_copy_for_score = result_copy_for_score_compat" not in compat_source
     assert "issue_service.ensure_default_rules = ensure_default_rules_compat" not in compat_source
-    assert LEGACY_BUILTIN_MARKER not in multi_source
+    assert "issue_service.validate_issue_for_publish = validate_issue_for_publish_compat" not in compat_source
+    assert "return multi_runtime.ensure_default_rules_flexible(conn)" in compat_source
+    assert "return multi_runtime.validate_issue_for_publish_flexible(conn, current)" in compat_source
+    assert "FLEX_RULES_VERSION = copy_service.DEFAULT_RULES_VERSION" in multi_source
+    assert "FLEX_RULES_CONTENT = copy_service.DEFAULT_RULES_CONTENT" in multi_source
+    assert 'FLEX_RULES_CONTENT = """' not in multi_source
     assert 'if campaign_code.startswith("jackside_"):' in final_source
     assert "ORDER BY created_at ASC, id ASC" in final_source
 
