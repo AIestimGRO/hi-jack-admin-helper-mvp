@@ -100,16 +100,68 @@
       if (!screen) return;
       const box = ensureIntroUrgency(screen);
       box.hidden = !active;
-      if (!active) return;
+      if (!active) {
+        // jackside-ui-polish.css historically forced display:block!important,
+        // which made the hidden late-entry card visible before the real start.
+        box.style.setProperty('display', 'none', 'important');
+        return;
+      }
+      box.style.removeProperty('display');
       const parts = countdownParts(end - now);
       box.querySelector('.urgency-mm').textContent = parts.minutes;
       box.querySelector('.urgency-ss').textContent = parts.seconds;
     });
   }
 
+  function normalizeWelcomeCopy() {
+    const screen = app.querySelector('[data-screen="welcome"]');
+    if (!screen) return;
+    const points = screen.querySelector('.jackside-welcome-points');
+    if (points && !points.querySelector('[data-role="welcome-final-rule"]')) {
+      const item = document.createElement('li');
+      item.dataset.role = 'welcome-final-rule';
+      item.textContent = 'Ответили на все 10 вопросов до конца общего таймера — вы в финальном столе. Правильность и скорость на допуск не влияют.';
+      const award = points.querySelector('[data-role="welcome-award"]');
+      if (award) award.before(item);
+      else points.append(item);
+    }
+
+    const startButton = screen.querySelector('[data-action="identify"]');
+    if (startButton) startButton.style.width = '100%';
+    screen.querySelectorAll('.quiz-account-return').forEach((link) => {
+      link.classList.add('telegram-login-button');
+      link.textContent = 'Вернуться в JACKSIDE';
+      link.style.width = '100%';
+      link.style.marginTop = '10px';
+    });
+  }
+
   function cleanLobbyMinimumCopy() {
     const lobby = app.querySelector('[data-screen="final-lobby"]');
     if (!lobby) return;
+
+    // Score, main-round speed and top-10 position no longer affect admission.
+    lobby.querySelector('.final-lobby-time')?.remove();
+    lobby.querySelector('.final-lobby-place')?.remove();
+    lobby.querySelector('.final-lobby-cutoff')?.remove();
+
+    const stats = lobby.querySelector('.final-lobby-stats');
+    if (stats && !stats.querySelector('.final-lobby-qualified')) {
+      const qualified = document.createElement('li');
+      qualified.className = 'final-lobby-qualified';
+      qualified.textContent = 'Основная часть завершена — место за финальным столом закреплено.';
+      stats.prepend(qualified);
+    }
+
+    const candidates = lobby.querySelector('.final-lobby-candidates');
+    if (candidates) {
+      const current = candidates.textContent || '';
+      candidates.textContent = current
+        .replace(/^В отборе на финал:\s*/i, 'Финалистов: ')
+        .replace(/\s*\(нужно минимум\s+\d+\)\s*$/i, '')
+        .trim();
+    }
+
     lobby.querySelectorAll('*').forEach((node) => {
       if (node.children.length) return;
       const value = node.textContent || '';
@@ -224,6 +276,7 @@
     const serverNow = Date.parse(data.server_now || '');
     if (Number.isFinite(serverNow)) serverOffset = serverNow - Date.now();
     updateIntroUrgency();
+    normalizeWelcomeCopy();
   }
 
   function rememberStatus(data) {
@@ -243,6 +296,7 @@
       finalBackground = '';
     }
     applyScreenBackground();
+    cleanLobbyMinimumCopy();
   }
 
   async function fetchPersistedFinal() {
@@ -330,6 +384,7 @@
   function deadlineTick() {
     applyScreenBackground();
     updateIntroUrgency();
+    normalizeWelcomeCopy();
     cleanLobbyMinimumCopy();
     decorateFinalOutcomeActions();
     void refineFinalOutcome();
@@ -343,6 +398,7 @@
   const screenObserver = new MutationObserver(() => {
     applyScreenBackground();
     updateIntroUrgency();
+    normalizeWelcomeCopy();
     cleanLobbyMinimumCopy();
     decorateFinalOutcomeActions();
     deadlineTick();
@@ -359,6 +415,7 @@
   });
 
   decorateFinalOutcomeActions();
+  normalizeWelcomeCopy();
   cleanLobbyMinimumCopy();
   clearBackground();
   updateIntroUrgency();
