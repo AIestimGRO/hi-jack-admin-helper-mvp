@@ -16,7 +16,7 @@ from app.jackside_brand_asset import JACKSIDE_LOGO_WEBP
 from app.services.daily_414_final import final_table_needs_reconcile, reconcile_final_table
 
 
-ASSET_VERSION = "jackside-critical-20260821-7"
+ASSET_VERSION = "jackside-critical-20260821-8"
 _SCRIPT_TAG = (
     '<script src="/static/js/jackside-critical-hotfix.js?'
     f'v={ASSET_VERSION}"></script>'
