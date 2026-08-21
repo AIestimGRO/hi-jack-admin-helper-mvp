@@ -10,7 +10,6 @@ from app.jackside_flexible_labels import normalize_builtin_perfect_labels
 from app.services import daily_414_final as final_service
 from app.services import jackside_copy as copy_service
 from app.services import jackside_issues as issue_service
-from app.services.quiz import load_builder_questions
 
 
 _PREVIOUS_EFFECTIVE_SCHEDULE = issue_service.effective_campaign_schedule
@@ -18,18 +17,7 @@ _PREVIOUS_VALIDATE_ISSUE = issue_service.validate_issue_for_publish
 _PREVIOUS_ENSURE_DEFAULT_RULES = issue_service.ensure_default_rules
 _PREVIOUS_RESCHEDULE = multi_issue.reschedule_future_issue
 _PREVIOUS_SEED_FINALISTS = final_service.seed_finalists
-_LEGACY_DEFAULT_RULES_MARKERS = {
-    "1.1": (
-        "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;"
-    ),
-    "1.2": (
-        "количество вопросов основной части задаёт мастер для конкретного выпуска;"
-        "\n• один общий таймер 4 минуты 14 секунд"
-    ),
-}
-_LEGACY_FINAL_SELECTION_MARKER = (
-    "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;"
-)
+_PREVIOUS_RESULT_COPY = copy_service.result_copy_for_score
 
 
 def effective_campaign_schedule_compat(
@@ -56,115 +44,27 @@ def effective_campaign_schedule_compat(
 
 
 def ensure_default_rules_compat(conn: sqlite3.Connection) -> sqlite3.Row:
-    """Migrate only known built-in rules to the current product rules."""
-    current = _PREVIOUS_ENSURE_DEFAULT_RULES(conn)
-    target_version = copy_service.DEFAULT_RULES_VERSION
-    current_version = str(current["version"] or "")
-    if current_version == target_version:
-        return current
-
-    marker = _LEGACY_DEFAULT_RULES_MARKERS.get(current_version)
-    content = str(current["content"] or "")
-    is_previous_builtin = bool(
-        marker
-        and str(current["title"] or "") == copy_service.DEFAULT_RULES_TITLE
-        and marker in content
-        and _LEGACY_FINAL_SELECTION_MARKER in content
-    )
-    if not is_previous_builtin:
-        return current
-
-    existing = conn.execute(
-        "SELECT * FROM jackside_rules_versions WHERE version=? ORDER BY id DESC LIMIT 1",
-        (target_version,),
-    ).fetchone()
-    conn.execute("UPDATE jackside_rules_versions SET is_active=0 WHERE is_active=1")
-    if existing:
-        conn.execute(
-            """
-            UPDATE jackside_rules_versions
-            SET title=?, content=?, is_active=1
-            WHERE id=?
-            """,
-            (
-                copy_service.DEFAULT_RULES_TITLE,
-                copy_service.DEFAULT_RULES_CONTENT,
-                int(existing["id"]),
-            ),
-        )
-        rules_id = int(existing["id"])
-    else:
-        rules_id = int(
-            conn.execute(
-                """
-                INSERT INTO jackside_rules_versions(version, title, content, is_active)
-                VALUES (?, ?, ?, 1)
-                """,
-                (
-                    target_version,
-                    copy_service.DEFAULT_RULES_TITLE,
-                    copy_service.DEFAULT_RULES_CONTENT,
-                ),
-            ).lastrowid
-        )
-
-    # Keep historical closed releases pinned to the rules they actually used.
-    # Draft/current releases that still point at this known built-in version
-    # follow the new product rule immediately.
-    conn.execute(
-        """
-        UPDATE jackside_issues
-        SET rules_version_id=?, rules_version=?, updated_at=CURRENT_TIMESTAMP
-        WHERE rules_version=?
-          AND status NOT IN ('closed', 'cancelled')
-        """,
-        (rules_id, target_version, current_version),
-    )
-    return conn.execute(
-        "SELECT * FROM jackside_rules_versions WHERE id=?",
-        (rules_id,),
-    ).fetchone()
+    """Backward-compatible entry point; policy lives in jackside_multi_runtime."""
+    return _PREVIOUS_ENSURE_DEFAULT_RULES(conn)
 
 
 def validate_issue_for_publish_compat(
     conn: sqlite3.Connection,
     issue: sqlite3.Row | dict[str, Any],
 ) -> list[str]:
-    """Preserve flexible main-question counts while applying current rules."""
+    """Compatibility wrapper around the canonical JACKSIDE validation policy."""
     normalize_builtin_perfect_labels(conn)
-    active = issue_service.ensure_default_rules(conn)
+    _PREVIOUS_ENSURE_DEFAULT_RULES(conn)
     current = issue
-    if str(issue["rules_version"] or "") in {
-        *set(_LEGACY_DEFAULT_RULES_MARKERS),
-        copy_service.DEFAULT_RULES_VERSION,
-    } and str(active["version"] or "") != str(issue["rules_version"] or ""):
-        conn.execute(
-            """
-            UPDATE jackside_issues
-            SET rules_version_id=?, rules_version=?, updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (int(active["id"]), str(active["version"]), int(issue["id"])),
-        )
-        refreshed = issue_service.get_issue(conn, int(issue["id"]))
+    try:
+        issue_id = int(issue["id"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        issue_id = 0
+    if issue_id:
+        refreshed = issue_service.get_issue(conn, issue_id)
         if refreshed:
             current = refreshed
-
-    errors = [
-        error
-        for error in _PREVIOUS_VALIDATE_ISSUE(conn, current)
-        if error != "main_questions_must_be_ten"
-    ]
-    campaign_code = str(current["campaign_code"] or "")
-    if campaign_code:
-        main_questions = [
-            question
-            for question in load_builder_questions(conn, campaign_code)
-            if str(question.get("game_round") or "main") == "main"
-        ]
-        if not main_questions:
-            errors.append("main_questions_required")
-    return sorted(set(errors))
+    return _PREVIOUS_VALIDATE_ISSUE(conn, current)
 
 
 def reschedule_future_issue_compat(
@@ -202,44 +102,8 @@ def seed_finalists_compat(
     *,
     final_table: sqlite3.Row,
 ) -> None:
-    """JACKSIDE final includes every fully completed main-round submission."""
-    campaign_code = str(final_table["campaign_code"] or "")
-    if not campaign_code.startswith("jackside_"):
-        _PREVIOUS_SEED_FINALISTS(conn, final_table=final_table)
-        return
-    if conn.execute(
-        "SELECT 1 FROM daily_414_finalists WHERE final_table_id=? LIMIT 1",
-        (final_table["id"],),
-    ).fetchone():
-        return
-
-    submissions = conn.execute(
-        """
-        SELECT id, client_id
-        FROM quiz_submissions
-        WHERE campaign_code=? AND campaign_version=?
-          AND main_prize_eligible=1
-          AND IFNULL(main_round_completed, 1)=1
-        ORDER BY created_at ASC, id ASC
-        """,
-        (campaign_code, final_table["campaign_version"]),
-    ).fetchall()
-    conn.executemany(
-        """
-        INSERT OR IGNORE INTO daily_414_finalists(
-            final_table_id, submission_id, client_id, seed
-        ) VALUES (?, ?, ?, ?)
-        """,
-        [
-            (
-                final_table["id"],
-                submission["id"],
-                submission["client_id"],
-                seed,
-            )
-            for seed, submission in enumerate(submissions, start=1)
-        ],
-    )
+    """Backward-compatible name for the canonical final seeding function."""
+    _PREVIOUS_SEED_FINALISTS(conn, final_table=final_table)
 
 
 def result_copy_for_score_compat(
@@ -247,42 +111,15 @@ def result_copy_for_score_compat(
     *,
     final_eligible: bool = True,
 ) -> dict[str, str]:
-    """Keep score bands while making final admission independent of score/speed."""
-    score = max(0, int(correct_count))
-    if score <= 3:
-        code = "0_3"
-    elif score <= 6:
-        code = "4_6"
-    elif score <= 8:
-        code = "7_8"
-    elif score == 9:
-        code = "9"
-    else:
-        code = "10"
-    if final_eligible:
-        message = (
-            "Основная часть завершена — вы в финальном столе. "
-            "Количество правильных ответов и скорость прохождения на допуск "
-            "в финал не влияют. JACKCOIN за основную часть уже начислены."
-        )
-    else:
-        message = (
-            "Основная часть не была полностью завершена до общего дедлайна 4:14, "
-            "поэтому финальный стол недоступен."
-        )
-    return {
-        "code": code,
-        "title": "Основной раунд завершён",
-        "message": message,
-    }
+    """Backward-compatible name for the centralized JACKSIDE result copy."""
+    return _PREVIOUS_RESULT_COPY(correct_count, final_eligible=final_eligible)
 
 
-issue_service.ensure_default_rules = ensure_default_rules_compat
+# Keep only compatibility that still has a separate transport/runtime purpose.
+# Rules, finalist selection and result copy now live in their canonical modules.
 issue_service.effective_campaign_schedule = effective_campaign_schedule_compat
 issue_service.validate_issue_for_publish = validate_issue_for_publish_compat
 multi_issue.reschedule_future_issue = reschedule_future_issue_compat
-final_service.seed_finalists = seed_finalists_compat
-copy_service.result_copy_for_score = result_copy_for_score_compat
 
 
 __all__ = [
