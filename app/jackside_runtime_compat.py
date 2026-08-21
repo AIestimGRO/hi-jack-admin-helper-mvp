@@ -10,6 +10,7 @@ from app.jackside_flexible_labels import normalize_builtin_perfect_labels
 from app.services import daily_414_final as final_service
 from app.services import jackside_copy as copy_service
 from app.services import jackside_issues as issue_service
+from app.services.quiz import load_builder_questions
 
 
 _PREVIOUS_EFFECTIVE_SCHEDULE = issue_service.effective_campaign_schedule
@@ -17,8 +18,16 @@ _PREVIOUS_VALIDATE_ISSUE = issue_service.validate_issue_for_publish
 _PREVIOUS_ENSURE_DEFAULT_RULES = issue_service.ensure_default_rules
 _PREVIOUS_RESCHEDULE = multi_issue.reschedule_future_issue
 _PREVIOUS_SEED_FINALISTS = final_service.seed_finalists
-_LEGACY_DEFAULT_RULES_VERSION = "1.1"
-_LEGACY_DEFAULT_RULES_MARKER = (
+_LEGACY_DEFAULT_RULES_MARKERS = {
+    "1.1": (
+        "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;"
+    ),
+    "1.2": (
+        "количество вопросов основной части задаёт мастер для конкретного выпуска;"
+        "\n• один общий таймер 4 минуты 14 секунд"
+    ),
+}
+_LEGACY_FINAL_SELECTION_MARKER = (
     "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;"
 )
 
@@ -47,16 +56,20 @@ def effective_campaign_schedule_compat(
 
 
 def ensure_default_rules_compat(conn: sqlite3.Connection) -> sqlite3.Row:
-    """Migrate only the known built-in 1.1 rules to the current built-in version."""
+    """Migrate only known built-in rules to the current product rules."""
     current = _PREVIOUS_ENSURE_DEFAULT_RULES(conn)
     target_version = copy_service.DEFAULT_RULES_VERSION
-    if str(current["version"] or "") == target_version:
+    current_version = str(current["version"] or "")
+    if current_version == target_version:
         return current
 
+    marker = _LEGACY_DEFAULT_RULES_MARKERS.get(current_version)
+    content = str(current["content"] or "")
     is_previous_builtin = bool(
-        str(current["version"] or "") == _LEGACY_DEFAULT_RULES_VERSION
+        marker
         and str(current["title"] or "") == copy_service.DEFAULT_RULES_TITLE
-        and _LEGACY_DEFAULT_RULES_MARKER in str(current["content"] or "")
+        and marker in content
+        and _LEGACY_FINAL_SELECTION_MARKER in content
     )
     if not is_previous_builtin:
         return current
@@ -96,7 +109,7 @@ def ensure_default_rules_compat(conn: sqlite3.Connection) -> sqlite3.Row:
         )
 
     # Keep historical closed releases pinned to the rules they actually used.
-    # Draft/current releases that still point at the previous built-in rules
+    # Draft/current releases that still point at this known built-in version
     # follow the new product rule immediately.
     conn.execute(
         """
@@ -105,7 +118,7 @@ def ensure_default_rules_compat(conn: sqlite3.Connection) -> sqlite3.Row:
         WHERE rules_version=?
           AND status NOT IN ('closed', 'cancelled')
         """,
-        (rules_id, target_version, _LEGACY_DEFAULT_RULES_VERSION),
+        (rules_id, target_version, current_version),
     )
     return conn.execute(
         "SELECT * FROM jackside_rules_versions WHERE id=?",
@@ -117,11 +130,12 @@ def validate_issue_for_publish_compat(
     conn: sqlite3.Connection,
     issue: sqlite3.Row | dict[str, Any],
 ) -> list[str]:
+    """Preserve flexible main-question counts while applying current rules."""
     normalize_builtin_perfect_labels(conn)
     active = issue_service.ensure_default_rules(conn)
     current = issue
     if str(issue["rules_version"] or "") in {
-        _LEGACY_DEFAULT_RULES_VERSION,
+        *set(_LEGACY_DEFAULT_RULES_MARKERS),
         copy_service.DEFAULT_RULES_VERSION,
     } and str(active["version"] or "") != str(issue["rules_version"] or ""):
         conn.execute(
@@ -135,7 +149,22 @@ def validate_issue_for_publish_compat(
         refreshed = issue_service.get_issue(conn, int(issue["id"]))
         if refreshed:
             current = refreshed
-    return _PREVIOUS_VALIDATE_ISSUE(conn, current)
+
+    errors = [
+        error
+        for error in _PREVIOUS_VALIDATE_ISSUE(conn, current)
+        if error != "main_questions_must_be_ten"
+    ]
+    campaign_code = str(current["campaign_code"] or "")
+    if campaign_code:
+        main_questions = [
+            question
+            for question in load_builder_questions(conn, campaign_code)
+            if str(question.get("game_round") or "main") == "main"
+        ]
+        if not main_questions:
+            errors.append("main_questions_required")
+    return sorted(set(errors))
 
 
 def reschedule_future_issue_compat(
