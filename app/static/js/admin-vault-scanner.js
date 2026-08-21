@@ -67,10 +67,13 @@
     codeInput.value = code;
     codeInput.dispatchEvent(new Event('input', { bubbles: true }));
     stopScanner({ keepStatus: true });
-    setStatus(`QR распознан · код ${code}. Проверьте и нажмите «Сжечь JACK CARD».`, 'success');
+    setStatus(`QR распознан · код ${code}. Подтвердите сжигание JACK CARD.`, 'success');
     if (navigator.vibrate) navigator.vibrate(70);
-    codeInput.focus({ preventScroll: true });
     root.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+
+    // requestSubmit keeps native validation and the form's explicit admin
+    // confirmation. The QR itself never burns a card without confirmation.
+    window.setTimeout(() => form.requestSubmit(), 0);
     return true;
   }
 
