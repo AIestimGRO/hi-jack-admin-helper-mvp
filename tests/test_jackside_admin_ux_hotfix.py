@@ -9,7 +9,6 @@ import pytest
 from app.db import init_db, transaction
 from app.jackside_multi_issue import ensure_multi_issue_schema
 from app.jackside_multi_runtime import (
-    FLEX_RULES_VERSION,
     award_daily_jackcoin_flexible,
     create_issue_multi_guarded,
     validate_daily_questions_flexible,
@@ -251,7 +250,7 @@ def test_existing_builtin_draft_upgrades_to_flexible_rules_on_validation(tmp_pat
         assert old_cursor is not None
     assert errors == []
     assert upgraded is not None
-    assert str(upgraded["rules_version"]) == FLEX_RULES_VERSION
+    assert str(upgraded["rules_version"]) == copy_service.DEFAULT_RULES_VERSION
 
 
 def test_admin_release_form_is_not_captured_by_generic_ajax() -> None:
