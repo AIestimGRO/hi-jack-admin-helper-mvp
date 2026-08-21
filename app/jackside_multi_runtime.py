@@ -26,6 +26,7 @@ FLEX_RULES_CONTENT = copy_service.DEFAULT_RULES_CONTENT
 _LEGACY_BUILTIN_RULES = {
     "1.1": "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;",
     "1.2": "в финал проходят до 10 лучших по правильным ответам, затем по зачётному времени;",
+    "1.3": "количество правильных ответов и скорость прохождения основной части на допуск в финал не влияют;",
 }
 
 
@@ -251,9 +252,14 @@ def result_copy_for_score_flexible(
     correct_count: int,
     *,
     final_eligible: bool = True,
+    max_correct_count: int | None = None,
 ) -> dict[str, str]:
     """Backward-compatible name for the canonical JACKSIDE result copy."""
-    return _ORIGINAL_RESULT_COPY(correct_count, final_eligible=final_eligible)
+    return _ORIGINAL_RESULT_COPY(
+        correct_count,
+        final_eligible=final_eligible,
+        max_correct_count=max_correct_count,
+    )
 
 
 def create_issue_multi_guarded(
