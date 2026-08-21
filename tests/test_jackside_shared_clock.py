@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from app.db import connect, init_db, transaction
+from app.services.jackside_copy import DEFAULT_RULES_VERSION
 from app.services.jackside_issues import create_issue, register_issue_participant
 
 
@@ -103,10 +104,10 @@ def test_shared_clock_rules_migration_is_safe_and_idempotent(tmp_path) -> None:
         migrated_issue = conn.execute(
             "SELECT * FROM jackside_issues WHERE id=?", (issue["id"],)
         ).fetchone()
-        assert active["version"] == "1.1"
+        assert active["version"] == DEFAULT_RULES_VERSION
         assert "общий таймер" in active["content"]
         assert "первым правильно ответил" in active["content"]
-        assert migrated_issue["rules_version"] == "1.1"
+        assert migrated_issue["rules_version"] == DEFAULT_RULES_VERSION
 
     second = subprocess.run(
         [sys.executable, str(script), str(db_path)],
