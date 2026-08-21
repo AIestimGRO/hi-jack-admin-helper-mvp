@@ -17,6 +17,7 @@ def _seed_submission(
     number: int,
     correct_count: int,
     completion_time_ms: int,
+    max_correct_count: int = 10,
     created_at: str | None = None,
 ) -> int:
     client_id = int(
@@ -33,7 +34,7 @@ def _seed_submission(
                 phone_local, answers_json, correct_count, max_correct_count,
                 completion_time_ms, main_prize_eligible, main_round_completed,
                 ip_hash, created_at
-            ) VALUES (?, 1, ?, ?, ?, '{}', ?, 10, ?, 1, 1, ?,
+            ) VALUES (?, 1, ?, ?, ?, '{}', ?, ?, ?, 1, 1, ?,
                       COALESCE(?, CURRENT_TIMESTAMP))
             """,
             (
@@ -42,6 +43,7 @@ def _seed_submission(
                 str(number),
                 str(number),
                 correct_count,
+                max_correct_count,
                 completion_time_ms,
                 f"ip-{number}",
                 created_at,
@@ -83,6 +85,15 @@ def test_jackside_final_uses_first_ten_perfect_finishes(tmp_path) -> None:
             completion_time_ms=1,
             created_at="2026-08-21 15:18:00",
         )
+        early_ten_of_twelve = _seed_submission(
+            conn,
+            campaign_code=campaign_code,
+            number=100,
+            correct_count=10,
+            max_correct_count=12,
+            completion_time_ms=1,
+            created_at="2026-08-21 15:17:59",
+        )
 
         table = ensure_final_table(
             conn,
@@ -94,7 +105,8 @@ def test_jackside_final_uses_first_ten_perfect_finishes(tmp_path) -> None:
         seed_finalists(conn, final_table=table)
         finalists = conn.execute(
             """
-            SELECT df.submission_id, df.seed, qs.correct_count, qs.created_at
+            SELECT df.submission_id, df.seed, qs.correct_count,
+                   qs.max_correct_count, qs.created_at
             FROM daily_414_finalists df
             JOIN quiz_submissions qs ON qs.id=df.submission_id
             WHERE df.final_table_id=?
@@ -112,7 +124,11 @@ def test_jackside_final_uses_first_ten_perfect_finishes(tmp_path) -> None:
     assert len(finalists) == 10
     assert actual == expected
     assert fast_nine_of_ten not in actual
-    assert all(int(row["correct_count"]) == 10 for row in finalists)
+    assert early_ten_of_twelve not in actual
+    assert all(
+        int(row["correct_count"]) == 10 and int(row["max_correct_count"]) == 10
+        for row in finalists
+    )
 
 
 def test_jackside_final_is_cancelled_when_nobody_scores_ten_of_ten(tmp_path) -> None:
