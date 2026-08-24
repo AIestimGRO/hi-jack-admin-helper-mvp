@@ -26,7 +26,7 @@
             <div class="jack-card-label-row">
               <p class="member-eyebrow">Цифровая карта</p>
               {% if not reward.activated_at or not reward.activation_code %}
-              <form action="/account/rewards/{{ reward.id }}/activate#card-{{ reward.id }}" method="post">
+              <form action="/account/rewards/{{ reward.id }}/activate" method="post">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="reward-activate-button" type="submit">Активировать</button>
               </form>
