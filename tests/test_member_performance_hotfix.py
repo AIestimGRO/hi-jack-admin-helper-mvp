@@ -5,7 +5,12 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import BASE_DIR, Settings
 from app.main import create_app
-from app.member_performance import VAULT_PAGE_SIZE, _decorate_collection, _display_name
+from app.member_performance import (
+    VAULT_PAGE_SIZE,
+    _decorate_collection,
+    _display_name,
+    _vault_activation_location,
+)
 
 
 def test_display_name_prefers_nickname_over_first_name() -> None:
@@ -52,6 +57,25 @@ def test_fast_member_templates_compile_and_store_page_size_is_six() -> None:
     assert "Date.now()" not in profile_source
 
 
+def test_vault_activation_location_keeps_my_cards_and_exact_reward() -> None:
+    location = (
+        "/account?tab=vault&ok=%D0%9D%D0%B0%D0%B3%D1%80%D0%B0%D0%B4%D0%B0+"
+        "%D0%B0%D0%BA%D1%82%D0%B8%D0%B2%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B0"
+    )
+    target = _vault_activation_location(location, 417)
+
+    assert "tab=vault" in target
+    assert "store=cards" in target
+    assert target.endswith("#card-417")
+
+
+def test_vault_activation_location_ignores_unrelated_redirects() -> None:
+    assert _vault_activation_location("/account?tab=rating&ok=done", 417) == (
+        "/account?tab=rating&ok=done"
+    )
+    assert _vault_activation_location("/login", 417) == "/login"
+
+
 def test_member_performance_is_wired_into_runtime(tmp_path) -> None:
     settings = Settings(
         admin_pin="2468",
@@ -78,3 +102,12 @@ def test_member_performance_is_wired_into_runtime(tmp_path) -> None:
         and "GET" in (route.methods or set())
     )
     assert getattr(account_route, "_member_performance_wrapped", False) is True
+
+    activation_route = next(
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/account/rewards/{member_reward_id:int}/activate"
+        and "POST" in (route.methods or set())
+    )
+    assert getattr(activation_route, "_member_vault_activation_wrapped", False) is True
