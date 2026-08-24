@@ -14,10 +14,7 @@
   if (!form || !codeInput || !startButton || !stopButton || !panel || !video || !canvas || !status) return;
 
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  const QR_DECODER_URLS = [
-    'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js',
-    'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js',
-  ];
+  const QR_DECODER_URL = '/static/vendor/jsqr/dist/jsQR.js';
 
   let stream = null;
   let running = false;
@@ -49,38 +46,31 @@
     return /^[a-z0-9_-]{4,64}$/i.test(raw) ? raw : '';
   }
 
-  function loadDecoderScript(url) {
+  function loadDecoderScript() {
     return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      let settled = false;
-      const timeout = window.setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        script.remove();
-        reject(new Error('decoder_load_timeout'));
-      }, 6000);
+      const existing = document.querySelector('script[data-vault-qr-decoder]');
+      if (existing) {
+        if (typeof window.jsQR === 'function') {
+          resolve(true);
+          return;
+        }
+        existing.addEventListener('load', () => resolve(typeof window.jsQR === 'function'), { once: true });
+        existing.addEventListener('error', () => reject(new Error('decoder_load_failed')), { once: true });
+        return;
+      }
 
-      script.src = url;
+      const script = document.createElement('script');
+      script.src = QR_DECODER_URL;
       script.async = true;
-      script.referrerPolicy = 'no-referrer';
+      script.dataset.vaultQrDecoder = '1';
       script.onload = () => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
         if (typeof window.jsQR === 'function') {
           resolve(true);
         } else {
-          script.remove();
           reject(new Error('decoder_not_exposed'));
         }
       };
-      script.onerror = () => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
-        script.remove();
-        reject(new Error('decoder_load_failed'));
-      };
+      script.onerror = () => reject(new Error('decoder_load_failed'));
       document.head.appendChild(script);
     });
   }
@@ -89,18 +79,9 @@
     if (typeof window.jsQR === 'function') return true;
     if (decoderLoadPromise) return decoderLoadPromise;
 
-    decoderLoadPromise = (async () => {
-      for (const url of QR_DECODER_URLS) {
-        try {
-          await loadDecoderScript(url);
-          if (typeof window.jsQR === 'function') return true;
-        } catch (_) {
-          // Try the next mirror. Safari/iOS does not expose BarcodeDetector by
-          // default, so keeping an independent fallback mirror matters here.
-        }
-      }
-      return false;
-    })();
+    decoderLoadPromise = loadDecoderScript()
+      .then(() => typeof window.jsQR === 'function')
+      .catch(() => false);
 
     const ready = await decoderLoadPromise;
     if (!ready) decoderLoadPromise = null;
@@ -158,7 +139,7 @@
           const fallbackReady = await ensureJsQR();
           if (!fallbackReady) {
             stopScanner({ keepStatus: true });
-            setStatus('Не удалось загрузить распознавание QR. Проверьте интернет и повторите попытку или введите код вручную.', 'error');
+            setStatus('Локальный модуль распознавания QR недоступен. Обновите страницу или введите код вручную.', 'error');
             return;
           }
         }
@@ -209,7 +190,7 @@
       const fallbackReady = await ensureJsQR();
       if (!fallbackReady) {
         startButton.disabled = false;
-        setStatus('Не удалось загрузить распознавание QR. Проверьте интернет и повторите попытку или введите код вручную.', 'error');
+        setStatus('Локальный модуль распознавания QR недоступен. Обновите страницу или введите код вручную.', 'error');
         return;
       }
     }
