@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
@@ -16,9 +15,6 @@ MEMBER_TO_ADMIN_HOST = {
 ADMIN_TO_MEMBER_HOST = {admin: member for member, admin in MEMBER_TO_ADMIN_HOST.items()}
 MEMBER_HOSTS = frozenset(MEMBER_TO_ADMIN_HOST)
 ADMIN_HOSTS = frozenset(ADMIN_TO_MEMBER_HOST)
-MEMBER_REWARD_ACTIVATION_PATH = re.compile(
-    r"^/account/rewards/(?P<reward_id>[1-9][0-9]*)/activate$"
-)
 
 
 def _normalized_host(hostname: str | None) -> str:
@@ -65,42 +61,6 @@ def member_host_redirect_target(hostname: str | None, path: str) -> str | None:
     return None
 
 
-def member_reward_activation_redirect_target(
-    method: str,
-    path: str,
-    status_code: int,
-    location: str | None,
-) -> str | None:
-    if str(method or "").upper() != "POST" or int(status_code) != 303:
-        return None
-
-    match = MEMBER_REWARD_ACTIVATION_PATH.fullmatch(str(path or ""))
-    if not match:
-        return None
-
-    raw_location = str(location or "").strip()
-    if not raw_location:
-        return None
-
-    parsed = urlsplit(raw_location)
-    if parsed.path != "/account":
-        return None
-
-    query = parse_qs(parsed.query, keep_blank_values=True)
-    if "vault" not in query.get("tab", []):
-        return None
-
-    return urlunsplit(
-        (
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            parsed.query,
-            f"card-{match.group('reward_id')}",
-        )
-    )
-
-
 def _with_query(target: str, query: str) -> str:
     value = str(query or "")
     if not value:
@@ -140,17 +100,7 @@ def install_member_host_routing(app: FastAPI) -> FastAPI:
                     _with_query(target, request.url.query),
                     status_code=303,
                 )
-
-        response = await call_next(request)
-        activation_target = member_reward_activation_redirect_target(
-            request.method,
-            request.url.path,
-            response.status_code,
-            response.headers.get("location"),
-        )
-        if activation_target:
-            response.headers["location"] = activation_target
-        return response
+        return await call_next(request)
 
     return _install_member_release_extensions(app)
 
@@ -163,5 +113,4 @@ __all__ = [
     "admin_root_redirect_target",
     "install_member_host_routing",
     "member_host_redirect_target",
-    "member_reward_activation_redirect_target",
 ]
