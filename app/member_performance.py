@@ -5,6 +5,7 @@ import re
 import sqlite3
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -44,6 +45,28 @@ def _display_name(member: Any) -> str:
 def _safe_version(value: Any) -> str:
     clean = re.sub(r"[^0-9A-Za-z_-]+", "", str(value or ""))
     return clean[:64] or "1"
+
+
+def _vault_activation_location(location: str, reward_id: int) -> str:
+    parsed = urlsplit(str(location or ""))
+    if parsed.path != "/account":
+        return str(location or "")
+
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    if not any(key == "tab" and value == "vault" for key, value in query):
+        return str(location or "")
+
+    query = [(key, value) for key, value in query if key != "store"]
+    query.append(("store", "cards"))
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urlencode(query),
+            f"card-{int(reward_id)}",
+        )
+    )
 
 
 def _profile_media(conn: sqlite3.Connection, account_id: int) -> dict[str, str]:
@@ -293,6 +316,41 @@ def _install_account_wrapper(app: FastAPI, templates: Jinja2Templates) -> None:
     setattr(route, "_member_performance_wrapped", True)
 
 
+def _install_vault_activation_navigation(app: FastAPI) -> None:
+    route = next(
+        (
+            candidate
+            for candidate in app.routes
+            if isinstance(candidate, APIRoute)
+            and candidate.path == "/account/rewards/{member_reward_id:int}/activate"
+            and "POST" in (candidate.methods or set())
+        ),
+        None,
+    )
+    if route is None or getattr(route, "_member_vault_activation_wrapped", False):
+        return
+
+    original_endpoint = route.dependant.call
+
+    async def vault_activation_navigation_wrapper(**kwargs: Any):
+        result = original_endpoint(**kwargs)
+        if inspect.isawaitable(result):
+            result = await result
+        reward_id = int(kwargs.get("member_reward_id") or 0)
+        if reward_id > 0 and int(getattr(result, "status_code", 0) or 0) == 303:
+            location = result.headers.get("location")
+            if location:
+                result.headers["location"] = _vault_activation_location(
+                    location,
+                    reward_id,
+                )
+        return result
+
+    route.endpoint = vault_activation_navigation_wrapper
+    route.dependant.call = vault_activation_navigation_wrapper
+    setattr(route, "_member_vault_activation_wrapped", True)
+
+
 def install_member_performance(app: FastAPI) -> FastAPI:
     if getattr(app.state, "member_performance_installed", False):
         return app
@@ -366,7 +424,12 @@ def install_member_performance(app: FastAPI) -> FastAPI:
         )
 
     _install_account_wrapper(app, templates)
+    _install_vault_activation_navigation(app)
     return app
 
 
-__all__ = ["VAULT_PAGE_SIZE", "install_member_performance"]
+__all__ = [
+    "VAULT_PAGE_SIZE",
+    "_vault_activation_location",
+    "install_member_performance",
+]
