@@ -1,0 +1,3 @@
+[submodule "app/static/vendor/jsqr"]
+	path = app/static/vendor/jsqr
+	url = https://github.com/cozmo/jsQR.git
