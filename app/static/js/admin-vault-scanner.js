@@ -29,6 +29,12 @@
     status.dataset.state = state;
   }
 
+  function setFullscreenOpen(open) {
+    root.classList.toggle('is-open', open);
+    document.documentElement.classList.toggle('vault-scanner-open', open);
+    document.body.classList.toggle('vault-scanner-open', open);
+  }
+
   function extractCode(rawValue) {
     const raw = String(rawValue || '').trim();
     if (!raw) return '';
@@ -96,6 +102,7 @@
     stream = null;
     video.pause();
     video.srcObject = null;
+    setFullscreenOpen(false);
     panel.hidden = true;
     startButton.disabled = false;
     stopButton.hidden = true;
@@ -213,6 +220,7 @@
 
       panel.hidden = false;
       stopButton.hidden = false;
+      setFullscreenOpen(true);
       running = true;
       lastDecodeAt = 0;
       setStatus('Наведите камеру на QR активированной JACK CARD.', 'scanning');
