@@ -141,6 +141,5 @@
   <summary>Журнал THE VAULT</summary>
   <div class="table-wrap"><table><thead><tr><th>Время</th><th>Код</th><th>Действие</th><th>Администратор</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.code }}</td><td>{{ event.action }}</td><td>{{ event.admin_name }}</td></tr>{% else %}<tr><td colspan="4" class="empty">Событий пока нет</td></tr>{% endfor %}</tbody></table></div>
 </details>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" defer></script>
 <script src="{{ url_for('static', path='/js/admin-vault-scanner.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}
