@@ -98,6 +98,82 @@
   font-weight: 700;
 }
 
+html.vault-scanner-open,
+body.vault-scanner-open {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+.vault-scanner.is-open .vault-scanner-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
+}
+
+.vault-scanner.is-open .vault-scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vault-scanner.is-open .vault-scanner-guide {
+  width: min(72vw, 340px);
+  max-width: none;
+  border-radius: 24px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .34), 0 0 36px rgba(54, 218, 204, .3);
+}
+
+.vault-scanner.is-open [data-vault-scan-stop] {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: calc(env(safe-area-inset-right, 0px) + 14px);
+  z-index: 10002;
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 999px;
+  background: rgba(5, 12, 11, .78);
+  color: #fff;
+  box-shadow: 0 8px 28px rgba(0,0,0,.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.vault-scanner.is-open .vault-scanner-status {
+  position: fixed;
+  left: max(18px, env(safe-area-inset-left, 0px));
+  right: max(18px, env(safe-area-inset-right, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  z-index: 10002;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: min(620px, calc(100vw - 36px));
+  min-height: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 14px;
+  background: rgba(5, 12, 11, .76);
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 8px 28px rgba(0,0,0,.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.vault-scanner.is-open .vault-scanner-status[data-state="scanning"] {
+  color: #d8fffb;
+}
+
 .vault-redeem-form {
   display: grid;
   gap: 10px;
@@ -126,5 +202,13 @@
 
   .vault-scanner-panel {
     aspect-ratio: 3 / 4;
+  }
+
+  .vault-scanner.is-open .vault-scanner-panel {
+    aspect-ratio: auto;
+  }
+
+  .vault-scanner.is-open [data-vault-scan-stop] {
+    width: auto;
   }
 }
