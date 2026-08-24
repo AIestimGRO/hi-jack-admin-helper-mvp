@@ -14,12 +14,18 @@
   if (!form || !codeInput || !startButton || !stopButton || !panel || !video || !canvas || !status) return;
 
   const context = canvas.getContext('2d', { willReadFrequently: true });
+  const QR_DECODER_URLS = [
+    'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js',
+    'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js',
+  ];
+
   let stream = null;
   let running = false;
   let frameRequest = 0;
   let detector = null;
   let detectorFailed = false;
   let lastDecodeAt = 0;
+  let decoderLoadPromise = null;
 
   function setStatus(message, state = '') {
     status.textContent = message;
@@ -41,6 +47,64 @@
     }
 
     return /^[a-z0-9_-]{4,64}$/i.test(raw) ? raw : '';
+  }
+
+  function loadDecoderScript(url) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        script.remove();
+        reject(new Error('decoder_load_timeout'));
+      }, 6000);
+
+      script.src = url;
+      script.async = true;
+      script.referrerPolicy = 'no-referrer';
+      script.onload = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        if (typeof window.jsQR === 'function') {
+          resolve(true);
+        } else {
+          script.remove();
+          reject(new Error('decoder_not_exposed'));
+        }
+      };
+      script.onerror = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        script.remove();
+        reject(new Error('decoder_load_failed'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  async function ensureJsQR() {
+    if (typeof window.jsQR === 'function') return true;
+    if (decoderLoadPromise) return decoderLoadPromise;
+
+    decoderLoadPromise = (async () => {
+      for (const url of QR_DECODER_URLS) {
+        try {
+          await loadDecoderScript(url);
+          if (typeof window.jsQR === 'function') return true;
+        } catch (_) {
+          // Try the next mirror. Safari/iOS does not expose BarcodeDetector by
+          // default, so keeping an independent fallback mirror matters here.
+        }
+      }
+      return false;
+    })();
+
+    const ready = await decoderLoadPromise;
+    if (!ready) decoderLoadPromise = null;
+    return ready;
   }
 
   function stopScanner({ keepStatus = true } = {}) {
@@ -91,6 +155,12 @@
           return;
         } catch (_) {
           detectorFailed = true;
+          const fallbackReady = await ensureJsQR();
+          if (!fallbackReady) {
+            stopScanner({ keepStatus: true });
+            setStatus('Не удалось загрузить распознавание QR. Проверьте интернет и повторите попытку или введите код вручную.', 'error');
+            return;
+          }
         }
       }
 
@@ -123,6 +193,27 @@
     }
 
     startButton.disabled = true;
+    setStatus('Подготавливаем распознавание QR…');
+
+    detector = null;
+    detectorFailed = false;
+    if ('BarcodeDetector' in window) {
+      try {
+        detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (_) {
+        detector = null;
+      }
+    }
+
+    if (!detector) {
+      const fallbackReady = await ensureJsQR();
+      if (!fallbackReady) {
+        startButton.disabled = false;
+        setStatus('Не удалось загрузить распознавание QR. Проверьте интернет и повторите попытку или введите код вручную.', 'error');
+        return;
+      }
+    }
+
     setStatus('Запрашиваем доступ к камере…');
 
     try {
@@ -138,22 +229,6 @@
       video.setAttribute('playsinline', '');
       video.muted = true;
       await video.play();
-
-      detector = null;
-      detectorFailed = false;
-      if ('BarcodeDetector' in window) {
-        try {
-          detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-        } catch (_) {
-          detector = null;
-        }
-      }
-
-      if (!detector && typeof window.jsQR !== 'function') {
-        stopScanner({ keepStatus: true });
-        setStatus('Модуль распознавания QR не загрузился. Обновите страницу или введите код вручную.', 'error');
-        return;
-      }
 
       panel.hidden = false;
       stopButton.hidden = false;
