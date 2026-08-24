@@ -4,6 +4,7 @@
 
   const form = document.querySelector('[data-vault-redeem-form]');
   const codeInput = form?.querySelector('input[name="code"]');
+  const burnButton = form?.querySelector('.vault-burn-button');
   const startButton = root.querySelector('[data-vault-scan-start]');
   const stopButton = root.querySelector('[data-vault-scan-stop]');
   const panel = root.querySelector('[data-vault-scan-panel]');
@@ -119,13 +120,13 @@
     codeInput.value = code;
     codeInput.dispatchEvent(new Event('input', { bubbles: true }));
     stopScanner({ keepStatus: true });
-    setStatus(`QR распознан · код ${code}. Подтвердите сжигание JACK CARD.`, 'success');
+    setStatus(`QR распознан · код ${code}. Нажмите «Сжечь JACK CARD», чтобы продолжить.`, 'success');
     if (navigator.vibrate) navigator.vibrate(70);
-    root.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
-    // requestSubmit keeps native validation and the form's explicit admin
-    // confirmation. The QR itself never burns a card without confirmation.
-    window.setTimeout(() => form.requestSubmit(), 0);
+    window.setTimeout(() => {
+      burnButton?.focus({ preventScroll: true });
+      burnButton?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 0);
     return true;
   }
 
