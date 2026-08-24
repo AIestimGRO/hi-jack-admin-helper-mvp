@@ -1,6 +1,7 @@
 from app.member_host_routing import (
     admin_root_redirect_target,
     member_host_redirect_target,
+    member_reward_activation_redirect_target,
 )
 
 
@@ -94,3 +95,47 @@ def test_admin_hosts_keep_other_admin_and_quiz_entry_points() -> None:
         assert member_host_redirect_target(host, "/login") is None
         assert member_host_redirect_target(host, "/master") is None
         assert member_host_redirect_target(host, "/quiz") is None
+
+
+def test_reward_activation_redirect_returns_to_exact_card() -> None:
+    location = (
+        "/account?tab=vault&ok=%D0%9D%D0%B0%D0%B3%D1%80%D0%B0%D0%B4%D0%B0+"
+        "%D0%B0%D0%BA%D1%82%D0%B8%D0%B2%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B0"
+    )
+
+    assert member_reward_activation_redirect_target(
+        "POST",
+        "/account/rewards/417/activate",
+        303,
+        location,
+    ) == f"{location}#card-417"
+
+
+def test_reward_activation_redirect_does_not_touch_other_redirects() -> None:
+    assert (
+        member_reward_activation_redirect_target(
+            "POST",
+            "/account/rewards/417/purchase",
+            303,
+            "/account?tab=vault&ok=done",
+        )
+        is None
+    )
+    assert (
+        member_reward_activation_redirect_target(
+            "POST",
+            "/account/rewards/417/activate",
+            303,
+            "/account?tab=rating&ok=done",
+        )
+        is None
+    )
+    assert (
+        member_reward_activation_redirect_target(
+            "GET",
+            "/account/rewards/417/activate",
+            303,
+            "/account?tab=vault&ok=done",
+        )
+        is None
+    )
