@@ -13,11 +13,13 @@ def test_vault_scanner_reuses_existing_redeem_action() -> None:
     assert "data-vault-redeem-form" in html
     assert 'action="/api/vault/redeem"' in html
     assert 'name="csrf_token"' in html
+    assert 'class="primary vault-burn-button" type="submit"' in html
+    assert "onsubmit=\"return confirm('Сжечь эту JACK CARD?" in html
     assert "/js/admin-vault-scanner.js" in html
     assert "/css/admin-vault-scanner.css" in html
 
 
-def test_scanner_extracts_card_code_and_requests_confirmed_redeem() -> None:
+def test_scan_only_fills_code_and_never_submits_redeem_form() -> None:
     source = (ROOT / "app/static/js/admin-vault-scanner.js").read_text(
         encoding="utf-8"
     )
@@ -28,20 +30,27 @@ def test_scanner_extracts_card_code_and_requests_confirmed_redeem() -> None:
     assert "window.jsQR" in source
     assert "parsed.pathname.replace(/\\/+$/, '') !== '/admin/vault'" in source
     assert "parsed.searchParams.get('code')" in source
+    assert "codeInput.value = code" in source
     assert "form.submit(" not in source
-    assert "form.requestSubmit()" in source
-    assert "Подтвердите сжигание JACK CARD" in source
+    assert "form.requestSubmit(" not in source
+    assert ".click()" not in source
+    assert "const burnButton = form?.querySelector('.vault-burn-button');" in source
+    assert "burnButton?.focus" in source
+    assert "Нажмите «Сжечь JACK CARD», чтобы продолжить" in source
 
 
-def test_scanner_uses_same_origin_pinned_jsqr_dependency() -> None:
+def test_scanner_uses_only_same_origin_pinned_jsqr_dependency() -> None:
     source = (ROOT / "app/static/js/admin-vault-scanner.js").read_text(
         encoding="utf-8"
     )
+    html = (ROOT / "app/templates/vault.html").read_text(encoding="utf-8")
     gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
 
     assert "const QR_DECODER_URL = '/static/vendor/jsqr/dist/jsQR.js';" in source
     assert "https://unpkg.com" not in source
     assert "https://cdn.jsdelivr.net" not in source
+    assert "https://unpkg.com" not in html
+    assert "https://cdn.jsdelivr.net" not in html
     assert "async function ensureJsQR()" in source
     assert "await ensureJsQR()" in source
     assert "app/static/vendor/jsqr" in gitmodules
