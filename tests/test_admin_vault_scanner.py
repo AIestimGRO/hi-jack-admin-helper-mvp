@@ -34,6 +34,19 @@ def test_scanner_extracts_card_code_and_requests_confirmed_redeem() -> None:
     assert "Подтвердите сжигание JACK CARD" in source
 
 
+def test_scanner_has_ios_decoder_fallback_mirrors() -> None:
+    source = (ROOT / "app/static/js/admin-vault-scanner.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "QR_DECODER_URLS" in source
+    assert "https://unpkg.com/jsqr@1.4.0/dist/jsQR.js" in source
+    assert "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" in source
+    assert "async function ensureJsQR()" in source
+    assert "await ensureJsQR()" in source
+    assert "decoder_load_timeout" in source
+
+
 def test_camera_permission_is_scoped_to_admin_vault() -> None:
     source = (ROOT / "app/admin_vault_scanner.py").read_text(encoding="utf-8")
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
