@@ -48,6 +48,27 @@ def test_scanner_uses_same_origin_pinned_jsqr_dependency() -> None:
     assert "https://github.com/cozmo/jsQR.git" in gitmodules
 
 
+def test_scanner_opens_as_fullscreen_camera_overlay() -> None:
+    source = (ROOT / "app/static/js/admin-vault-scanner.js").read_text(
+        encoding="utf-8"
+    )
+    css = (ROOT / "app/static/css/admin-vault-scanner.css").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function setFullscreenOpen(open)" in source
+    assert "root.classList.toggle('is-open', open)" in source
+    assert "document.documentElement.classList.toggle('vault-scanner-open', open)" in source
+    assert "document.body.classList.toggle('vault-scanner-open', open)" in source
+    assert "setFullscreenOpen(true)" in source
+    assert "setFullscreenOpen(false)" in source
+    assert ".vault-scanner.is-open .vault-scanner-panel" in css
+    assert "position: fixed" in css
+    assert "height: 100dvh" in css
+    assert ".vault-scanner.is-open [data-vault-scan-stop]" in css
+    assert "env(safe-area-inset-top" in css
+
+
 def test_camera_permission_is_scoped_to_admin_vault() -> None:
     source = (ROOT / "app/admin_vault_scanner.py").read_text(encoding="utf-8")
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
