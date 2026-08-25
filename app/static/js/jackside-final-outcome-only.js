@@ -65,10 +65,48 @@
     box.hidden = false;
   }
 
+  function renderSuperprize(screen, data) {
+    const existing = screen.querySelector('.jackside-final-superprize');
+    const prize = data.state === 'winner' ? data.superprize : null;
+    if (!prize) {
+      existing?.remove();
+      return;
+    }
+
+    const card = existing || document.createElement('section');
+    card.className = 'jackside-final-superprize';
+    card.replaceChildren();
+
+    const kicker = document.createElement('div');
+    kicker.className = 'jackside-final-superprize-kicker';
+    kicker.textContent = 'СУПЕРПРИЗ ВЫПУСКА';
+
+    const title = document.createElement('strong');
+    title.className = 'jackside-final-superprize-title';
+    title.textContent = String(prize.title || 'JACK CARD');
+
+    const caption = document.createElement('div');
+    caption.className = 'jackside-final-superprize-caption';
+    caption.textContent = 'JACK CARD добавлена в My Cards';
+
+    const link = document.createElement('a');
+    link.className = 'jackside-final-superprize-link';
+    link.href = String(prize.my_cards_url || '/account?tab=vault&store=cards');
+    link.textContent = 'Открыть My Cards';
+
+    card.append(kicker, title, caption, link);
+    if (!existing) {
+      const summary = screen.querySelector('.jackside-final-jc-summary');
+      if (summary) summary.after(card);
+      else screen.append(card);
+    }
+  }
+
   function enhanceOutcome(data) {
     const screen = outcomeScreen();
     if (!screen || !screen.classList.contains('active')) return;
     renderBreakdown(screen, data);
+    renderSuperprize(screen, data);
     ensureActions(screen);
   }
 
@@ -85,7 +123,10 @@
       if (!response.ok) return;
       const data = await response.json();
       if (!data || data.state === 'pending') return;
-      const key = `${data.state}:${data.issue_jackcoin_total}:${JSON.stringify(data.issue_jackcoin_breakdown || {})}`;
+      const prizeKey = data.superprize
+        ? `${data.superprize.member_reward_id}:${data.superprize.status}:${data.superprize.title}`
+        : '';
+      const key = `${data.state}:${data.issue_jackcoin_total}:${JSON.stringify(data.issue_jackcoin_breakdown || {})}:${prizeKey}`;
       if (key === renderedKey && screen.querySelector('.jackside-final-jc-summary')) return;
       renderedKey = key;
       enhanceOutcome(data);
