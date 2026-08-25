@@ -21,6 +21,7 @@
   <link rel="stylesheet" data-member-ui-cleanup href="{{ url_for('static', path='/css/member-ui-cleanup.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" data-hijack-member-extension href="{{ url_for('static', path='/css/hijack-member.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" data-member-brand-refinement href="{{ url_for('static', path='/css/member-brand-refinement.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" data-member-identity-qr href="{{ url_for('static', path='/css/member-identity-qr.css') }}?v={{ asset_version }}">
 </head>
 <body class="{{ 'member-app-body' if member else 'member-auth-body' }}">
   <header class="member-topbar">
@@ -30,7 +31,17 @@
     </a>
     {% if member %}
     {% set header_name = member.nickname or member.first_name or member.username or 'HJ' %}
-    <a class="member-profile-button" href="/account?tab=profile" aria-label="Открыть профиль">{{ header_name[:1]|upper }}</a>
+    {% set identity_qr_visible = current_tab|default('') in ['home', 'profile'] %}
+    <div class="member-topbar-actions">
+      {% if identity_qr_visible %}
+      <button class="member-identity-qr-button" type="button" data-member-identity-qr-open aria-label="Показать мою клубную карту">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h7v7H3V3Zm2 2v3h3V5H5Zm9-2h7v7h-7V3Zm2 2v3h3V5h-3ZM3 14h7v7H3v-7Zm2 2v3h3v-3H5Zm9-2h3v3h-3v-3Zm5 0h2v5h-2v-5Zm-5 5h5v2h-5v-2Zm3-3h2v2h-2v-2Z"/>
+        </svg>
+      </button>
+      {% endif %}
+      <a class="member-profile-button" href="/account?tab=profile" aria-label="Открыть профиль">{{ header_name[:1]|upper }}</a>
+    </div>
     {% endif %}
   </header>
   <main class="member-shell">{% block content %}{% endblock %}</main>
@@ -229,6 +240,20 @@
   </template>
   {% endif %}
 
+  {% if identity_qr_visible %}
+  <dialog class="member-identity-qr-dialog" data-member-identity-qr-dialog aria-labelledby="member-identity-qr-title">
+    <div class="member-identity-qr-card">
+      <button class="member-identity-qr-close" type="button" data-member-identity-qr-close aria-label="Закрыть">×</button>
+      <p class="member-eyebrow">Моя клубная карта</p>
+      <h2 id="member-identity-qr-title">{{ header_name }}</h2>
+      <div class="member-identity-qr-frame">
+        <img src="/account/identity/qr.png" alt="Код клубной карты" loading="lazy" decoding="async">
+      </div>
+      <p class="member-identity-qr-hint">Покажите этот код администратору клуба — он быстро откроет вашу карточку.</p>
+    </div>
+  </dialog>
+  {% endif %}
+
   <a class="member-chat-launcher" data-chat-launcher href="/account/chats" aria-label="Открыть Chats">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 5.4h13.6a2.2 2.2 0 0 1 2.2 2.2v7.2a2.2 2.2 0 0 1-2.2 2.2h-7.3l-4.9 3.3.9-3.3H5.2A2.2 2.2 0 0 1 3 14.8V7.6a2.2 2.2 0 0 1 2.2-2.2Z"/></svg>
     <span class="member-chat-unread" aria-live="polite">0</span>
@@ -238,6 +263,7 @@
   <script src="{{ url_for('static', path='/js/member-profile-refresh.js') }}?v={{ asset_version }}" defer></script>
   <script src="{{ url_for('static', path='/js/product-shell.js') }}?v={{ asset_version }}" defer></script>
   <script src="{{ url_for('static', path='/js/prelaunch-member.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='/js/member-identity-qr.js') }}?v={{ asset_version }}" defer></script>
   <script type="module" src="{{ url_for('static', path='/js/reward-animations.js') }}?v={{ asset_version }}"></script>
   <script src="{{ url_for('static', path='/js/reward-stickers.js') }}?v={{ asset_version }}" defer></script>
   <script src="{{ url_for('static', path='/js/pwa-install.js') }}?v={{ asset_version }}" defer></script>
