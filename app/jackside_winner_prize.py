@@ -14,6 +14,7 @@ from app.services import jackside_issues as issue_service
 
 
 _EDITABLE_STATUSES = frozenset({"draft", "scheduled", "lobby"})
+_PREVIOUS_VALIDATE_ISSUE = issue_service.validate_issue_for_publish
 
 
 def _prize_editable(
@@ -32,6 +33,28 @@ def _prize_editable(
         and start > current
         and str(issue["status"] or "") in _EDITABLE_STATUSES
     )
+
+
+def validate_issue_for_publish_with_hidden_winner_card(
+    conn: sqlite3.Connection,
+    issue: sqlite3.Row | dict[str, Any],
+) -> list[str]:
+    """A hidden Market card may still be an explicitly configured final prize."""
+    errors = list(_PREVIOUS_VALIDATE_ISSUE(conn, issue))
+    if "invalid_card_prize" not in errors:
+        return errors
+    if str(issue["final_prize_type"] or "none") != "reward_card":
+        return errors
+    catalog_id = issue["final_prize_catalog_reward_id"]
+    if not catalog_id:
+        return errors
+    reward = conn.execute(
+        "SELECT id FROM vault_catalog_rewards WHERE id=?",
+        (int(catalog_id),),
+    ).fetchone()
+    if not reward:
+        return errors
+    return sorted(error for error in errors if error != "invalid_card_prize")
 
 
 def winner_prize_payload(
@@ -54,10 +77,8 @@ def winner_prize_payload(
         """
         SELECT id,title,validity_days,is_active
         FROM vault_catalog_rewards
-        WHERE is_active=1 OR id=?
         ORDER BY position,id
-        """,
-        (int(selected_id or 0),),
+        """
     ).fetchall()
     return {
         "id": int(issue["id"]),
@@ -105,7 +126,7 @@ def set_future_winner_card_prize(
         reward = conn.execute(
             """
             SELECT id FROM vault_catalog_rewards
-            WHERE id=? AND is_active=1
+            WHERE id=?
             """,
             (selected_id,),
         ).fetchone()
@@ -152,7 +173,7 @@ def _error_message(code: str) -> str:
     return {
         "issue_not_found": "Выпуск JACKSIDE не найден",
         "issue_prize_locked": "Выпуск уже стартовал — дополнительный приз зафиксирован",
-        "invalid_card_prize": "Выбранная JACK CARD недоступна. Проверьте THE VAULT",
+        "invalid_card_prize": "Выбранная JACK CARD не найдена. Проверьте THE VAULT",
     }.get(code, code)
 
 
@@ -259,8 +280,16 @@ def install_jackside_winner_prize(app: FastAPI) -> FastAPI:
     return app
 
 
+# Current JACKSIDE publish validation runs through the runtime policy layer.
+# Extend only the winner-card rule: a catalog item hidden from the Market is
+# still a valid explicitly configured final prize. Purchase flow remains
+# protected by the Vault service's enforce_active=True check.
+issue_service.validate_issue_for_publish = validate_issue_for_publish_with_hidden_winner_card
+
+
 __all__ = [
     "install_jackside_winner_prize",
     "set_future_winner_card_prize",
+    "validate_issue_for_publish_with_hidden_winner_card",
     "winner_prize_payload",
 ]
