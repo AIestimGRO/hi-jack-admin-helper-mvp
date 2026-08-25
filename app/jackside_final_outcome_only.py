@@ -97,6 +97,32 @@ def _final_answer_result(conn, *, table_id: int, finalist) -> tuple[bool | None,
     return bool(answer["is_correct"]), awarded
 
 
+def _issued_superprize(conn, *, table, client_id: int) -> dict[str, Any] | None:
+    reward_id = table["winner_reward_id"]
+    if not reward_id:
+        return None
+    reward = conn.execute(
+        """
+        SELECT vmr.id,vmr.client_id,vmr.catalog_reward_id,vmr.status,vcr.title
+        FROM vault_member_rewards vmr
+        JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
+        WHERE vmr.id=? AND vmr.client_id=? AND vmr.source_type='final_prize'
+        LIMIT 1
+        """,
+        (int(reward_id), int(client_id)),
+    ).fetchone()
+    if not reward:
+        return None
+    return {
+        "kind": "jack_card",
+        "member_reward_id": int(reward["id"]),
+        "catalog_reward_id": int(reward["catalog_reward_id"]),
+        "title": str(reward["title"]),
+        "status": str(reward["status"] or "active"),
+        "my_cards_url": "/account?tab=vault&store=cards",
+    }
+
+
 def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] | None:
     code = str(campaign or "").strip()
     if not code.startswith("jackside_"):
@@ -188,13 +214,25 @@ def _payload(settings: Any, request: Request, campaign: str) -> dict[str, Any] |
             }
 
         if str(finalist["status"] or "") == "winner":
+            superprize = _issued_superprize(
+                conn,
+                table=table,
+                client_id=client_id,
+            )
+            message = (
+                f"{final_winner_announcement(1)} "
+                f"Итог JACKCOIN за квиз — {JACKSIDE_WINNER_ISSUE_TOTAL} JC."
+            )
+            if superprize:
+                message += (
+                    f" Суперприз выпуска — JACK CARD «{superprize['title']}» — "
+                    "уже добавлена в My Cards."
+                )
             return {
                 **base,
                 "state": "winner",
-                "message": (
-                    f"{final_winner_announcement(1)} "
-                    f"Итог JACKCOIN за квиз — {JACKSIDE_WINNER_ISSUE_TOTAL} JC."
-                ),
+                "message": message,
+                "superprize": superprize,
             }
 
         answer_correct, correct_award = _final_answer_result(
