@@ -34,7 +34,10 @@
       <div class="ia-card-actions">
         <a class="button" href="/master/quiz-builder/{{ campaign.id }}">Вопросы</a>
         {% if campaign.issue_id %}
-          {% if campaign.issue_status in ['draft','scheduled','lobby'] %}<button class="button" type="button" data-edit-issue="{{ campaign.issue_id }}">Изменить выпуск</button>{% endif %}
+          {% if campaign.issue_status in ['draft','scheduled','lobby'] %}
+          <button class="button" type="button" data-winner-prize-issue="{{ campaign.issue_id }}" title="Дополнительный приз победителю">Приз</button>
+          <button class="button" type="button" data-edit-issue="{{ campaign.issue_id }}">Изменить выпуск</button>
+          {% endif %}
           <button class="button" type="button" data-repeat-source="issue:{{ campaign.issue_id }}">Повторить выпуск</button>
         {% else %}
           <button class="button" type="button" data-repeat-source="legacy:{{ campaign.id }}">Новый выпуск из этого квиза</button>
@@ -100,5 +103,21 @@
       <div class="ia-dialog-actions"><button class="button" type="button" data-close-edit-release>Отмена</button><button class="primary" type="submit">Сохранить расписание</button></div>
     </form>
   </dialog>
+
+  <dialog class="ia-dialog" data-winner-prize-dialog>
+    <form method="post" data-winner-prize-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="ia-dialog-head"><div><p class="eyebrow">JACKSIDE · THE VAULT</p><h2>Дополнительный приз победителю</h2><p class="muted" data-winner-prize-title></p></div><button type="button" class="ia-dialog-close" data-close-winner-prize aria-label="Закрыть">×</button></div>
+      <label>JACK CARD
+        <select name="catalog_reward_id" data-winner-prize-select required>
+          <option value="0">Без дополнительного приза</option>
+        </select>
+      </label>
+      <p class="muted">Карта выдаётся <strong>дополнительно к 414 JC</strong> только одному победителю — тому, кто первым правильно ответит на последний вопрос финального стола. Если победитель не определён, карта не выдаётся.</p>
+      <p class="form-status" data-winner-prize-status role="alert"></p>
+      <div class="ia-dialog-actions"><button class="button" type="button" data-close-winner-prize>Отмена</button><button class="primary" type="submit">Сохранить приз</button></div>
+    </form>
+  </dialog>
 </section>
+<script src="{{ url_for('static', path='/js/jackside-winner-prize.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}
