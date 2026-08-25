@@ -253,14 +253,19 @@ def test_modern_jackside_ui_has_small_prize_control_and_clear_additive_copy() ->
         encoding="utf-8"
     )
     module = (ROOT / "app/jackside_winner_prize.py").read_text(encoding="utf-8")
+    main = (ROOT / "app/main.py").read_text(encoding="utf-8")
 
     assert "data-winner-prize-issue" in template
     assert "data-winner-prize-dialog" in template
     assert "дополнительно к 414 JC" in template
     assert "Если победитель не определён" in template
+    assert "prize_state.selected" in template
+    assert "Приз ✓" in template
     assert "/winner-prize" in script
     assert "не продаётся" in script
     assert "final_prize_jackcoin_amount=0" in module
+    assert "apply_jackside_winner_prize_policy" in module
+    assert "apply_jackside_winner_prize_policy()" in main
     assert "jackcoin_per_correct" not in module
     assert "jackcoin_completion_bonus" not in module
     assert "jackcoin_perfect_bonus" not in module
