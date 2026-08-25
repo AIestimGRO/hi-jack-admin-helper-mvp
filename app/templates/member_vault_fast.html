@@ -75,12 +75,20 @@
   </section>
   {% endif %}
 
-  {% if vault_reward_history %}
+  {% set visible_history = namespace(count=0) %}
+  {% for reward in vault_reward_history %}
+    {% if not (reward.source_type == 'final_prize' and reward.status == 'redeemed') %}
+      {% set visible_history.count = visible_history.count + 1 %}
+    {% endif %}
+  {% endfor %}
+  {% if visible_history.count %}
   <details class="member-card account-details">
-    <summary>История JACK CARDS <span>{{ vault_reward_history|length }}</span></summary>
+    <summary>История JACK CARDS <span>{{ visible_history.count }}</span></summary>
     <div class="member-history">
       {% for reward in vault_reward_history %}
+      {% if not (reward.source_type == 'final_prize' and reward.status == 'redeemed') %}
       <article><div><strong>{{ reward.title }}</strong><small>{% if reward.activation_code %}Код {{ reward.activation_code }} · {% endif %}{{ reward.created_at[:16]|replace('T', ' ') }}</small></div><span>{{ {'redeemed':'Сыграна','expired':'Истекла','cancelled':'Отменена'}[reward.status] }}</span></article>
+      {% endif %}
       {% endfor %}
     </div>
   </details>
