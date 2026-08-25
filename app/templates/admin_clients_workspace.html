@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Клиенты — Hi, Jack Club{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/admin-vault-scanner.css') }}?v={{ asset_version }}">
 <section class="ia-page">
   <header class="ia-page-head">
     <div>
@@ -8,8 +9,33 @@
       <h1>Клиенты</h1>
       <p class="muted">Поиск, ключевые показатели игрока и быстрый переход к учётным данным.</p>
     </div>
-    <a class="button ia-secondary-action" href="/clients/import">Импорт</a>
+    <button class="button ia-secondary-action" type="button" data-client-scan-start>Сканер</button>
   </header>
+
+  <div class="vault-scanner" data-client-scanner data-client-scan-csrf="{{ csrf_token }}">
+    <div class="vault-scanner-actions">
+      <button class="button" type="button" data-vault-scan-stop hidden>Закрыть камеру</button>
+    </div>
+    <div class="vault-scanner-panel" data-vault-scan-panel hidden>
+      <video class="vault-scanner-video" data-vault-scan-video autoplay muted playsinline></video>
+      <div class="vault-scanner-guide" aria-hidden="true"></div>
+    </div>
+    <canvas data-vault-scan-canvas hidden></canvas>
+    <p class="vault-scanner-status" data-vault-scan-status aria-live="polite" hidden></p>
+  </div>
+
+  <section class="card" data-client-scan-card-result hidden>
+    <div>
+      <p class="eyebrow">JACK CARD</p>
+      <h2 data-client-scan-card-title>JACK CARD</h2>
+      <p class="muted" data-client-scan-card-meta></p>
+    </div>
+    <form action="/api/vault/redeem" method="post" data-client-scan-redeem data-no-ajax="true">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="code" value="">
+      <button class="primary" type="submit">Сжечь JACK CARD</button>
+    </form>
+  </section>
 
   <form class="ia-search" method="get" action="/master/clients">
     <input name="q" value="{{ q }}" placeholder="Телефон, имя, ник, username, email или ID" autocomplete="off">
@@ -37,7 +63,7 @@
       <span class="chevron">›</span>
     </a>
     {% else %}
-    <div class="card smart-empty">Клиенты не найдены. Измените запрос или импортируйте базу.</div>
+    <div class="card smart-empty">Клиенты не найдены. Измените запрос.</div>
     {% endfor %}
   </div>
 
@@ -50,4 +76,5 @@
   </nav>
   {% endif %}
 </section>
+<script src="{{ url_for('static', path='/js/admin-vault-scanner.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}
