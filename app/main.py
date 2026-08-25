@@ -38,17 +38,9 @@ from app.jackside_critical_hotfix import install_jackside_critical_hotfix
 from app.jackside_final_outcome_only import install_jackside_final_outcome_only
 from app.jackside_final_recovery import install_jackside_final_recovery
 from app.jackside_rating_freshness import install_jackside_rating_freshness
-from app.jackside_winner_prize import (
-    apply_jackside_winner_prize_policy,
-    install_jackside_winner_prize,
-)
+from app.jackside_winner_prize import install_jackside_winner_prize
 from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
-
-# The quiz runtime imports ensure_final_table by name. Bind the issue-backed
-# JACKSIDE prize source before main_impl captures that function.
-apply_jackside_winner_prize_policy()
-
 from app.main_impl import *  # noqa: F403,E402
 from app.main_impl import app as _base_app  # noqa: E402
 from app.main_impl import create_app as _base_create_app  # noqa: E402
