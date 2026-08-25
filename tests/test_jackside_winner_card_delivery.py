@@ -11,7 +11,12 @@ from app.services.daily_414_final import (
     reconcile_final_table,
 )
 from app.services.member_accounts import jackcoin_balance
-from app.services.vault import attach_final_table_reward, create_catalog_reward
+from app.services.vault import (
+    activate_reward,
+    attach_final_table_reward,
+    create_catalog_reward,
+    redeem_reward,
+)
 
 
 def _catalog(conn):
@@ -22,7 +27,7 @@ def _catalog(conn):
         ) VALUES (1,'winner-delivery-test','Winner Delivery Test','test','master_admin')
         """
     )
-    return create_catalog_reward(
+    reward = create_catalog_reward(
         conn,
         code="free_reentry_delivery",
         title="FREE RE-ENTRY",
@@ -35,6 +40,12 @@ def _catalog(conn):
         position=10,
         admin_id=1,
     )
+    # Prize-only card: hidden from the member Market but still stored in THE VAULT.
+    conn.execute(
+        "UPDATE vault_catalog_rewards SET is_active=0 WHERE id=?",
+        (int(reward["id"]),),
+    )
+    return reward
 
 
 def _candidate(conn, *, campaign: str, number: int) -> tuple[int, int]:
@@ -133,6 +144,49 @@ def test_card_goes_only_to_first_correct_final_winner_and_keeps_414_jc(tmp_path)
                 "SELECT COUNT(*) FROM vault_member_rewards WHERE source_type='final_prize'"
             ).fetchone()[0]
         )
+        active_before_burn = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM vault_member_rewards
+                WHERE client_id=? AND status='active'
+                """,
+                (early_client,),
+            ).fetchone()[0]
+        )
+
+        activation_time = datetime.now(timezone.utc) + timedelta(seconds=1)
+        activated = activate_reward(
+            conn,
+            reward_id=int(card["id"]),
+            client_id=early_client,
+            activation_minutes=10,
+            now=activation_time,
+        )
+        burned = redeem_reward(
+            conn,
+            code=str(activated["activation_code"]),
+            admin_id=1,
+            admin_name="Winner Delivery Test",
+            now=activation_time + timedelta(seconds=1),
+        )
+        active_after_burn = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM vault_member_rewards
+                WHERE client_id=? AND status='active'
+                """,
+                (early_client,),
+            ).fetchone()[0]
+        )
+        redeemed_event_count = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM vault_reward_events
+                WHERE member_reward_id=? AND action='redeemed'
+                """,
+                (int(card["id"]),),
+            ).fetchone()[0]
+        )
 
     assert completed["status"] == "completed"
     assert completed["outcome"] == "single_winner"
@@ -145,9 +199,13 @@ def test_card_goes_only_to_first_correct_final_winner_and_keeps_414_jc(tmp_path)
     assert card_count == 1
     assert early_jc == 414
     assert late_jc < 414
+    assert active_before_burn == 1
+    assert burned["status"] == "redeemed"
+    assert active_after_burn == 0
+    assert redeemed_event_count == 1
 
 
-def test_configured_card_is_not_issued_when_final_has_no_winner(tmp_path) -> None:
+def test_configured_hidden_card_is_not_issued_when_final_has_no_winner(tmp_path) -> None:
     db_path = tmp_path / "winner-card-no-winner.sqlite3"
     init_db(db_path)
     start = datetime(2026, 8, 25, 18, 23, 14, tzinfo=timezone.utc)
