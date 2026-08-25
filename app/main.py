@@ -38,6 +38,7 @@ from app.jackside_critical_hotfix import install_jackside_critical_hotfix
 from app.jackside_final_outcome_only import install_jackside_final_outcome_only
 from app.jackside_final_recovery import install_jackside_final_recovery
 from app.jackside_rating_freshness import install_jackside_rating_freshness
+from app.jackside_winner_prize import install_jackside_winner_prize
 from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
 from app.main_impl import *  # noqa: F403,E402
@@ -126,6 +127,7 @@ def _install_extensions(application):
     application = install_referral_registration_integrity(application)
     application = install_referral_entry_hotfix(application)
     application = install_jackside_multi_issue(application)
+    application = install_jackside_winner_prize(application)
     application = install_legacy_jackside_copy(application)
     application = install_staff_quiz_admin(application)
     application = install_admin_information_architecture(application)
