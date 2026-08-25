@@ -635,8 +635,10 @@ def validate_issue_for_publish(
         if not catalog_id:
             errors.append("missing_card_prize")
         else:
+            # Market visibility is a sales concern, not a prize-validity rule.
+            # Prize-only cards may be hidden from Market and still be issued.
             catalog = conn.execute(
-                "SELECT id FROM vault_catalog_rewards WHERE id=? AND is_active=1",
+                "SELECT id FROM vault_catalog_rewards WHERE id=?",
                 (catalog_id,),
             ).fetchone()
             if not catalog:
