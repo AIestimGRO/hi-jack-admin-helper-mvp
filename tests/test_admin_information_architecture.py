@@ -109,7 +109,9 @@ def test_master_clients_is_primary_workspace_with_business_metrics(tmp_path: Pat
         assert "100 JC" in page.text
         assert "заработано 150" in page.text
         assert "Последняя операция JC" in page.text
-        assert "href=\"/clients/import\"" in page.text
+        assert "data-client-scan-start" in page.text
+        assert "Сканер" in page.text
+        assert "href=\"/clients/import\"" not in page.text
         assert "Основное" not in page.text
         assert "Выпуски JACKSIDE" not in page.text
 
