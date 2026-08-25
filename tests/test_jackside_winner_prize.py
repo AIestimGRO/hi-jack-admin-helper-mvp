@@ -8,9 +8,17 @@ import pytest
 
 from app.db import init_db, transaction
 from app.jackside_multi_issue import create_issue_multi
-from app.jackside_winner_prize import set_future_winner_card_prize
+from app.jackside_winner_prize import (
+    set_future_winner_card_prize,
+    winner_prize_payload,
+)
+from app.services import jackside_issues as issue_service
 from app.services.jackside_issues import ensure_issue_campaign
-from app.services.vault import attach_final_table_reward, create_catalog_reward
+from app.services.vault import (
+    attach_final_table_reward,
+    create_catalog_reward,
+    purchase_reward,
+)
 
 
 MOSCOW = ZoneInfo("Europe/Moscow")
@@ -97,8 +105,8 @@ def test_compact_winner_prize_setting_syncs_issue_without_touching_jackcoin(tmp_
     )
 
 
-def test_winner_prize_rejects_inactive_card(tmp_path) -> None:
-    db_path = tmp_path / "winner-prize-inactive.sqlite3"
+def test_hidden_market_card_can_be_winner_prize_but_cannot_be_purchased(tmp_path) -> None:
+    db_path = tmp_path / "winner-prize-hidden-market.sqlite3"
     init_db(db_path)
     day = (datetime.now(MOSCOW) + timedelta(days=3)).date()
     start = datetime.combine(day, datetime.min.time(), tzinfo=MOSCOW).replace(hour=18)
@@ -107,16 +115,54 @@ def test_winner_prize_rejects_inactive_card(tmp_path) -> None:
             conn,
             issue_date_value=day,
             starts_at=start,
-            title="JACKSIDE inactive prize",
+            title="JACKSIDE hidden prize",
         )
         ensure_issue_campaign(conn, issue=issue)
         reward = _catalog(conn, active=False)
-        with pytest.raises(ValueError, match="invalid_card_prize"):
-            set_future_winner_card_prize(
+
+        updated = set_future_winner_card_prize(
+            conn,
+            issue_id=int(issue["id"]),
+            catalog_reward_id=int(reward["id"]),
+        )
+        payload = winner_prize_payload(conn, issue_id=int(issue["id"]))
+        refreshed = issue_service.get_issue(conn, int(issue["id"]))
+        publish_errors = issue_service.validate_issue_for_publish(conn, refreshed)
+
+        buyer_id = int(
+            conn.execute(
+                "INSERT INTO clients(first_name,source) VALUES ('Buyer','test')"
+            ).lastrowid
+        )
+        conn.execute(
+            """
+            INSERT INTO jackcoin_ledger(
+                client_id,amount,operation_type,source_type,idempotency_key,comment
+            ) VALUES (?,1000,'test_award','test',?,'test')
+            """,
+            (buyer_id, f"hidden-prize-buyer:{buyer_id}"),
+        )
+        with pytest.raises(ValueError, match="catalog_reward_inactive"):
+            purchase_reward(
                 conn,
-                issue_id=int(issue["id"]),
+                client_id=buyer_id,
                 catalog_reward_id=int(reward["id"]),
+                purchase_id="hidden-card-direct-purchase",
+                expected_price_jc=700,
             )
+        purchased = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM vault_member_rewards WHERE client_id=?",
+                (buyer_id,),
+            ).fetchone()[0]
+        )
+
+    assert updated["final_prize_type"] == "reward_card"
+    assert int(updated["final_prize_catalog_reward_id"]) == int(reward["id"])
+    assert "invalid_card_prize" not in publish_errors
+    prize_row = next(item for item in payload["rewards"] if item["id"] == int(reward["id"]))
+    assert prize_row["is_active"] is False
+    assert purchased == 0
 
 
 def test_card_prize_is_additional_to_jackcoin_and_no_winner_gets_no_card(tmp_path) -> None:
@@ -213,6 +259,7 @@ def test_modern_jackside_ui_has_small_prize_control_and_clear_additive_copy() ->
     assert "дополнительно к 414 JC" in template
     assert "Если победитель не определён" in template
     assert "/winner-prize" in script
+    assert "не продаётся" in script
     assert "final_prize_jackcoin_amount=0" in module
     assert "jackcoin_per_correct" not in module
     assert "jackcoin_completion_bonus" not in module
