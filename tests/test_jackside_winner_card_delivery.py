@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.db import init_db, transaction
 from app.prelaunch_economy_compat import ensure_prelaunch_economy_compat
+from app.prelaunch_experience import ensure_prelaunch_schema
 from app.services.daily_414_final import (
     ensure_final_table,
     list_final_winners,
@@ -65,6 +66,9 @@ def test_card_goes_only_to_first_correct_final_winner_and_keeps_414_jc(tmp_path)
     campaign = "jackside_winner_card_first_correct"
 
     with transaction(db_path) as conn:
+        # Production installs the prelaunch schema before the economy-compat
+        # triggers. Reproduce that real startup order in this isolated DB.
+        ensure_prelaunch_schema(conn)
         ensure_prelaunch_economy_compat(conn)
         reward = _catalog(conn)
         late_client, _ = _candidate(conn, campaign=campaign, number=1)
