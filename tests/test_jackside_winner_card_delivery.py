@@ -3,13 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.db import init_db, transaction
-from app.jackside_winner_prize import (
-    apply_jackside_winner_prize_policy,
-    set_future_winner_card_prize,
-)
+from app.jackside_winner_prize import set_future_winner_card_prize
 from app.prelaunch_economy_compat import ensure_prelaunch_economy_compat
 from app.prelaunch_experience import ensure_prelaunch_schema
-from app.services import daily_414_final as final_service
 from app.services.daily_414_final import (
     ensure_final_table,
     list_final_winners,
@@ -99,18 +95,16 @@ def test_issue_prize_survives_core_final_table_creation_without_prize_args(tmp_p
         )
         assert updated["final_prize_type"] == "reward_card"
 
-        # main_impl's core submission path historically called ensure_final_table
-        # without prize arguments. The issue-backed policy must still snapshot
-        # the configured winner card instead of silently resetting it to none.
-        apply_jackside_winner_prize_policy()
-        table = final_service.ensure_final_table(
+        # Core callers may omit prize arguments. Snapshot ownership belongs to
+        # the final-table service, which resolves the JACKSIDE campaign config.
+        table = ensure_final_table(
             conn,
             campaign_code=str(issue["campaign_code"]),
             campaign_version=1,
             starts_at=issue_start + timedelta(minutes=5, seconds=14),
             questions=[{"id": "final-1", "time_limit_seconds": 30}],
         )
-        repeated = final_service.ensure_final_table(
+        repeated = ensure_final_table(
             conn,
             campaign_code=str(issue["campaign_code"]),
             campaign_version=1,
@@ -191,6 +185,10 @@ def test_card_goes_only_to_first_correct_final_winner_and_keeps_414_jc(tmp_path)
         )
         winners = list_final_winners(conn, final_table_id=int(table["id"]))
         card = attach_final_table_reward(conn, final_table_id=int(table["id"]))
+        table_after_reward = conn.execute(
+            "SELECT * FROM daily_414_final_tables WHERE id=?",
+            (int(table["id"]),),
+        ).fetchone()
         early_jc = jackcoin_balance(conn, early_client)
         late_jc = jackcoin_balance(conn, late_client)
         card_count = int(
@@ -250,6 +248,7 @@ def test_card_goes_only_to_first_correct_final_winner_and_keeps_414_jc(tmp_path)
     assert int(card["client_id"]) == early_client
     assert card["source_type"] == "final_prize"
     assert int(card["price_paid_jc"]) == 0
+    assert int(table_after_reward["winner_reward_id"]) == int(card["id"])
     assert card_count == 1
     assert early_jc == 414
     assert late_jc < 414
