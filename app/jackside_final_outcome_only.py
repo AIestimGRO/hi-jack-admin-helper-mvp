@@ -107,6 +107,7 @@ def _issued_superprize(conn, *, table, client_id: int) -> dict[str, Any] | None:
         FROM vault_member_rewards vmr
         JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
         WHERE vmr.id=? AND vmr.client_id=? AND vmr.source_type='final_prize'
+          AND vmr.status IN ('active','activated')
         LIMIT 1
         """,
         (int(reward_id), int(client_id)),
