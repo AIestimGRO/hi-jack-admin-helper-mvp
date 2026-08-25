@@ -57,15 +57,12 @@
       }
       (issue.rewards || []).forEach((reward) => {
         const days = Number(reward.validity_days || 0);
-        const suffix = days > 0 ? ` · ${days} дн.` : ' · без срока';
-        const option = new Option(
-          `${reward.title}${suffix}${reward.is_active ? '' : ' · отключена'}`,
+        const validity = days > 0 ? ` · ${days} дн.` : ' · без срока';
+        const market = reward.is_active ? '' : ' · не продаётся';
+        select.append(new Option(
+          `${reward.title}${validity}${market}`,
           String(reward.id)
-        );
-        if (!reward.is_active && Number(reward.id) !== Number(issue.final_prize_catalog_reward_id)) {
-          option.disabled = true;
-        }
-        select.append(option);
+        ));
       });
 
       if (issue.final_prize_type === 'reward_card' && issue.final_prize_catalog_reward_id) {
