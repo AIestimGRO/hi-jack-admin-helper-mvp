@@ -20,6 +20,14 @@
   <div class="ia-list-head"><div><strong>JACKSIDE-квизы</strong><span class="muted">{{ campaigns|length }} кампаний</span></div></div>
   <div class="ia-campaign-grid">
     {% for campaign in campaigns %}
+    {% set prize_state = namespace(selected=false) %}
+    {% if campaign.issue_id %}
+      {% for issue in issues %}
+        {% if issue.id == campaign.issue_id and issue.final_prize_type == 'reward_card' and issue.final_prize_catalog_reward_id %}
+          {% set prize_state.selected = true %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
     <article class="card ia-campaign-card" data-campaign-id="{{ campaign.id }}" data-campaign-code="{{ campaign.code }}">
       <div class="ia-card-head">
         <div><small>{{ campaign.issue_date or (campaign.active_from[:10] if campaign.active_from else 'Без даты') }}</small><h2>{{ campaign.title }}</h2><code>{{ campaign.code }}</code></div>
@@ -35,7 +43,7 @@
         <a class="button" href="/master/quiz-builder/{{ campaign.id }}">Вопросы</a>
         {% if campaign.issue_id %}
           {% if campaign.issue_status in ['draft','scheduled','lobby'] %}
-          <button class="button" type="button" data-winner-prize-issue="{{ campaign.issue_id }}" title="Дополнительный приз победителю">Приз</button>
+          <button class="button" type="button" data-winner-prize-issue="{{ campaign.issue_id }}" title="{{ 'Дополнительный приз назначен' if prize_state.selected else 'Дополнительный приз победителю' }}">{{ 'Приз ✓' if prize_state.selected else 'Приз' }}</button>
           <button class="button" type="button" data-edit-issue="{{ campaign.issue_id }}">Изменить выпуск</button>
           {% endif %}
           <button class="button" type="button" data-repeat-source="issue:{{ campaign.issue_id }}">Повторить выпуск</button>
