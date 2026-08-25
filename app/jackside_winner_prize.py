@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone
-from functools import wraps
 from typing import Any
 
 from fastapi import FastAPI, Form, Request
@@ -11,12 +10,10 @@ from fastapi.responses import JSONResponse
 
 from app.db import connect, transaction
 from app.product_shell import _check_csrf, _require_master
-from app.services import daily_414_final as final_service
 from app.services import jackside_issues as issue_service
 
 
 _EDITABLE_STATUSES = frozenset({"draft", "scheduled", "lobby"})
-_PREVIOUS_VALIDATE_ISSUE = issue_service.validate_issue_for_publish
 
 
 def _prize_editable(
@@ -35,94 +32,6 @@ def _prize_editable(
         and start > current
         and str(issue["status"] or "") in _EDITABLE_STATUSES
     )
-
-
-def _issue_prize_snapshot(
-    conn: sqlite3.Connection, campaign_code: str
-) -> tuple[str, int | None, int] | None:
-    code = str(campaign_code or "")
-    if not code.startswith("jackside_"):
-        return None
-    try:
-        issue = conn.execute(
-            """
-            SELECT final_prize_type,final_prize_catalog_reward_id,
-                   final_prize_jackcoin_amount
-            FROM jackside_issues
-            WHERE campaign_code=?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (code,),
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return None
-    if not issue:
-        return None
-
-    prize_type = str(issue["final_prize_type"] or "none")
-    catalog_id = (
-        int(issue["final_prize_catalog_reward_id"])
-        if issue["final_prize_catalog_reward_id"]
-        else None
-    )
-    jackcoin_amount = max(0, int(issue["final_prize_jackcoin_amount"] or 0))
-    if prize_type == "reward_card" and catalog_id:
-        return "reward_card", catalog_id, 0
-    if prize_type == "jackcoin" and jackcoin_amount > 0:
-        return "jackcoin", None, jackcoin_amount
-    return "none", None, 0
-
-
-def apply_jackside_winner_prize_policy() -> None:
-    """Bind issue-backed prize data before main_impl imports ensure_final_table.
-
-    Some core quiz paths create the final-table snapshot without passing prize
-    arguments. For issue-backed JACKSIDE releases the issue is authoritative,
-    so every final-table create/update must read the configured prize from it.
-    """
-    current = final_service.ensure_final_table
-    if getattr(current, "_jackside_winner_prize_policy", False):
-        return
-
-    @wraps(current)
-    def ensure_final_table_with_issue_prize(*args: Any, **kwargs: Any):
-        conn = kwargs.get("conn")
-        if conn is None and args:
-            conn = args[0]
-        campaign_code = str(kwargs.get("campaign_code") or "")
-        if isinstance(conn, sqlite3.Connection):
-            snapshot = _issue_prize_snapshot(conn, campaign_code)
-            if snapshot is not None:
-                prize_type, catalog_id, jackcoin_amount = snapshot
-                kwargs["prize_type"] = prize_type
-                kwargs["prize_catalog_reward_id"] = catalog_id
-                kwargs["prize_jackcoin_amount"] = jackcoin_amount
-        return current(*args, **kwargs)
-
-    ensure_final_table_with_issue_prize._jackside_winner_prize_policy = True
-    final_service.ensure_final_table = ensure_final_table_with_issue_prize
-
-
-def validate_issue_for_publish_with_hidden_winner_card(
-    conn: sqlite3.Connection,
-    issue: sqlite3.Row | dict[str, Any],
-) -> list[str]:
-    """A hidden Market card may still be an explicitly configured final prize."""
-    errors = list(_PREVIOUS_VALIDATE_ISSUE(conn, issue))
-    if "invalid_card_prize" not in errors:
-        return errors
-    if str(issue["final_prize_type"] or "none") != "reward_card":
-        return errors
-    catalog_id = issue["final_prize_catalog_reward_id"]
-    if not catalog_id:
-        return errors
-    reward = conn.execute(
-        "SELECT id FROM vault_catalog_rewards WHERE id=?",
-        (int(catalog_id),),
-    ).fetchone()
-    if not reward:
-        return errors
-    return sorted(error for error in errors if error != "invalid_card_prize")
 
 
 def winner_prize_payload(
@@ -192,10 +101,7 @@ def set_future_winner_card_prize(
     catalog_id: int | None = None
     if selected_id > 0:
         reward = conn.execute(
-            """
-            SELECT id FROM vault_catalog_rewards
-            WHERE id=?
-            """,
+            "SELECT id FROM vault_catalog_rewards WHERE id=?",
             (selected_id,),
         ).fetchone()
         if not reward:
@@ -348,17 +254,8 @@ def install_jackside_winner_prize(app: FastAPI) -> FastAPI:
     return app
 
 
-# Current JACKSIDE publish validation runs through the runtime policy layer.
-# Extend only the winner-card rule: a catalog item hidden from the Market is
-# still a valid explicitly configured final prize. Purchase flow remains
-# protected by the Vault service's enforce_active=True check.
-issue_service.validate_issue_for_publish = validate_issue_for_publish_with_hidden_winner_card
-
-
 __all__ = [
-    "apply_jackside_winner_prize_policy",
     "install_jackside_winner_prize",
     "set_future_winner_card_prize",
-    "validate_issue_for_publish_with_hidden_winner_card",
     "winner_prize_payload",
 ]
