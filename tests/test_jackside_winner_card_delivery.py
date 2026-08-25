@@ -3,13 +3,19 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.db import init_db, transaction
+from app.jackside_winner_prize import (
+    apply_jackside_winner_prize_policy,
+    set_future_winner_card_prize,
+)
 from app.prelaunch_economy_compat import ensure_prelaunch_economy_compat
 from app.prelaunch_experience import ensure_prelaunch_schema
+from app.services import daily_414_final as final_service
 from app.services.daily_414_final import (
     ensure_final_table,
     list_final_winners,
     reconcile_final_table,
 )
+from app.services.jackside_issues import create_issue, ensure_issue_campaign
 from app.services.member_accounts import jackcoin_balance
 from app.services.vault import (
     activate_reward,
@@ -68,6 +74,54 @@ def _candidate(conn, *, campaign: str, number: int) -> tuple[int, int]:
         ).lastrowid
     )
     return client_id, submission_id
+
+
+def test_issue_prize_survives_core_final_table_creation_without_prize_args(tmp_path) -> None:
+    db_path = tmp_path / "winner-card-core-snapshot.sqlite3"
+    init_db(db_path)
+    issue_start = datetime(2026, 8, 26, 18, 10, tzinfo=timezone.utc)
+
+    with transaction(db_path) as conn:
+        reward = _catalog(conn)
+        issue = create_issue(
+            conn,
+            issue_date_value=issue_start.date(),
+            starts_at=issue_start,
+            title="JACKSIDE core snapshot prize",
+            admin_id=1,
+        )
+        ensure_issue_campaign(conn, issue=issue, timezone_name="UTC")
+        updated = set_future_winner_card_prize(
+            conn,
+            issue_id=int(issue["id"]),
+            catalog_reward_id=int(reward["id"]),
+            now=issue_start - timedelta(minutes=10),
+        )
+        assert updated["final_prize_type"] == "reward_card"
+
+        # main_impl's core submission path historically called ensure_final_table
+        # without prize arguments. The issue-backed policy must still snapshot
+        # the configured winner card instead of silently resetting it to none.
+        apply_jackside_winner_prize_policy()
+        table = final_service.ensure_final_table(
+            conn,
+            campaign_code=str(issue["campaign_code"]),
+            campaign_version=1,
+            starts_at=issue_start + timedelta(minutes=5, seconds=14),
+            questions=[{"id": "final-1", "time_limit_seconds": 30}],
+        )
+        repeated = final_service.ensure_final_table(
+            conn,
+            campaign_code=str(issue["campaign_code"]),
+            campaign_version=1,
+            starts_at=issue_start + timedelta(minutes=5, seconds=14),
+            questions=[{"id": "final-1", "time_limit_seconds": 30}],
+        )
+
+    assert table["prize_type"] == "reward_card"
+    assert int(table["prize_catalog_reward_id"]) == int(reward["id"])
+    assert repeated["prize_type"] == "reward_card"
+    assert int(repeated["prize_catalog_reward_id"]) == int(reward["id"])
 
 
 def test_card_goes_only_to_first_correct_final_winner_and_keeps_414_jc(tmp_path) -> None:
