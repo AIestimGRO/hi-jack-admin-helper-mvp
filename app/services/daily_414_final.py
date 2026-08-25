@@ -72,6 +72,62 @@ def _completed_question_count(
     return completed
 
 
+def _resolved_prize_snapshot(
+    conn: sqlite3.Connection,
+    *,
+    campaign_code: str,
+    prize_type: str,
+    prize_catalog_reward_id: int | None,
+    prize_jackcoin_amount: int,
+) -> tuple[str, int | None, int]:
+    """Resolve the immutable final-table prize from the JACKSIDE campaign.
+
+    Some quiz callers create the final table without prize arguments. The final
+    table service owns snapshot creation, so issue-backed JACKSIDE campaigns are
+    resolved here rather than by runtime monkey patches around individual callers.
+    Explicit prize arguments still win for legacy/direct callers.
+    """
+    clean_type = str(prize_type or "none")
+    clean_catalog_id = (
+        int(prize_catalog_reward_id) if prize_catalog_reward_id else None
+    )
+    clean_jackcoin = max(0, int(prize_jackcoin_amount or 0))
+    if clean_type == "none" and clean_catalog_id:
+        clean_type = "reward_card"
+
+    explicit = bool(
+        clean_type != "none" or clean_catalog_id is not None or clean_jackcoin > 0
+    )
+    if explicit or not str(campaign_code or "").startswith("jackside_"):
+        return clean_type, clean_catalog_id, clean_jackcoin
+
+    campaign = conn.execute(
+        """
+        SELECT final_prize_type,final_prize_catalog_reward_id,
+               final_prize_jackcoin_amount
+        FROM quiz_campaigns
+        WHERE code=?
+        LIMIT 1
+        """,
+        (campaign_code,),
+    ).fetchone()
+    if not campaign:
+        return clean_type, clean_catalog_id, clean_jackcoin
+
+    campaign_type = str(campaign["final_prize_type"] or "none")
+    campaign_catalog_id = (
+        int(campaign["final_prize_catalog_reward_id"])
+        if campaign["final_prize_catalog_reward_id"]
+        else None
+    )
+    campaign_jackcoin = max(0, int(campaign["final_prize_jackcoin_amount"] or 0))
+    if campaign_type == "reward_card" and campaign_catalog_id:
+        return "reward_card", campaign_catalog_id, 0
+    if campaign_type == "jackcoin" and campaign_jackcoin > 0:
+        return "jackcoin", None, campaign_jackcoin
+    return "none", None, 0
+
+
 def ensure_final_table(
     conn: sqlite3.Connection,
     *,
@@ -84,8 +140,15 @@ def ensure_final_table(
     prize_catalog_reward_id: int | None = None,
     prize_jackcoin_amount: int = 0,
 ) -> sqlite3.Row:
-    if prize_type == "none" and prize_catalog_reward_id:
-        prize_type = "reward_card"
+    prize_type, prize_catalog_reward_id, prize_jackcoin_amount = (
+        _resolved_prize_snapshot(
+            conn,
+            campaign_code=campaign_code,
+            prize_type=prize_type,
+            prize_catalog_reward_id=prize_catalog_reward_id,
+            prize_jackcoin_amount=prize_jackcoin_amount,
+        )
+    )
     row = conn.execute(
         """
         SELECT * FROM daily_414_final_tables
