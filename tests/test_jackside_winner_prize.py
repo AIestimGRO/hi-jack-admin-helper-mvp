@@ -254,6 +254,21 @@ def test_modern_jackside_ui_has_small_prize_control_and_clear_additive_copy() ->
     )
     module = (ROOT / "app/jackside_winner_prize.py").read_text(encoding="utf-8")
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    issue_service_source = (ROOT / "app/services/jackside_issues.py").read_text(
+        encoding="utf-8"
+    )
+    final_service_source = (ROOT / "app/services/daily_414_final.py").read_text(
+        encoding="utf-8"
+    )
+    outcome = (ROOT / "app/jackside_final_outcome_only.py").read_text(
+        encoding="utf-8"
+    )
+    outcome_js = (ROOT / "app/static/js/jackside-final-outcome-only.js").read_text(
+        encoding="utf-8"
+    )
+    outcome_css = (ROOT / "app/static/css/jackside-final-recovery.css").read_text(
+        encoding="utf-8"
+    )
 
     assert "data-winner-prize-issue" in template
     assert "data-winner-prize-dialog" in template
@@ -264,8 +279,23 @@ def test_modern_jackside_ui_has_small_prize_control_and_clear_additive_copy() ->
     assert "/winner-prize" in script
     assert "не продаётся" in script
     assert "final_prize_jackcoin_amount=0" in module
-    assert "apply_jackside_winner_prize_policy" in module
-    assert "apply_jackside_winner_prize_policy()" in main
+    assert "apply_jackside_winner_prize_policy" not in module
+    assert "final_service.ensure_final_table =" not in module
+    assert "apply_jackside_winner_prize_policy" not in main
     assert "jackcoin_per_correct" not in module
     assert "jackcoin_completion_bonus" not in module
     assert "jackcoin_perfect_bonus" not in module
+
+    assert "WHERE id=? AND is_active=1" not in issue_service_source.split(
+        "def validate_issue_for_publish", 1
+    )[1].split("def issue_schedule_local", 1)[0]
+    assert "_resolved_prize_snapshot" in final_service_source
+    assert "FROM quiz_campaigns" in final_service_source
+
+    assert '"superprize": superprize' in outcome
+    assert "winner_reward_id" in outcome
+    assert "Суперприз выпуска" in outcome
+    assert "СУПЕРПРИЗ ВЫПУСКА" in outcome_js
+    assert "jackside-final-superprize" in outcome_js
+    assert "superprize.title" in outcome_js
+    assert ".jackside-final-superprize" in outcome_css
