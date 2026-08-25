@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.db import connect, init_db, transaction
+import app.jackside_multi_runtime  # noqa: F401
 from app.jackside_multi_issue import (
     create_issue_multi,
     current_featured_issue_multi,
