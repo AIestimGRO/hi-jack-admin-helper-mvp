@@ -869,7 +869,7 @@
     setLobbyStat(
       '.final-lobby-candidates',
       candidates != null
-        ? `В отборе на финал: ${candidates}`
+        ? `Финалистов: ${candidates}`
         : null,
     );
     const online = data.online_count ?? result?.online_count;
