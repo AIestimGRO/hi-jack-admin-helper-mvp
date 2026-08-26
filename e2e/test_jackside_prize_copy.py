@@ -76,7 +76,7 @@ def test_welcome_and_prize_screen_show_configured_extra_card(
 
     welcome = page.locator('[data-screen="welcome"]')
     expect(welcome).to_be_visible(timeout=20_000)
-    expect(welcome.locator('[data-role="welcome-prize"]')).to_contain_text(
+    expect(welcome.locator('[data-role="welcome-base-prize"]')).to_contain_text(
         "414 JACKCOIN победителю"
     )
     extra = welcome.locator('[data-role="welcome-superprize"]')
@@ -119,7 +119,7 @@ def test_welcome_does_not_invent_extra_prize_when_none_is_configured(
 
     welcome = page.locator('[data-screen="welcome"]')
     expect(welcome).to_be_visible(timeout=20_000)
-    expect(welcome.locator('[data-role="welcome-prize"]')).to_contain_text(
+    expect(welcome.locator('[data-role="welcome-base-prize"]')).to_contain_text(
         "414 JACKCOIN победителю"
     )
     expect(welcome.locator('[data-role="welcome-superprize"]')).to_have_count(0)
