@@ -33,8 +33,27 @@
     }
     .jackside-return-link[hidden] { display: none; }
     .jackside-welcome-superprize strong { color: #f4d56b; }
-    .daily-extra-prize-card { margin-top: 12px; border-color: rgba(246,205,92,.42); }
-    .daily-extra-prize-card strong { color: #fff3b8; }
+    .daily-extra-prize-card {
+      margin-top: 12px;
+      border-color: rgba(246,205,92,.42);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .daily-extra-prize-kicker {
+      color: #ffd966;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .daily-extra-prize-card .daily-extra-prize-title {
+      color: #fff3b8;
+      font-size: clamp(30px, 6vw, 42px);
+      line-height: 1.05;
+    }
   </style>
 </head>
 <body>
@@ -108,9 +127,8 @@
       </div>
       {% if jackside and jackside.prize_headline and jackside.prize_headline != 'Главный приз выпуска уточняется' %}
       <div class="daily-prize-card daily-extra-prize-card" data-role="daily-extra-prize">
-        <span>★</span>
-        <strong>Дополнительный приз</strong>
-        <small>{{ jackside.prize_headline }}</small>
+        <span class="daily-extra-prize-kicker">СУПЕРПРИЗ ВЫПУСКА</span>
+        <strong class="daily-extra-prize-title">{% if jackside.final_prize_type == 'reward_card' %}{{ jackside.prize_headline | replace('Победитель получит карту «', '') | replace('»', '') }}{% else %}{{ jackside.prize_headline }}{% endif %}</strong>
       </div>
       {% endif %}
       <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
