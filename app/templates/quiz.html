@@ -84,7 +84,7 @@
         <li>Вопросов в выпуске: <strong data-role="main-question-count">{{ jackside.main_question_count if jackside else 0 }}</strong> · общий таймер 4 минуты 14 секунд · одна попытка · без возврата к ответам</li>
         <li>Данный квиз прошли: <strong data-role="completed-count">{{ jackside.completed_count if jackside else 0 }}</strong></li>
         <li>Онлайн сейчас: <strong data-role="online-count">{{ jackside.online_count if jackside else 0 }}</strong></li>
-        <li data-role="welcome-prize">414 JACKCOIN победителю</li>
+        <li data-role="welcome-base-prize">414 JACKCOIN победителю</li>
         {% if jackside and jackside.prize_headline and jackside.prize_headline != 'Главный приз выпуска уточняется' %}
         <li class="jackside-welcome-superprize" data-role="welcome-superprize">Дополнительно на кону: <strong>{{ jackside.prize_headline }}</strong></li>
         {% endif %}
