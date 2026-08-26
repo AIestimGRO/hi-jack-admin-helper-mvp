@@ -33,27 +33,6 @@
     }
     .jackside-return-link[hidden] { display: none; }
     .jackside-welcome-superprize strong { color: #f4d56b; }
-    .daily-extra-prize-card {
-      margin-top: 12px;
-      border-color: rgba(246,205,92,.42);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-    }
-    .daily-extra-prize-kicker {
-      color: #ffd966;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: .14em;
-      text-transform: uppercase;
-    }
-    .daily-extra-prize-card .daily-extra-prize-title {
-      color: #fff3b8;
-      font-size: clamp(30px, 6vw, 42px);
-      line-height: 1.05;
-    }
   </style>
 </head>
 <body>
@@ -126,10 +105,10 @@
         <small>Начисление победителю сразу после завершения финала</small>
       </div>
       {% if jackside and jackside.prize_headline and jackside.prize_headline != 'Главный приз выпуска уточняется' %}
-      <div class="daily-prize-card daily-extra-prize-card" data-role="daily-extra-prize">
-        <span class="daily-extra-prize-kicker">СУПЕРПРИЗ ВЫПУСКА</span>
-        <strong class="daily-extra-prize-title">{% if jackside.final_prize_type == 'reward_card' %}{{ jackside.prize_headline | replace('Победитель получит карту «', '') | replace('»', '') }}{% else %}{{ jackside.prize_headline }}{% endif %}</strong>
-      </div>
+      <section class="jackside-final-superprize" data-role="daily-extra-prize">
+        <div class="jackside-final-superprize-kicker">СУПЕРПРИЗ ВЫПУСКА</div>
+        <strong class="jackside-final-superprize-title">{% if jackside.final_prize_type == 'reward_card' %}{{ jackside.prize_headline | replace('Победитель получит карту «', '') | replace('»', '') }}{% else %}{{ jackside.prize_headline }}{% endif %}</strong>
+      </section>
       {% endif %}
       <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
     </section>
@@ -211,7 +190,7 @@
         <button class="quiz-primary" type="button" data-action="remembered-confirm">Да, продолжить</button>
         <button class="quiz-secondary" type="button" data-action="remembered-forget">Нет, это не я</button>
       </div>
-      <p class="quiz-validation quiz-remembered-error" role="alert"></p>
+      <p class="quiz-validation quiz-remembered-error" role="alert">{% if telegram_error %}{{ telegram_error }}{% endif %}</p>
     </section>
 
     <section class="quiz-screen" data-screen="identity">
