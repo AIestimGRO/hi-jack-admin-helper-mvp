@@ -24,6 +24,40 @@
   font-size: 10px;
 }
 
+.member-app-page[data-performance-render="server"] .store-tabs a {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255,255,255,.55);
+  font-weight: 800;
+  letter-spacing: .01em;
+  text-decoration: none;
+}
+
+.member-app-page[data-performance-render="server"] .store-tabs a.active {
+  background: linear-gradient(145deg, rgba(93,217,207,.19), rgba(215,182,106,.08));
+  color: #f5fffe;
+  box-shadow: inset 0 0 0 1px rgba(93,217,207,.16);
+}
+
+.member-app-page[data-performance-render="server"] .store-tabs a span {
+  min-width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(93,217,207,.16);
+  color: #dffffb;
+  font-size: 10px;
+  line-height: 1;
+}
+
 .vault-catalog-pager {
   display: flex;
   align-items: center;
