@@ -184,7 +184,8 @@ def test_winner_screen_renders_issued_superprize_and_my_cards_link(
         """
     )
 
-    block = page.locator(".jackside-final-superprize")
+    outcome = page.locator('[data-screen="final-outcome"]')
+    block = outcome.locator(".jackside-final-superprize")
     expect(block).to_be_visible(timeout=10_000)
     expect(block).to_contain_text("СУПЕРПРИЗ ВЫПУСКА")
     expect(block).to_contain_text("FreeReEntry")
