@@ -86,7 +86,11 @@ def test_hidden_reward_refreshes_into_my_cards_and_remains_usable(
     page.locator('[data-store-link="market"]').click()
     expect(page).to_have_url(f"{base_url}/account?tab=vault&store=market")
     expect(page.locator('[data-store-link="market"]')).to_have_class("active")
-    expect(page.locator(".vault-catalog-grid")).to_be_visible()
+    market_panel = page.locator('[data-store-panel="market"]')
+    expect(market_panel).to_be_visible()
+    expect(market_panel.locator('[data-vault-catalog]')).to_have_attribute(
+        "data-total", "0"
+    )
     expect(page.locator(f'[data-member-reward-id="{reward_id}"]')).to_be_hidden()
 
     with transaction(db_path) as conn:
