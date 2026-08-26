@@ -92,8 +92,13 @@ def test_welcome_and_prize_screen_show_configured_extra_card(
     )
     extra_card = prize_screen.locator('[data-role="daily-extra-prize"]')
     expect(extra_card).to_be_visible()
-    expect(extra_card).to_contain_text("СУПЕРПРИЗ ВЫПУСКА")
-    expect(extra_card).to_contain_text("FreeReEntry")
+    expect(extra_card).to_have_class("jackside-final-superprize")
+    expect(extra_card.locator(".jackside-final-superprize-kicker")).to_have_text(
+        "СУПЕРПРИЗ ВЫПУСКА"
+    )
+    expect(extra_card.locator(".jackside-final-superprize-title")).to_have_text(
+        "FreeReEntry"
+    )
     expect(extra_card).not_to_contain_text("Дополнительный приз")
     expect(extra_card).not_to_contain_text("Победитель получит карту")
     expect(extra_card.locator("small")).to_have_count(0)
