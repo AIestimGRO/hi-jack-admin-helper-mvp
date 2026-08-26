@@ -341,6 +341,34 @@ def _final_window_end(
     )
 
 
+def _final_prize_settlement_pending(
+    final_table: sqlite3.Row | dict[str, Any] | None,
+) -> bool:
+    """Keep a completed winner final reachable until its configured prize settles."""
+    if not final_table or str(final_table["status"] or "") != "completed":
+        return False
+    if str(final_table["outcome"] or "") in {"no_winner", "cancelled"}:
+        return False
+    if str(final_table["prize_resolution"] or "") in {
+        "awarded",
+        "manual_task",
+        "none",
+    }:
+        return False
+    if final_table["winner_reward_id"] or int(
+        final_table["winner_jackcoin_awarded"] or 0
+    ):
+        return False
+    if final_table["winner_reward_error"]:
+        return False
+    prize_type = str(final_table["prize_type"] or "none")
+    if final_table["prize_catalog_reward_id"]:
+        return True
+    return prize_type == "jackcoin" and int(
+        final_table["prize_jackcoin_amount"] or 0
+    ) > 0
+
+
 def _runtime_status(
     conn: sqlite3.Connection,
     *,
@@ -364,9 +392,16 @@ def _runtime_status(
         final_table=final_table,
         timezone_name=timezone_name,
     )
+    if _final_prize_settlement_pending(final_table):
+        return "final_live"
     final_end = _final_window_end(conn, issue=issue, campaign_code=code)
     if final_end and issue_service._as_utc(now) >= final_end:
         if runtime in {"waiting_final", "final_live"}:
+            if final_table and str(final_table["status"] or "") not in {
+                "completed",
+                "unavailable",
+            }:
+                return runtime
             return "closed"
     return runtime
 
