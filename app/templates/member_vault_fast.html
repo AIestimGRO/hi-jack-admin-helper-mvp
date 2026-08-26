@@ -3,6 +3,8 @@
 {% block title %}HI, STORE — Hi, Jack Club{% endblock %}
 {% set category_marks = {'drink':'☕','entry':'♠','card':'♦','profile':'★','protection':'⌁','club':'HJ'} %}
 {% set category_labels = {'drink':'Бар','entry':'Игра','card':'JACK CARD','profile':'Профиль','protection':'Защита серии','club':'Клуб'} %}
+{% set requested_store = request.query_params.get('store', 'market') %}
+{% set current_store_tab = 'cards' if requested_store == 'cards' else 'market' %}
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', path='/css/member-performance.css') }}?v={{ member_performance_asset }}">
 <div class="member-app-page" data-account-tab="vault" data-performance-render="server" data-server-now="{{ server_now_iso }}">
@@ -14,12 +16,17 @@
     <div class="mini-balance store-balance-chip"><strong>{{ balance }} <small>JC</small></strong></div>
   </header>
 
+  <nav class="store-tabs" aria-label="Hi, Store">
+    <a class="{{ 'active' if current_store_tab == 'market' else '' }}" href="/account?tab=vault&amp;store=market" data-store-link="market">Market</a>
+    <a class="{{ 'active' if current_store_tab == 'cards' else '' }}" href="/account?tab=vault&amp;store=cards" data-store-link="cards">My Cards{% if vault_active_rewards %} <span>{{ vault_active_rewards|length }}</span>{% endif %}</a>
+  </nav>
+
   {% if vault_active_rewards %}
-  <section class="vault-section vault-active-section">
+  <section class="vault-section vault-active-section store-panel" data-store-panel="cards"{% if current_store_tab != 'cards' %} hidden{% endif %}>
     <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>{{ vault_active_rewards|length }}</span></div>
     <div class="vault-active-grid">
       {% for reward in vault_active_rewards %}
-      <article id="card-{{ reward.id }}" class="member-card jack-card category-{{ reward.category }} {{ 'activated' if reward.activated_at else 'awaiting-activation' }}"{% if reward.activation_expires_at %} data-reward-activation-card data-reward-id="{{ reward.id }}"{% endif %}>
+      <article id="card-{{ reward.id }}" class="member-card jack-card category-{{ reward.category }} {{ 'activated' if reward.activated_at else 'awaiting-activation' }}" data-member-reward-id="{{ reward.id }}" data-member-reward-source="{{ reward.source_type }}"{% if reward.activation_expires_at %} data-reward-activation-card data-reward-id="{{ reward.id }}"{% endif %}>
         <div class="jack-card-top"><span>HI, JACK CLUB!</span><small>{{ 'ГЛАВНЫЙ ПРИЗ' if reward.source_type == 'final_prize' else 'THE VAULT' }}</small></div>
         <div class="jack-card-main">
           <div>
@@ -54,7 +61,7 @@
   </section>
   {% endif %}
 
-  <section class="vault-section">
+  <section class="vault-section store-panel" data-store-panel="market"{% if current_store_tab != 'market' %} hidden{% endif %}>
     <div class="app-section-head"><div><p class="member-eyebrow">Каталог наград</p><h2>Что можно получить</h2></div><span>{{ vault_catalog_total }}</span></div>
     <div class="vault-catalog-grid" data-vault-catalog data-next-offset="{{ vault_catalog_initial|length }}" data-page-size="{{ vault_page_size }}" data-total="{{ vault_catalog_total }}">
       {% with rewards=vault_catalog_initial %}{% include "_vault_catalog_cards_fast.html" %}{% endwith %}
@@ -69,7 +76,7 @@
   </section>
 
   {% if not vault_active_rewards %}
-  <section class="vault-section">
+  <section class="vault-section store-panel" data-store-panel="cards"{% if current_store_tab != 'cards' %} hidden{% endif %}>
     <div class="app-section-head"><div><p class="member-eyebrow">JACK CARDS</p><h2>Активные награды</h2></div><span>0</span></div>
     <div class="member-card smart-empty"><span>♠</span><div><h3>Пока пусто</h3><p>Полученные награды появятся здесь</p></div></div>
   </section>
@@ -82,7 +89,7 @@
     {% endif %}
   {% endfor %}
   {% if visible_history.count %}
-  <details class="member-card account-details">
+  <details class="member-card account-details store-panel" data-store-panel="cards"{% if current_store_tab != 'cards' %} hidden{% endif %}>
     <summary>История JACK CARDS <span>{{ visible_history.count }}</span></summary>
     <div class="member-history">
       {% for reward in vault_reward_history %}
