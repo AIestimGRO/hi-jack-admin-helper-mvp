@@ -7,6 +7,9 @@
   <title>{{ campaign_title }} — Hi, Jack!</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/css/quiz.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/quiz-theme.css') }}?v={{ asset_version }}">
+  {% if campaign_type == 'daily_414' %}
+  <link rel="stylesheet" data-jackside-final-recovery href="{{ url_for('static', path='/css/jackside-final-recovery.css') }}?v={{ asset_version }}">
+  {% endif %}
   <style>
     .jackside-return-link {
       display: flex;
@@ -29,6 +32,9 @@
       text-decoration: none;
     }
     .jackside-return-link[hidden] { display: none; }
+    .jackside-welcome-superprize strong { color: #f4d56b; }
+    .daily-extra-prize-card { margin-top: 12px; border-color: rgba(246,205,92,.42); }
+    .daily-extra-prize-card strong { color: #fff3b8; }
   </style>
 </head>
 <body>
@@ -79,6 +85,9 @@
         <li>Данный квиз прошли: <strong data-role="completed-count">{{ jackside.completed_count if jackside else 0 }}</strong></li>
         <li>Онлайн сейчас: <strong data-role="online-count">{{ jackside.online_count if jackside else 0 }}</strong></li>
         <li data-role="welcome-prize">414 JACKCOIN победителю</li>
+        {% if jackside and jackside.prize_headline and jackside.prize_headline != 'Главный приз выпуска уточняется' %}
+        <li class="jackside-welcome-superprize" data-role="welcome-superprize">Дополнительно на кону: <strong>{{ jackside.prize_headline }}</strong></li>
+        {% endif %}
         <li data-role="welcome-award">{{ jackside.base_award_hint if jackside else 'JACKCOIN за правильные ответы' }}</li>
       </ul>
       <p class="quiz-rules-link"><a href="/jackside/rules">Полные правила</a></p>
@@ -97,6 +106,13 @@
         <strong>414 JACKCOIN</strong>
         <small>Начисление победителю сразу после завершения финала</small>
       </div>
+      {% if jackside and jackside.prize_headline and jackside.prize_headline != 'Главный приз выпуска уточняется' %}
+      <div class="daily-prize-card daily-extra-prize-card" data-role="daily-extra-prize">
+        <span>★</span>
+        <strong>Дополнительный приз</strong>
+        <small>{{ jackside.prize_headline }}</small>
+      </div>
+      {% endif %}
       <button class="quiz-primary" type="button" data-action="daily-prize-next">Далее</button>
     </section>
 
@@ -247,5 +263,8 @@
     <section class="quiz-screen" data-screen="error"><div class="quiz-error-mark">!</div><h2>Сбой раздачи</h2><p class="quiz-lead quiz-error-message"></p><button class="quiz-primary" type="button" data-action="retry">Ещё раз</button></section>
   </main>
   <script src="{{ url_for('static', path='/js/quiz.js') }}?v={{ asset_version }}" defer></script>
+  {% if campaign_type == 'daily_414' %}
+  <script data-jackside-final-outcome src="{{ url_for('static', path='/js/jackside-final-outcome-only.js') }}?v={{ asset_version }}" defer></script>
+  {% endif %}
 </body>
 </html>
