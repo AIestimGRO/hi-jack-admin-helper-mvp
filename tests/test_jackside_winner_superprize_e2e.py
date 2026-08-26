@@ -184,7 +184,9 @@ def _seed_virtual_game(conn, *, client_id: int, catalog_reward_id: int) -> tuple
         ),
     )
     final_questions = load_final_questions(conn, campaign_code)
-    assert final_questions and final_questions[0]["id"] == question_id
+    assert final_questions
+    assert int(final_questions[0]["db_id"]) == question_id
+    assert final_questions[0]["id"] == "final_1"
     table = ensure_final_table(
         conn,
         campaign_code=campaign_code,
