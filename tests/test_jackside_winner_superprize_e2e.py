@@ -295,11 +295,13 @@ def test_virtual_winner_gets_hidden_free_reentry_through_real_status_flow(tmp_pa
         assert outcome.status_code == 200, outcome.text
         outcome_payload = outcome.json()
         assert outcome_payload["state"] == "winner"
-        assert outcome_payload["superprize"] == {
-            "member_reward_id": int(table["winner_reward_id"]),
-            "catalog_reward_id": card_id,
-            "title": "FreeReEntry",
-        }
+        superprize = outcome_payload["superprize"]
+        assert superprize["member_reward_id"] == int(table["winner_reward_id"])
+        assert superprize["catalog_reward_id"] == card_id
+        assert superprize["title"] == "FreeReEntry"
+        assert superprize["kind"] == "jack_card"
+        assert superprize["status"] == "active"
+        assert superprize["my_cards_url"] == "/account?tab=vault&store=cards"
 
         vault_page = client.get("/account", params={"tab": "vault"})
         assert vault_page.status_code == 200
