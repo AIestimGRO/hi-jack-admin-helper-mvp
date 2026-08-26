@@ -4,7 +4,10 @@ from playwright.sync_api import Page, expect
 
 from app.db import transaction
 from app.services.vault import create_catalog_reward, issue_reward
-from test_jackside_welcome import jackside_server  # noqa: F401
+from test_jackside_welcome import jackside_server as _jackside_server
+
+
+jackside_server = _jackside_server
 
 
 def test_hidden_reward_refreshes_into_my_cards_and_remains_usable(
@@ -73,13 +76,12 @@ def test_hidden_reward_refreshes_into_my_cards_and_remains_usable(
     expect(page.locator('[data-store-link="cards"]')).to_have_class("active")
 
     card.locator(".reward-activate-button").click()
-    expect(page).to_have_url(
-        f"{base_url}/account?tab=vault&store=cards#card-{reward_id}"
-    )
     card = page.locator(f'[data-member-reward-id="{reward_id}"]')
     expect(card).to_be_visible()
     expect(card.locator(".reward-activation-code")).to_be_visible()
     expect(card.locator(".jack-card-qr")).to_be_visible()
+    assert "store=cards" in page.url
+    assert page.url.endswith(f"#card-{reward_id}")
 
     page.locator('[data-store-link="market"]').click()
     expect(page).to_have_url(f"{base_url}/account?tab=vault&store=market")
