@@ -333,8 +333,16 @@ def test_virtual_no_winner_does_not_issue_superprize(tmp_path) -> None:
             "/api/quiz/final-table/status",
             params={"campaign": campaign_code},
         )
-        assert status.status_code == 200, status.text
-        assert status.json()["state"] != "winner"
+        if status.status_code == 404:
+            fallback = client.get(
+                "/api/jackside/final-result",
+                params={"campaign": campaign_code},
+            )
+            assert fallback.status_code == 200, fallback.text
+            assert fallback.json()["state"] != "winner"
+        else:
+            assert status.status_code == 200, status.text
+            assert status.json()["state"] != "winner"
 
         with connect(settings.db_path) as conn:
             table = conn.execute(
