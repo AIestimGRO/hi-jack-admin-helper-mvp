@@ -171,40 +171,41 @@ def test_public_profile_requires_current_explicit_legal_consent() -> None:
 
 def test_launch_hardening_preserves_registered_profile_open_defaults(tmp_path) -> None:
     settings = _settings(tmp_path)
-    create_app(settings)
+    app = create_app(settings)
 
-    assert experience._rating_categories is _rating_categories_with_registered_profile
+    with TestClient(app):
+        assert experience._rating_categories is _rating_categories_with_registered_profile
 
-    with transaction(settings.db_path) as conn:
-        client_id = int(
-            conn.execute(
-                "INSERT INTO clients(nickname,source) VALUES ('OpenByDefault','test')"
-            ).lastrowid
-        )
-        account_id = int(
-            conn.execute(
-                """
-                INSERT INTO member_accounts(
-                    client_id,email,email_normalized,password_hash,email_verified_at
-                ) VALUES (?,?,?,?,CURRENT_TIMESTAMP)
-                """,
-                (
-                    client_id,
-                    "open-default@example.test",
-                    "open-default@example.test",
-                    "test-hash",
-                ),
-            ).lastrowid
-        )
+        with transaction(settings.db_path) as conn:
+            client_id = int(
+                conn.execute(
+                    "INSERT INTO clients(nickname,source) VALUES ('OpenByDefault','test')"
+                ).lastrowid
+            )
+            account_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO member_accounts(
+                        client_id,email,email_normalized,password_hash,email_verified_at
+                    ) VALUES (?,?,?,?,CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        client_id,
+                        "open-default@example.test",
+                        "open-default@example.test",
+                        "test-hash",
+                    ),
+                ).lastrowid
+            )
 
-        consent_count = int(
-            conn.execute(
-                "SELECT COUNT(*) FROM member_public_rating_consent_state WHERE account_id=?",
-                (account_id,),
-            ).fetchone()[0]
-        )
-        categories = experience._rating_categories(conn, account_id)
-        payload = experience._public_profile_payload(conn, client_id)
+            consent_count = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM member_public_rating_consent_state WHERE account_id=?",
+                    (account_id,),
+                ).fetchone()[0]
+            )
+            categories = experience._rating_categories(conn, account_id)
+            payload = experience._public_profile_payload(conn, client_id)
 
     assert consent_count == 0
     assert categories["nickname"] is True
@@ -218,7 +219,6 @@ def test_launch_hardening_preserves_registered_profile_open_defaults(tmp_path) -
     assert all(PROFILE_VISIBILITY_DEFAULTS.values())
     assert payload is not None
     assert payload["restricted"] is False
-
 
 def test_image_dimensions_are_rejected_before_pixel_load(monkeypatch) -> None:
     original_open = Image.open
