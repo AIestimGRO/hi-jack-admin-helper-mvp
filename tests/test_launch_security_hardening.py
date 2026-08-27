@@ -171,7 +171,7 @@ def test_public_profile_requires_current_explicit_legal_consent() -> None:
 
 def test_launch_hardening_preserves_registered_profile_open_defaults(tmp_path) -> None:
     settings = _settings(tmp_path)
-    app = create_app(settings)
+    create_app(settings)
 
     assert experience._rating_categories is _rating_categories_with_registered_profile
 
