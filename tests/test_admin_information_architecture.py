@@ -1,8 +1,10 @@
+import io
 import re
 from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.config import Settings
 from app.db import transaction
@@ -202,3 +204,65 @@ def test_legacy_admin_urls_remain_registered(tmp_path: Path) -> None:
             "/master/hijack-rating",
         }:
             assert path in paths
+
+def test_engagement_workspace_links_and_round_trips_custom_title_icon(tmp_path: Path) -> None:
+    client, settings = make_client(tmp_path)
+    with client:
+        login_master(client)
+
+        workspace = client.get("/master?tab=engagement")
+        assert workspace.status_code == 200
+        assert 'href="/master/engagement-icons"' in workspace.text
+        assert "Управлять иконками" in workspace.text
+
+        manager = client.get("/master/engagement-icons")
+        assert manager.status_code == 200
+        assert "Иконки званий и достижений" in manager.text
+        token = re.search(r'name="csrf_token" value="([^"]+)"', manager.text).group(1)
+
+        with transaction(settings.db_path) as conn:
+            title_id = int(
+                conn.execute(
+                    "SELECT id FROM title_definitions WHERE is_enabled=1 ORDER BY id LIMIT 1"
+                ).fetchone()[0]
+            )
+
+        image = Image.new("RGBA", (96, 64), (20, 180, 140, 255))
+        payload = io.BytesIO()
+        image.save(payload, format="PNG")
+
+        upload = client.post(
+            f"/api/master/engagement-icons/title/{title_id}",
+            data={"csrf_token": token},
+            files={"icon": ("title-icon.png", payload.getvalue(), "image/png")},
+            follow_redirects=False,
+        )
+        assert upload.status_code == 303
+        assert upload.headers["location"].startswith("/master/engagement-icons?ok=")
+
+        with transaction(settings.db_path) as conn:
+            icon_path = str(
+                conn.execute(
+                    "SELECT icon_path FROM title_definitions WHERE id=?", (title_id,)
+                ).fetchone()[0]
+                or ""
+            )
+        assert icon_path.startswith("/reward-media/engagement-icons/")
+        stored_file = settings.db_path.parent / "reward-media" / "engagement-icons" / Path(icon_path).name
+        assert stored_file.is_file()
+
+        remove = client.post(
+            f"/api/master/engagement-icons/title/{title_id}/remove",
+            data={"csrf_token": token},
+            follow_redirects=False,
+        )
+        assert remove.status_code == 303
+        assert remove.headers["location"].startswith("/master/engagement-icons?ok=")
+
+        with transaction(settings.db_path) as conn:
+            cleared = conn.execute(
+                "SELECT icon_path FROM title_definitions WHERE id=?", (title_id,)
+            ).fetchone()[0]
+        assert cleared is None
+        assert not stored_file.exists()
+

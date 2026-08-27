@@ -219,6 +219,11 @@
 </section>
 
 <section data-master-panel="engagement" {% if current_tab!='engagement' %}hidden{% endif %}>
+  <div class="section-head">
+    <div><h2>Иконки званий и достижений</h2><p class="muted">Загрузка и замена изображений для коллекции игрока.</p></div>
+    <a class="button" href="/master/engagement-icons">Управлять иконками</a>
+  </div>
+
   <div class="section-head"><h2>Квалифицированные рефералы</h2></div>
   <form class="card master-create" action="/api/master/jackside-referrals/settings" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
