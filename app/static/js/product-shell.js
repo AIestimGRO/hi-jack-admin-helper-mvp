@@ -58,7 +58,11 @@
       <div class="tournament-neon-visual" aria-hidden="true">
         <div class="tournament-neon-halo"></div>
         <div class="tournament-icon-frame">
-          <span class="tournament-icon-fallback">HJ</span>
+          <img
+            class="tournament-icon-fallback"
+            src="/static/img/brand/jackside-logo.webp"
+            alt=""
+          >
         </div>
       </div>
     `;

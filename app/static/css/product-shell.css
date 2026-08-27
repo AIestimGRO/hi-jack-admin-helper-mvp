@@ -404,12 +404,17 @@
 .tournament-icon-fallback {
   position: relative;
   z-index: 1;
-  color: var(--neon);
-  font-family: "Arial Black", "Trebuchet MS", system-ui, sans-serif;
-  font-size: 29px;
-  font-weight: 950;
-  letter-spacing: -.08em;
-  text-shadow: 0 0 14px rgba(89,241,223,.6);
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  transform: rotate(7deg);
+  opacity: .96;
+  filter:
+    brightness(1.16)
+    contrast(1.08)
+    drop-shadow(0 8px 12px rgba(0,0,0,.38))
+    drop-shadow(0 0 10px rgba(89,241,223,.62))
+    drop-shadow(0 0 24px rgba(30,217,202,.22));
 }
 .tournament-icon-frame.has-icon .tournament-icon-fallback {
   display: none;

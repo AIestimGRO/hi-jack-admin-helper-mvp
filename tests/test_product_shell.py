@@ -270,3 +270,13 @@ def test_partner_tournament_icon_accepts_object_url_and_rejects_unsafe_scheme(
     )
     assert rows[1]["external_icon_url"] == ""
 
+def test_neon_tournament_fallback_uses_jackside_brand_asset() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    asset = repo_root / "app/static/img/brand/jackside-logo.webp"
+    javascript = (repo_root / "app/static/js/product-shell.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert asset.is_file()
+    assert '/static/img/brand/jackside-logo.webp' in javascript
+
