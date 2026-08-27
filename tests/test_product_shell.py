@@ -10,8 +10,10 @@ from PIL import Image
 from app.db import connect, init_db
 from app.product_shell import (
     _ensure_product_shell_schema,
+    _partner_tournament_rows,
     _prepare_avatar,
     _prepare_engagement_icon,
+    _upsert_partner_tournaments,
     install_product_shell,
 )
 
@@ -60,6 +62,10 @@ def test_product_shell_schema_is_additive_and_idempotent(tmp_path: Path) -> None
     assert "icon_path" in achievement_columns
     assert "max_slots" in tournament_columns
     assert "registration_open" in tournament_columns
+    assert "source_kind" in tournament_columns
+    assert "external_id" in tournament_columns
+    assert "external_url" in tournament_columns
+    assert "source_synced_at" in tournament_columns
 
 
 def test_sticker_avatar_is_normalized_to_transparent_512_png() -> None:
@@ -114,3 +120,113 @@ def test_product_shell_registers_expected_routes(tmp_path: Path) -> None:
     assert "/account/chats" in paths
     assert "/master/engagement-icons" in paths
     assert "/api/master/engagement-icons/{kind}/{definition_id:int}" in paths
+
+def _partner_settings(db_path: Path) -> SimpleNamespace:
+    return SimpleNamespace(
+        db_path=db_path,
+        timezone_name="Europe/Moscow",
+        partner_tournament_launch_url_template=(
+            "https://t.me/HJCapp_bot/app?startapp=tournament_{id}"
+        ),
+    )
+
+
+def test_partner_tournament_payload_maps_to_schedule_rows(tmp_path: Path) -> None:
+    settings = _partner_settings(tmp_path / "partner-map.sqlite3")
+    rows = _partner_tournament_rows(
+        {
+            "results": [
+                {
+                    "id": 77,
+                    "title": "Friday Deepstack",
+                    "location": "Hi, Jack Club",
+                    "started_at": "2026-09-04T19:30:00+03:00",
+                    "max_participants": 42,
+                    "status": "IN_QUEUE",
+                    "features": ["Freezeout", "20 min levels"],
+                },
+                {
+                    "id": 78,
+                    "title": "Already active",
+                    "started_at": "2026-09-04T18:00:00+03:00",
+                    "status": "ACTIVE",
+                },
+            ]
+        },
+        settings,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["external_id"] == "77"
+    assert rows[0]["title"] == "Friday Deepstack"
+    assert rows[0]["starts_at"] == "2026-09-04T16:30:00+00:00"
+    assert rows[0]["max_slots"] == 42
+    assert rows[0]["external_url"].endswith("tournament_77")
+    assert "Hi, Jack Club" in rows[0]["format_text"]
+
+
+def test_partner_tournament_sync_is_idempotent_and_hides_stale_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "partner-sync.sqlite3"
+    init_db(db_path)
+    _ensure_product_shell_schema(db_path)
+
+    first = [
+        {
+            "external_id": "10",
+            "title": "First",
+            "starts_at": "2030-01-01T17:00:00+00:00",
+            "description": "Club",
+            "format_text": "Club",
+            "max_slots": 60,
+            "external_url": "https://t.me/HJCapp_bot/app?startapp=tournament_10",
+        },
+        {
+            "external_id": "20",
+            "title": "Second",
+            "starts_at": "2030-01-02T17:00:00+00:00",
+            "description": "Club",
+            "format_text": "Club",
+            "max_slots": 40,
+            "external_url": "https://t.me/HJCapp_bot/app?startapp=tournament_20",
+        },
+    ]
+    assert _upsert_partner_tournaments(db_path, first) == 2
+
+    with connect(db_path) as conn:
+        first_id = int(
+            conn.execute(
+                """
+                SELECT id FROM club_tournaments
+                WHERE source_kind='miniapp' AND external_id='10'
+                """
+            ).fetchone()[0]
+        )
+
+    second = [
+        {
+            **first[0],
+            "title": "First updated",
+            "max_slots": 72,
+        }
+    ]
+    assert _upsert_partner_tournaments(db_path, second) == 1
+
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id,external_id,title,max_slots,is_published,status
+            FROM club_tournaments
+            WHERE source_kind='miniapp'
+            ORDER BY external_id
+            """
+        ).fetchall()
+
+    assert len(rows) == 2
+    assert int(rows[0]["id"]) == first_id
+    assert rows[0]["title"] == "First updated"
+    assert int(rows[0]["max_slots"]) == 72
+    assert int(rows[0]["is_published"]) == 1
+    assert rows[0]["status"] == "scheduled"
+    assert int(rows[1]["is_published"]) == 0
+    assert rows[1]["status"] == "registration_closed"
+

@@ -40,6 +40,21 @@ class Settings:
     telegram_transport_timeout_seconds: float = float(
         os.getenv("HJC_TELEGRAM_TRANSPORT_TIMEOUT_SECONDS", "10")
     )
+    partner_tournaments_url: str = os.getenv(
+        "HJC_PARTNER_TOURNAMENTS_URL",
+        "https://hi-jack-club.matthew-0203.ru/api/tournaments/partner/tournaments/?status=IN_QUEUE",
+    ).strip()
+    partner_api_key: str = os.getenv("HJC_PARTNER_API_KEY", "").strip()
+    partner_tournament_launch_url_template: str = os.getenv(
+        "HJC_PARTNER_TOURNAMENT_LAUNCH_URL_TEMPLATE",
+        "https://t.me/HJCapp_bot/app?startapp=tournament_{id}",
+    ).strip()
+    partner_tournament_sync_seconds: int = int(
+        os.getenv("HJC_PARTNER_TOURNAMENT_SYNC_SECONDS", "60")
+    )
+    partner_tournament_timeout_seconds: float = float(
+        os.getenv("HJC_PARTNER_TOURNAMENT_TIMEOUT_SECONDS", "4")
+    )
     smtp_host: str = os.getenv("HJC_SMTP_HOST", "").strip()
     smtp_port: int = int(os.getenv("HJC_SMTP_PORT", "587"))
     smtp_username: str = os.getenv("HJC_SMTP_USERNAME", "").strip()
@@ -80,4 +95,12 @@ class Settings:
         if not 0.5 <= self.telegram_transport_timeout_seconds <= 30:
             raise RuntimeError(
                 "HJC_TELEGRAM_TRANSPORT_TIMEOUT_SECONDS must be between 0.5 and 30"
+            )
+        if not 10 <= self.partner_tournament_sync_seconds <= 3600:
+            raise RuntimeError(
+                "HJC_PARTNER_TOURNAMENT_SYNC_SECONDS must be between 10 and 3600"
+            )
+        if not 0.5 <= self.partner_tournament_timeout_seconds <= 15:
+            raise RuntimeError(
+                "HJC_PARTNER_TOURNAMENT_TIMEOUT_SECONDS must be between 0.5 and 15"
             )

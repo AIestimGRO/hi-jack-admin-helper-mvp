@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import hmac
 import io
+import json
+import logging
 import secrets
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from PIL import Image, ImageOps, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from app.config import BASE_DIR
 from app.db import connect, transaction
@@ -26,7 +32,10 @@ PROFILE_AVATAR_SIZE = 512
 ENGAGEMENT_ICON_SIZE = 512
 MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_ICON_UPLOAD_BYTES = 2 * 1024 * 1024
+MAX_PARTNER_TOURNAMENT_PAYLOAD_BYTES = 2 * 1024 * 1024
 _SCHEMA_LOCK = threading.Lock()
+_TOURNAMENT_SYNC_LOCK = threading.Lock()
+_TOURNAMENT_SYNC_LAST_ATTEMPT = 0.0
 
 
 def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -78,6 +87,25 @@ def _ensure_product_shell_schema(db_path: str | Path) -> None:
             """
             CREATE INDEX IF NOT EXISTS ix_club_tournaments_public_schedule
             ON club_tournaments(is_published, status, starts_at)
+            """
+        )
+        tournament_columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(club_tournaments)")
+        }
+        for column, declaration in (
+            ("source_kind", "TEXT"),
+            ("external_id", "TEXT"),
+            ("external_url", "TEXT"),
+            ("source_synced_at", "TEXT"),
+        ):
+            if column not in tournament_columns:
+                conn.execute(
+                    f"ALTER TABLE club_tournaments ADD COLUMN {column} {declaration}"
+                )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_club_tournaments_source
+            ON club_tournaments(source_kind, external_id)
             """
         )
         if not _has_column(conn, "title_definitions", "icon_path"):
@@ -268,6 +296,189 @@ def _avatar_record(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row | N
     ).fetchone()
 
 
+def _partner_payload_items(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("results", "data", "tournaments"):
+            items = payload.get(key)
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+    raise ValueError("partner_tournament_payload_invalid")
+
+
+def _normalized_partner_start(value: Any, timezone_name: str) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        raise ValueError("partner_tournament_start_missing")
+    try:
+        parsed = datetime.fromisoformat(clean.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("partner_tournament_start_invalid") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(timezone_name))
+    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _partner_tournament_rows(payload: Any, settings: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in _partner_payload_items(payload):
+        external_id = str(item.get("id") or "").strip()
+        title = " ".join(str(item.get("title") or "").split())
+        if not external_id or not title:
+            continue
+        status = str(item.get("status") or "IN_QUEUE").strip().upper()
+        if status != "IN_QUEUE":
+            continue
+        try:
+            starts_at = _normalized_partner_start(
+                item.get("started_at"),
+                settings.timezone_name,
+            )
+        except ValueError:
+            continue
+
+        location = " ".join(str(item.get("location") or "").split())
+        features = item.get("features")
+        feature_items = (
+            [" ".join(str(value).split()) for value in features if str(value).strip()]
+            if isinstance(features, list)
+            else []
+        )
+        meta = [value for value in [location, *feature_items[:2]] if value]
+        max_slots_raw = item.get("max_participants") or 0
+        try:
+            max_slots = max(0, int(max_slots_raw))
+        except (TypeError, ValueError):
+            max_slots = 0
+        template = str(settings.partner_tournament_launch_url_template or "").strip()
+        try:
+            external_url = template.format(id=external_id) if template else ""
+        except (KeyError, ValueError):
+            external_url = ""
+
+        rows.append(
+            {
+                "external_id": external_id,
+                "title": title[:100],
+                "starts_at": starts_at,
+                "description": location[:300],
+                "format_text": " · ".join(meta)[:300],
+                "max_slots": max_slots,
+                "external_url": external_url[:1000],
+            }
+        )
+    return rows
+
+
+def _fetch_partner_tournament_payload(
+    settings: Any,
+    *,
+    urlopen_func: Any = urlopen,
+) -> Any:
+    url = str(settings.partner_tournaments_url or "").strip()
+    api_key = str(settings.partner_api_key or "").strip()
+    if not url or not api_key:
+        return None
+
+    request = UrlRequest(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "HiJackScheduleSync/1.0",
+            "X-Partner-Api-Key": api_key,
+        },
+        method="GET",
+    )
+    with urlopen_func(
+        request,
+        timeout=float(settings.partner_tournament_timeout_seconds),
+    ) as response:
+        raw = response.read(MAX_PARTNER_TOURNAMENT_PAYLOAD_BYTES + 1)
+    if len(raw) > MAX_PARTNER_TOURNAMENT_PAYLOAD_BYTES:
+        raise ValueError("partner_tournament_payload_too_large")
+    return json.loads(raw.decode("utf-8"))
+
+
+def _upsert_partner_tournaments(
+    db_path: str | Path,
+    rows: list[dict[str, Any]],
+) -> int:
+    _ensure_product_shell_schema(db_path)
+    with transaction(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE club_tournaments
+            SET is_published=0,
+                registration_open=0,
+                status='registration_closed',
+                updated_at=CURRENT_TIMESTAMP
+            WHERE source_kind='miniapp'
+            """
+        )
+        for item in rows:
+            conn.execute(
+                """
+                INSERT INTO club_tournaments(
+                    title,starts_at,description,format_text,buy_in_text,max_slots,
+                    registration_open,is_published,status,source_kind,external_id,
+                    external_url,source_synced_at
+                ) VALUES (?,?,?,?,?,?,
+                          1,1,'scheduled','miniapp',?,?,CURRENT_TIMESTAMP)
+                ON CONFLICT(source_kind,external_id) DO UPDATE SET
+                    title=excluded.title,
+                    starts_at=excluded.starts_at,
+                    description=excluded.description,
+                    format_text=excluded.format_text,
+                    buy_in_text=excluded.buy_in_text,
+                    max_slots=excluded.max_slots,
+                    registration_open=1,
+                    is_published=1,
+                    status='scheduled',
+                    external_url=excluded.external_url,
+                    source_synced_at=CURRENT_TIMESTAMP,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    item["title"],
+                    item["starts_at"],
+                    item["description"],
+                    item["format_text"],
+                    "",
+                    item["max_slots"],
+                    item["external_id"],
+                    item["external_url"],
+                ),
+            )
+    return len(rows)
+
+
+def _sync_partner_tournaments(settings: Any) -> int | None:
+    payload = _fetch_partner_tournament_payload(settings)
+    if payload is None:
+        return None
+    rows = _partner_tournament_rows(payload, settings)
+    return _upsert_partner_tournaments(settings.db_path, rows)
+
+
+def _maybe_sync_partner_tournaments(settings: Any) -> int | None:
+    global _TOURNAMENT_SYNC_LAST_ATTEMPT
+    if not str(settings.partner_api_key or "").strip():
+        return None
+    now = time.monotonic()
+    with _TOURNAMENT_SYNC_LOCK:
+        if now - _TOURNAMENT_SYNC_LAST_ATTEMPT < int(
+            settings.partner_tournament_sync_seconds
+        ):
+            return None
+        _TOURNAMENT_SYNC_LAST_ATTEMPT = now
+        try:
+            return _sync_partner_tournaments(settings)
+        except Exception:
+            logging.exception("partner tournament sync failed")
+            return None
+
+
 def _public_tournaments(conn: sqlite3.Connection, *, limit: int = 12) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = conn.execute(
@@ -306,6 +517,7 @@ def install_product_shell(app: FastAPI) -> FastAPI:
     @app.get("/api/account/product-shell")
     async def account_product_shell(request: Request):
         member = _current_member(request, required=True)
+        await run_in_threadpool(_maybe_sync_partner_tournaments, settings)
         with connect(settings.db_path) as conn:
             avatar = _avatar_record(conn, int(member["id"]))
             tournaments = _public_tournaments(conn)
@@ -549,4 +761,9 @@ def install_product_shell(app: FastAPI) -> FastAPI:
     return app
 
 
-__all__ = ["install_product_shell", "_ensure_product_shell_schema"]
+__all__ = [
+    "install_product_shell",
+    "_ensure_product_shell_schema",
+    "_partner_tournament_rows",
+    "_upsert_partner_tournaments",
+]

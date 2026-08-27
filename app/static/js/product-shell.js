@@ -33,7 +33,7 @@
       <p class="tournament-date"></p>
       ${item.description ? '<p class="tournament-description"></p>' : ''}
       <div class="tournament-shell-meta"></div>
-      <button class="tournament-shell-action" type="button" disabled>Запись скоро откроется</button>
+      <div class="tournament-shell-action-slot"></div>
     `;
     article.querySelector('h3').textContent = item.title || 'Турнир Hi, Jack!';
     article.querySelector('.tournament-date').textContent = formatTournamentDate(item.starts_at);
@@ -45,6 +45,23 @@
       span.textContent = value;
       meta.append(span);
     });
+    const actionSlot = article.querySelector('.tournament-shell-action-slot');
+    if (item.external_url) {
+      const action = document.createElement('a');
+      action.className = 'tournament-shell-action is-active';
+      action.href = item.external_url;
+      action.target = '_blank';
+      action.rel = 'noopener noreferrer';
+      action.textContent = 'Открыть турнир';
+      actionSlot.append(action);
+    } else {
+      const action = document.createElement('button');
+      action.className = 'tournament-shell-action';
+      action.type = 'button';
+      action.disabled = true;
+      action.textContent = 'Запись скоро откроется';
+      actionSlot.append(action);
+    }
     return article;
   }
 
