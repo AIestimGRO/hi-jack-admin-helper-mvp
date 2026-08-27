@@ -4,6 +4,7 @@ import hmac
 import io
 import json
 import logging
+import os
 import secrets
 import sqlite3
 import threading
@@ -296,6 +297,73 @@ def _avatar_record(conn: sqlite3.Connection, account_id: int) -> sqlite3.Row | N
     ).fetchone()
 
 
+def _partner_setting(
+    settings: Any,
+    attribute: str,
+    environment: str,
+    default: str,
+) -> str:
+    configured = getattr(settings, attribute, None)
+    if configured is not None:
+        return str(configured).strip()
+    return os.getenv(environment, default).strip()
+
+
+def _partner_tournaments_url(settings: Any) -> str:
+    return _partner_setting(
+        settings,
+        "partner_tournaments_url",
+        "HJC_PARTNER_TOURNAMENTS_URL",
+        "https://hi-jack-club.matthew-0203.ru/api/tournaments/partner/tournaments/?status=IN_QUEUE",
+    )
+
+
+def _partner_api_key(settings: Any) -> str:
+    return _partner_setting(
+        settings,
+        "partner_api_key",
+        "HJC_PARTNER_API_KEY",
+        "",
+    )
+
+
+def _partner_launch_url_template(settings: Any) -> str:
+    return _partner_setting(
+        settings,
+        "partner_tournament_launch_url_template",
+        "HJC_PARTNER_TOURNAMENT_LAUNCH_URL_TEMPLATE",
+        "https://t.me/HJCapp_bot/app?startapp=tournament_{id}",
+    )
+
+
+def _partner_sync_seconds(settings: Any) -> int:
+    raw = _partner_setting(
+        settings,
+        "partner_tournament_sync_seconds",
+        "HJC_PARTNER_TOURNAMENT_SYNC_SECONDS",
+        "60",
+    )
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 60
+    return max(10, min(value, 3600))
+
+
+def _partner_timeout_seconds(settings: Any) -> float:
+    raw = _partner_setting(
+        settings,
+        "partner_tournament_timeout_seconds",
+        "HJC_PARTNER_TOURNAMENT_TIMEOUT_SECONDS",
+        "4",
+    )
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 4.0
+    return max(0.5, min(value, 15.0))
+
+
 def _partner_payload_items(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
@@ -351,7 +419,7 @@ def _partner_tournament_rows(payload: Any, settings: Any) -> list[dict[str, Any]
             max_slots = max(0, int(max_slots_raw))
         except (TypeError, ValueError):
             max_slots = 0
-        template = str(settings.partner_tournament_launch_url_template or "").strip()
+        template = _partner_launch_url_template(settings)
         try:
             external_url = template.format(id=external_id) if template else ""
         except (KeyError, ValueError):
@@ -376,8 +444,8 @@ def _fetch_partner_tournament_payload(
     *,
     urlopen_func: Any = urlopen,
 ) -> Any:
-    url = str(settings.partner_tournaments_url or "").strip()
-    api_key = str(settings.partner_api_key or "").strip()
+    url = _partner_tournaments_url(settings)
+    api_key = _partner_api_key(settings)
     if not url or not api_key:
         return None
 
@@ -392,7 +460,7 @@ def _fetch_partner_tournament_payload(
     )
     with urlopen_func(
         request,
-        timeout=float(settings.partner_tournament_timeout_seconds),
+        timeout=_partner_timeout_seconds(settings),
     ) as response:
         raw = response.read(MAX_PARTNER_TOURNAMENT_PAYLOAD_BYTES + 1)
     if len(raw) > MAX_PARTNER_TOURNAMENT_PAYLOAD_BYTES:
@@ -463,13 +531,11 @@ def _sync_partner_tournaments(settings: Any) -> int | None:
 
 def _maybe_sync_partner_tournaments(settings: Any) -> int | None:
     global _TOURNAMENT_SYNC_LAST_ATTEMPT
-    if not str(settings.partner_api_key or "").strip():
+    if not _partner_api_key(settings):
         return None
     now = time.monotonic()
     with _TOURNAMENT_SYNC_LOCK:
-        if now - _TOURNAMENT_SYNC_LAST_ATTEMPT < int(
-            settings.partner_tournament_sync_seconds
-        ):
+        if now - _TOURNAMENT_SYNC_LAST_ATTEMPT < _partner_sync_seconds(settings):
             return None
         _TOURNAMENT_SYNC_LAST_ATTEMPT = now
         try:
