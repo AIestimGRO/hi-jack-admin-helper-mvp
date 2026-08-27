@@ -173,7 +173,8 @@ def test_launch_hardening_preserves_registered_profile_open_defaults(tmp_path) -
     settings = _settings(tmp_path)
     app = create_app(settings)
 
-    with TestClient(app):
+    with TestClient(app) as client:
+        assert client.get("/health/live").status_code == 200
         assert experience._rating_categories is _rating_categories_with_registered_profile
 
         with transaction(settings.db_path) as conn:
