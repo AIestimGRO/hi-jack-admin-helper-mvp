@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import Request as UrlRequest, urlopen
 from zoneinfo import ZoneInfo
 
@@ -97,6 +97,7 @@ def _ensure_product_shell_schema(db_path: str | Path) -> None:
             ("source_kind", "TEXT"),
             ("external_id", "TEXT"),
             ("external_url", "TEXT"),
+            ("external_icon_url", "TEXT"),
             ("source_synced_at", "TEXT"),
         ):
             if column not in tournament_columns:
@@ -388,6 +389,28 @@ def _normalized_partner_start(value: Any, timezone_name: str) -> str:
     return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
+def _partner_icon_value(item: dict[str, Any]) -> str:
+    for key in ("icon_url", "icon", "image_url", "image", "logo_url", "logo"):
+        value = item.get(key)
+        if isinstance(value, dict):
+            value = value.get("url") or value.get("src") or value.get("file")
+        clean = str(value or "").strip()
+        if clean:
+            return clean
+    return ""
+
+
+def _partner_icon_url(item: dict[str, Any], settings: Any) -> str:
+    raw = _partner_icon_value(item)
+    if not raw:
+        return ""
+    candidate = urljoin(_partner_tournaments_url(settings), raw)
+    parsed = urlparse(candidate)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return ""
+    return candidate[:1000]
+
+
 def _partner_tournament_rows(payload: Any, settings: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for item in _partner_payload_items(payload):
@@ -424,6 +447,7 @@ def _partner_tournament_rows(payload: Any, settings: Any) -> list[dict[str, Any]
             external_url = template.format(id=external_id) if template else ""
         except (KeyError, ValueError):
             external_url = ""
+        external_icon_url = _partner_icon_url(item, settings)
 
         rows.append(
             {
@@ -434,6 +458,7 @@ def _partner_tournament_rows(payload: Any, settings: Any) -> list[dict[str, Any]
                 "format_text": " · ".join(meta)[:300],
                 "max_slots": max_slots,
                 "external_url": external_url[:1000],
+                "external_icon_url": external_icon_url,
             }
         )
     return rows
@@ -490,9 +515,9 @@ def _upsert_partner_tournaments(
                 INSERT INTO club_tournaments(
                     title,starts_at,description,format_text,buy_in_text,max_slots,
                     registration_open,is_published,status,source_kind,external_id,
-                    external_url,source_synced_at
+                    external_url,external_icon_url,source_synced_at
                 ) VALUES (?,?,?,?,?,?,
-                          1,1,'scheduled','miniapp',?,?,CURRENT_TIMESTAMP)
+                          1,1,'scheduled','miniapp',?,?,?,CURRENT_TIMESTAMP)
                 ON CONFLICT(source_kind,external_id) DO UPDATE SET
                     title=excluded.title,
                     starts_at=excluded.starts_at,
@@ -504,6 +529,7 @@ def _upsert_partner_tournaments(
                     is_published=1,
                     status='scheduled',
                     external_url=excluded.external_url,
+                    external_icon_url=excluded.external_icon_url,
                     source_synced_at=CURRENT_TIMESTAMP,
                     updated_at=CURRENT_TIMESTAMP
                 """,
@@ -516,6 +542,7 @@ def _upsert_partner_tournaments(
                     item["max_slots"],
                     item["external_id"],
                     item["external_url"],
+                    item["external_icon_url"],
                 ),
             )
     return len(rows)

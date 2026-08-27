@@ -10,41 +10,90 @@
     if (!value) return '';
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
-    return new Intl.DateTimeFormat('ru-RU', {
+    const date = new Intl.DateTimeFormat('ru-RU', {
       day: '2-digit',
       month: '2-digit',
+    }).format(parsed);
+    const weekday = new Intl.DateTimeFormat('ru-RU', {
+      weekday: 'short',
+    }).format(parsed).replace('.', '').toLowerCase();
+    const time = new Intl.DateTimeFormat('ru-RU', {
       hour: '2-digit',
       minute: '2-digit',
     }).format(parsed);
+    return `${date}, ${weekday} / ${time}`;
   }
 
   function tournamentCard(item, nearest = false) {
     const article = document.createElement('article');
-    article.className = 'tournament-shell-card';
+    article.className = 'tournament-shell-card tournament-neon-card';
+    if (item.external_url) article.classList.add('has-link');
+
     const slots = Number(item.max_slots || 0);
     const details = [
       item.format_text || '',
       item.buy_in_text || '',
       slots > 0 ? `${slots} мест` : '',
     ].filter(Boolean);
+
     article.innerHTML = `
-      <span class="tournament-kicker">${nearest ? 'Ближайший турнир' : 'Турнир Hi, Jack!'}</span>
-      <h3></h3>
-      <p class="tournament-date"></p>
-      ${item.description ? '<p class="tournament-description"></p>' : ''}
-      <div class="tournament-shell-meta"></div>
-      <div class="tournament-shell-action-slot"></div>
+      <div class="tournament-neon-grid" aria-hidden="true"></div>
+      <div class="tournament-neon-copy">
+        <span class="tournament-kicker">
+          <i aria-hidden="true"></i>
+          ${nearest ? 'JACKSIDE // БЛИЖАЙШИЙ' : 'JACKSIDE // TOURNAMENT'}
+        </span>
+        <h3></h3>
+        <div class="tournament-date-chip">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.6"></circle>
+            <path d="M12 7.3v5.1l3.2 1.8"></path>
+          </svg>
+          <span class="tournament-date"></span>
+        </div>
+        ${item.description ? '<p class="tournament-description"></p>' : ''}
+        <div class="tournament-shell-meta"></div>
+        <div class="tournament-shell-action-slot"></div>
+      </div>
+      <div class="tournament-neon-visual" aria-hidden="true">
+        <div class="tournament-neon-halo"></div>
+        <div class="tournament-icon-frame">
+          <span class="tournament-icon-fallback">HJ</span>
+        </div>
+      </div>
     `;
+
     article.querySelector('h3').textContent = item.title || 'Турнир Hi, Jack!';
     article.querySelector('.tournament-date').textContent = formatTournamentDate(item.starts_at);
+
     const description = article.querySelector('.tournament-description');
     if (description) description.textContent = item.description;
+
     const meta = article.querySelector('.tournament-shell-meta');
     details.forEach((value) => {
       const span = document.createElement('span');
       span.textContent = value;
       meta.append(span);
     });
+
+    const iconFrame = article.querySelector('.tournament-icon-frame');
+    if (item.external_icon_url) {
+      const icon = document.createElement('img');
+      icon.className = 'tournament-icon';
+      icon.src = item.external_icon_url;
+      icon.alt = '';
+      icon.loading = nearest ? 'eager' : 'lazy';
+      icon.decoding = 'async';
+      icon.addEventListener('load', () => {
+        iconFrame.classList.add('has-icon');
+      });
+      icon.addEventListener('error', () => {
+        icon.remove();
+        iconFrame.classList.remove('has-icon');
+      });
+      iconFrame.append(icon);
+    }
+
     const actionSlot = article.querySelector('.tournament-shell-action-slot');
     if (item.external_url) {
       const action = document.createElement('a');
@@ -52,15 +101,13 @@
       action.href = item.external_url;
       action.target = '_blank';
       action.rel = 'noopener noreferrer';
-      action.textContent = 'Открыть турнир';
+      action.innerHTML = '<span>В турнир</span><b aria-hidden="true">↗</b>';
       actionSlot.append(action);
     } else {
-      const action = document.createElement('button');
-      action.className = 'tournament-shell-action';
-      action.type = 'button';
-      action.disabled = true;
-      action.textContent = 'Запись скоро откроется';
-      actionSlot.append(action);
+      const status = document.createElement('span');
+      status.className = 'tournament-shell-action is-disabled';
+      status.textContent = 'Регистрация скоро';
+      actionSlot.append(status);
     }
     return article;
   }

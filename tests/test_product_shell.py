@@ -65,6 +65,7 @@ def test_product_shell_schema_is_additive_and_idempotent(tmp_path: Path) -> None
     assert "source_kind" in tournament_columns
     assert "external_id" in tournament_columns
     assert "external_url" in tournament_columns
+    assert "external_icon_url" in tournament_columns
     assert "source_synced_at" in tournament_columns
 
 
@@ -144,6 +145,7 @@ def test_partner_tournament_payload_maps_to_schedule_rows(tmp_path: Path) -> Non
                     "max_participants": 42,
                     "status": "IN_QUEUE",
                     "features": ["Freezeout", "20 min levels"],
+                    "icon": "/media/tournaments/icons/freezeout.png",
                 },
                 {
                     "id": 78,
@@ -162,6 +164,9 @@ def test_partner_tournament_payload_maps_to_schedule_rows(tmp_path: Path) -> Non
     assert rows[0]["starts_at"] == "2026-09-04T16:30:00+00:00"
     assert rows[0]["max_slots"] == 42
     assert rows[0]["external_url"].endswith("tournament_77")
+    assert rows[0]["external_icon_url"] == (
+        "https://hi-jack-club.matthew-0203.ru/media/tournaments/icons/freezeout.png"
+    )
     assert "Hi, Jack Club" in rows[0]["format_text"]
 
 
@@ -179,6 +184,7 @@ def test_partner_tournament_sync_is_idempotent_and_hides_stale_rows(tmp_path: Pa
             "format_text": "Club",
             "max_slots": 60,
             "external_url": "https://t.me/HJCapp_bot/app?startapp=tournament_10",
+            "external_icon_url": "https://cdn.example.test/tournaments/10.png",
         },
         {
             "external_id": "20",
@@ -188,6 +194,7 @@ def test_partner_tournament_sync_is_idempotent_and_hides_stale_rows(tmp_path: Pa
             "format_text": "Club",
             "max_slots": 40,
             "external_url": "https://t.me/HJCapp_bot/app?startapp=tournament_20",
+            "external_icon_url": "https://cdn.example.test/tournaments/20.png",
         },
     ]
     assert _upsert_partner_tournaments(db_path, first) == 2
@@ -207,6 +214,7 @@ def test_partner_tournament_sync_is_idempotent_and_hides_stale_rows(tmp_path: Pa
             **first[0],
             "title": "First updated",
             "max_slots": 72,
+            "external_icon_url": "https://cdn.example.test/tournaments/10-v2.png",
         }
     ]
     assert _upsert_partner_tournaments(db_path, second) == 1
@@ -214,7 +222,7 @@ def test_partner_tournament_sync_is_idempotent_and_hides_stale_rows(tmp_path: Pa
     with connect(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT id,external_id,title,max_slots,is_published,status
+            SELECT id,external_id,title,max_slots,external_icon_url,is_published,status
             FROM club_tournaments
             WHERE source_kind='miniapp'
             ORDER BY external_id
@@ -225,8 +233,40 @@ def test_partner_tournament_sync_is_idempotent_and_hides_stale_rows(tmp_path: Pa
     assert int(rows[0]["id"]) == first_id
     assert rows[0]["title"] == "First updated"
     assert int(rows[0]["max_slots"]) == 72
+    assert rows[0]["external_icon_url"].endswith("10-v2.png")
     assert int(rows[0]["is_published"]) == 1
     assert rows[0]["status"] == "scheduled"
     assert int(rows[1]["is_published"]) == 0
     assert rows[1]["status"] == "registration_closed"
+
+def test_partner_tournament_icon_accepts_object_url_and_rejects_unsafe_scheme(
+    tmp_path: Path,
+) -> None:
+    settings = _partner_settings(tmp_path / "partner-icons.sqlite3")
+    rows = _partner_tournament_rows(
+        {
+            "results": [
+                {
+                    "id": 91,
+                    "title": "Object icon",
+                    "started_at": "2030-01-01T19:00:00+03:00",
+                    "status": "IN_QUEUE",
+                    "icon": {"url": "https://cdn.example.test/tournaments/91.webp"},
+                },
+                {
+                    "id": 92,
+                    "title": "Unsafe icon",
+                    "started_at": "2030-01-02T19:00:00+03:00",
+                    "status": "IN_QUEUE",
+                    "icon_url": "javascript:alert(1)",
+                },
+            ]
+        },
+        settings,
+    )
+
+    assert rows[0]["external_icon_url"] == (
+        "https://cdn.example.test/tournaments/91.webp"
+    )
+    assert rows[1]["external_icon_url"] == ""
 
