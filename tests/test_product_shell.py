@@ -167,7 +167,8 @@ def test_partner_tournament_payload_maps_to_schedule_rows(tmp_path: Path) -> Non
     assert rows[0]["external_icon_url"] == (
         "https://hi-jack-club.matthew-0203.ru/media/tournaments/icons/freezeout.png"
     )
-    assert "Hi, Jack Club" in rows[0]["format_text"]
+    assert rows[0]["description"] == "Hi, Jack Club"
+    assert rows[0]["format_text"] == "Freezeout · 20 min levels"
 
 
 def test_partner_tournament_sync_is_idempotent_and_hides_stale_rows(tmp_path: Path) -> None:
@@ -279,4 +280,24 @@ def test_neon_tournament_fallback_uses_jackside_brand_asset() -> None:
 
     assert asset.is_file()
     assert '/static/img/brand/jackside-logo.webp' in javascript
+
+def test_partner_tournament_location_is_not_duplicated_in_meta(tmp_path: Path) -> None:
+    settings = _partner_settings(tmp_path / "partner-location.sqlite3")
+    rows = _partner_tournament_rows(
+        [
+            {
+                "id": 101,
+                "title": "Location once",
+                "location": "Люсиновская 53 к2",
+                "started_at": "2030-01-03T19:00:00+03:00",
+                "status": "IN_QUEUE",
+                "features": [],
+            }
+        ],
+        settings,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["description"] == "Люсиновская 53 к2"
+    assert rows[0]["format_text"] == ""
 

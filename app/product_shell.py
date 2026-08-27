@@ -436,7 +436,7 @@ def _partner_tournament_rows(payload: Any, settings: Any) -> list[dict[str, Any]
             if isinstance(features, list)
             else []
         )
-        meta = [value for value in [location, *feature_items[:2]] if value]
+        meta = feature_items[:2]
         max_slots_raw = item.get("max_participants") or 0
         try:
             max_slots = max(0, int(max_slots_raw))
