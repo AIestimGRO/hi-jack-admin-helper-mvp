@@ -255,7 +255,14 @@ def _privacy_safe_rating_categories(conn, account_id: int) -> dict[str, bool]:
 
 
 def _install_public_profile_consent_guard() -> None:
-    experience._rating_categories = _privacy_safe_rating_categories  # noqa: SLF001
+    # Player profiles are visible only to authenticated club members and are
+    # governed by the dedicated per-category profile visibility policy.
+    # Do not re-apply the older public-rating legal consent gate here: doing so
+    # turns every account without that legacy consent row into a restricted
+    # profile and overrides PROFILE_VISIBILITY_DEFAULTS.
+    experience._rating_categories = (  # noqa: SLF001
+        profile_sharing._rating_categories_with_registered_profile  # noqa: SLF001
+    )
 
 
 def _install_email_change_reauth(app: FastAPI) -> None:
