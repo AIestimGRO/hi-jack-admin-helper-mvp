@@ -24,12 +24,21 @@
     <label>Причина<select name="reason" required>
       <option value="Отзыв на Яндекс Картах">Отзыв на Яндекс Картах</option>
       <option value="Бонус от клуба">Бонус от клуба</option>
+      <option value="Оплата / списание">Оплата / списание</option>
       <option value="Компенсация">Компенсация</option>
       <option value="Ручная корректировка">Ручная корректировка</option>
       <option value="Другое">Другое</option>
     </select></label>
     <label>Комментарий<input name="comment" maxlength="300" placeholder="Необязательно"></label>
-    <button class="plus-button jackcoin-credit-submit" type="submit">+ Начислить JC</button>
+    <div class="jackcoin-credit-actions">
+      <button class="plus-button jackcoin-credit-submit" type="submit">+ Начислить JC</button>
+      <button
+        class="minus-button jackcoin-debit-submit"
+        type="submit"
+        formaction="/api/clients/{{ client.id }}/jackcoin/debit"
+        onclick="return confirm('Списать ' + this.form.amount.value + ' JC у клиента?');"
+      >− Списать JC</button>
+    </div>
   </form>
   {% endif %}
   {% if jackcoin_ledger %}

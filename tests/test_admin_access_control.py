@@ -118,6 +118,7 @@ def test_quiz_manager_can_run_content_and_rewards_but_not_master_system() -> Non
         ("/clients/import", "GET"),
         ("/api/clients/42/comment", "POST"),
         ("/api/clients/42/jackcoin/credit", "POST"),
+        ("/api/clients/42/jackcoin/debit", "POST"),
         ("/api/clients/42/vault/issue", "POST"),
         ("/api/clients/42/vault/7/redeem", "POST"),
         ("/api/clients/42/vault/7/cancel", "POST"),

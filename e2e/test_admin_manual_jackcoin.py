@@ -10,7 +10,7 @@ from test_jackside_welcome import jackside_server as _jackside_server
 jackside_server = _jackside_server
 
 
-def test_admin_manual_jackcoin_credit_uses_canonical_route_in_browser(
+def test_admin_manual_jackcoin_credit_and_debit_use_canonical_routes_in_browser(
     page: Page,
     jackside_server: dict,
 ) -> None:
@@ -76,3 +76,33 @@ def test_admin_manual_jackcoin_credit_uses_canonical_route_in_browser(
     assert int(rows[0]["amount"]) == 200
     assert rows[0]["source_type"] == "admin"
     assert "Отзыв на Яндекс Картах" in rows[0]["comment"]
+
+    page.locator('.jackcoin-credit-form input[name="amount"]').fill("50")
+    page.locator('.jackcoin-credit-form select[name="reason"]').select_option(
+        "Оплата / списание"
+    )
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.locator(".jackcoin-debit-submit").click()
+    expect(page.locator(".jackcoin-admin-card")).to_contain_text("150 JC")
+
+    assert any(
+        f"/api/clients/{client_id}/jackcoin/debit" in url
+        for url in requested_urls
+    )
+
+    with transaction(db_path) as conn:
+        assert jackcoin_balance(conn, client_id) == 150
+        rows = conn.execute(
+            """
+            SELECT amount,operation_type,source_type,comment
+            FROM jackcoin_ledger
+            WHERE client_id=?
+            ORDER BY id
+            """,
+            (client_id,),
+        ).fetchall()
+
+    assert [int(row["amount"]) for row in rows] == [200, -50]
+    assert rows[1]["operation_type"] == "spend"
+    assert rows[1]["source_type"] == "admin"
+    assert "Оплата / списание" in rows[1]["comment"]

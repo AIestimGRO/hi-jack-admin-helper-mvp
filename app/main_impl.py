@@ -141,6 +141,7 @@ from app.services.member_accounts import (
     issue_session as issue_member_session,
     jackcoin_balance,
     credit_jackcoin_manually,
+    debit_jackcoin_manually,
     member_code_hash,
     revoke_session as revoke_member_session,
 )
@@ -7400,6 +7401,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             f"Начислено {int(amount)} JC"
             if inserted
             else "Это начисление уже было сохранено"
+        )
+        return RedirectResponse(
+            f"/clients/{client_id}?ok={quote(message)}",
+            status_code=303,
+        )
+
+    @app.post("/api/clients/{client_id:int}/jackcoin/debit")
+    async def client_jackcoin_debit(
+        request: Request,
+        client_id: int,
+        amount: int = Form(...),
+        reason: str = Form(...),
+        comment: str = Form(""),
+        operation_token: str = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                inserted, balance = debit_jackcoin_manually(
+                    conn,
+                    client_id=client_id,
+                    amount=int(amount),
+                    admin_id=int(request.session["admin_id"]),
+                    reason=reason,
+                    comment=comment,
+                    operation_token=operation_token,
+                )
+                if inserted:
+                    audit(
+                        conn,
+                        admin_id=request.session["admin_id"],
+                        admin_name=request.session["admin_name"],
+                        action="manual_jackcoin_debit",
+                        entity_type="client",
+                        entity_id=client_id,
+                        details={
+                            "amount": int(amount),
+                            "reason": " ".join(str(reason or "").split())[:120],
+                            "comment": " ".join(str(comment or "").split())[:300],
+                            "balance": balance,
+                        },
+                    )
+        except ValueError as exc:
+            messages = {
+                "invalid_jackcoin_amount": "Количество JACKCOIN должно быть от 1 до 1000000",
+                "jackcoin_reason_required": "Укажите причину списания JACKCOIN",
+                "invalid_jackcoin_operation_token": "Обновите карточку клиента и повторите списание",
+                "client_not_found": "Клиент не найден",
+                "insufficient_jackcoin": "Недостаточно JACKCOIN для списания",
+            }
+            return RedirectResponse(
+                f"/clients/{client_id}?error={quote(messages.get(str(exc), str(exc)))}",
+                status_code=303,
+            )
+
+        message = (
+            f"Списано {int(amount)} JC"
+            if inserted
+            else "Это списание уже было сохранено"
         )
         return RedirectResponse(
             f"/clients/{client_id}?ok={quote(message)}",

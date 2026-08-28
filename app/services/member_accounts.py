@@ -302,3 +302,68 @@ def credit_jackcoin_manually(
         ),
     )
     return cursor.rowcount == 1, jackcoin_balance(conn, int(client_id))
+
+
+def debit_jackcoin_manually(
+    conn: sqlite3.Connection,
+    *,
+    client_id: int,
+    amount: int,
+    admin_id: int,
+    reason: str,
+    comment: str,
+    operation_token: str,
+) -> tuple[bool, int]:
+    if amount <= 0 or amount > 1_000_000:
+        raise ValueError("invalid_jackcoin_amount")
+
+    clean_reason = " ".join(str(reason or "").split())[:120]
+    if not clean_reason:
+        raise ValueError("jackcoin_reason_required")
+
+    clean_comment = " ".join(str(comment or "").split())[:300]
+    clean_token = "".join(
+        character
+        for character in str(operation_token or "")
+        if character.isalnum() or character in {"_", "-"}
+    )[:128]
+    if len(clean_token) < 12:
+        raise ValueError("invalid_jackcoin_operation_token")
+
+    client = conn.execute(
+        "SELECT id FROM clients WHERE id=? AND IFNULL(client_status,'')<>'deleted'",
+        (int(client_id),),
+    ).fetchone()
+    if not client:
+        raise ValueError("client_not_found")
+
+    idempotency_key = f"admin:jackcoin:debit:{int(client_id)}:{clean_token}"
+    existing = conn.execute(
+        "SELECT id FROM jackcoin_ledger WHERE idempotency_key=?",
+        (idempotency_key,),
+    ).fetchone()
+    if existing:
+        return False, jackcoin_balance(conn, int(client_id))
+
+    balance = jackcoin_balance(conn, int(client_id))
+    if balance < int(amount):
+        raise ValueError("insufficient_jackcoin")
+
+    note = clean_reason if not clean_comment else f"{clean_reason} · {clean_comment}"
+    cursor = conn.execute(
+        """
+        INSERT OR IGNORE INTO jackcoin_ledger(
+            client_id,amount,operation_type,source_type,source_id,
+            idempotency_key,comment,created_by_admin_id
+        ) VALUES (?,?,'spend','admin',?,?,?,?)
+        """,
+        (
+            int(client_id),
+            -int(amount),
+            clean_token,
+            idempotency_key,
+            note,
+            int(admin_id),
+        ),
+    )
+    return cursor.rowcount == 1, jackcoin_balance(conn, int(client_id))

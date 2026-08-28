@@ -130,12 +130,13 @@
 .jackcoin-credit-form{display:grid;grid-template-columns:110px minmax(190px,.9fr) minmax(190px,1.2fr) auto;align-items:end;gap:8px;padding-top:11px;border-top:1px solid var(--line)}
 .jackcoin-credit-form label{gap:5px;font-size:11px}
 .jackcoin-credit-form input,.jackcoin-credit-form select{min-height:42px}
-.jackcoin-credit-submit{min-height:42px;padding:0 16px;white-space:nowrap}
+.jackcoin-credit-actions{display:flex;gap:7px;align-items:center}
+.jackcoin-credit-submit,.jackcoin-debit-submit{min-height:42px;padding:0 16px;white-space:nowrap}
 .jackcoin-ledger-details{padding-top:10px;border-top:1px solid var(--line)}
 .jackcoin-ledger-details summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:750}
 .preference-note{margin:4px 0 0;font-size:11px}
-@media(max-width:760px){.jackcoin-admin-head{align-items:flex-start}.jackcoin-admin-head>.muted{max-width:34ch}.jackcoin-credit-form{grid-template-columns:1fr 1fr}.jackcoin-credit-form label:nth-of-type(3){grid-column:1/-1}.jackcoin-credit-submit{width:100%}}
-@media(max-width:430px){.jackcoin-admin-head{display:grid}.jackcoin-credit-form{grid-template-columns:1fr}.jackcoin-credit-form label:nth-of-type(3){grid-column:auto}}
+@media(max-width:760px){.jackcoin-admin-head{align-items:flex-start}.jackcoin-admin-head>.muted{max-width:34ch}.jackcoin-credit-form{grid-template-columns:1fr 1fr}.jackcoin-credit-form label:nth-of-type(3){grid-column:1/-1}.jackcoin-credit-actions{grid-column:1/-1}.jackcoin-credit-actions button{flex:1}}
+@media(max-width:430px){.jackcoin-admin-head{display:grid}.jackcoin-credit-form{grid-template-columns:1fr}.jackcoin-credit-form label:nth-of-type(3){grid-column:auto}.jackcoin-credit-actions{display:grid;grid-template-columns:1fr 1fr}.jackcoin-credit-actions button{width:100%}}
 
 /* Client detail: admin THE VAULT card controls. */
 .vault-client-card{padding:16px 18px;display:grid;gap:12px}

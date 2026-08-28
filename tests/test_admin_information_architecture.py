@@ -223,6 +223,130 @@ def test_master_can_credit_real_jackcoin_from_client_card_idempotently(
         assert "Проверено администратором" in refreshed.text
 
 
+def test_master_can_debit_real_jackcoin_idempotently_without_negative_balance(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_client(tmp_path)
+    with client:
+        login_master(client)
+        with transaction(settings.db_path) as conn:
+            client_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(first_name,nickname,source)
+                    VALUES ('Debit','Player','test')
+                    """
+                ).lastrowid
+            )
+            conn.execute(
+                """
+                INSERT INTO jackcoin_ledger(
+                    client_id,amount,operation_type,source_type,source_id,
+                    idempotency_key,comment
+                ) VALUES (?,300,'earn','test','seed','test:debit:seed','Seed balance')
+                """,
+                (client_id,),
+            )
+
+        page = client.get(f"/clients/{client_id}")
+        assert page.status_code == 200
+        assert "300 JC" in page.text
+        assert "− Списать JC" in page.text
+        assert (
+            f'formaction="/api/clients/{client_id}/jackcoin/debit"'
+            in page.text
+        )
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        token = re.search(
+            r'name="operation_token" value="([^"]+)"',
+            page.text,
+        ).group(1)
+        payload = {
+            "csrf_token": csrf,
+            "operation_token": token,
+            "amount": "125",
+            "reason": "Оплата / списание",
+            "comment": "Ручное списание",
+        }
+
+        response = client.post(
+            f"/api/clients/{client_id}/jackcoin/debit",
+            data=payload,
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert "ok=" in response.headers["location"]
+
+        duplicate = client.post(
+            f"/api/clients/{client_id}/jackcoin/debit",
+            data=payload,
+            follow_redirects=False,
+        )
+        assert duplicate.status_code == 303
+
+        with transaction(settings.db_path) as conn:
+            balance = conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM jackcoin_ledger WHERE client_id=?",
+                (client_id,),
+            ).fetchone()[0]
+            debit_rows = conn.execute(
+                """
+                SELECT amount,operation_type,source_type,comment,created_by_admin_id
+                FROM jackcoin_ledger
+                WHERE client_id=? AND source_type='admin' AND amount<0
+                """,
+                (client_id,),
+            ).fetchall()
+            audit_rows = conn.execute(
+                """
+                SELECT action FROM admin_audit_log
+                WHERE entity_type='client' AND entity_id=?
+                  AND action='manual_jackcoin_debit'
+                """,
+                (client_id,),
+            ).fetchall()
+
+        assert balance == 175
+        assert len(debit_rows) == 1
+        assert int(debit_rows[0]["amount"]) == -125
+        assert debit_rows[0]["operation_type"] == "spend"
+        assert debit_rows[0]["source_type"] == "admin"
+        assert "Оплата / списание" in debit_rows[0]["comment"]
+        assert int(debit_rows[0]["created_by_admin_id"]) > 0
+        assert len(audit_rows) == 1
+
+        refreshed = client.get(f"/clients/{client_id}")
+        assert "175 JC" in refreshed.text
+
+        csrf = re.search(
+            r'name="csrf_token" value="([^"]+)"',
+            refreshed.text,
+        ).group(1)
+        new_token = re.search(
+            r'name="operation_token" value="([^"]+)"',
+            refreshed.text,
+        ).group(1)
+        insufficient = client.post(
+            f"/api/clients/{client_id}/jackcoin/debit",
+            data={
+                "csrf_token": csrf,
+                "operation_token": new_token,
+                "amount": "999",
+                "reason": "Ручная корректировка",
+                "comment": "",
+            },
+            follow_redirects=False,
+        )
+        assert insufficient.status_code == 303
+        assert "error=" in insufficient.headers["location"]
+
+        with transaction(settings.db_path) as conn:
+            assert conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM jackcoin_ledger WHERE client_id=?",
+                (client_id,),
+            ).fetchone()[0] == 175
+
+
 def test_master_can_issue_spend_and_remove_vault_cards_from_client(
     tmp_path: Path,
 ) -> None:
