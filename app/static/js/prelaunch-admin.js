@@ -221,8 +221,12 @@
       }
 
       try {
-        const submitAction = submit?.formAction || form.action;
-        const submitMethod = submit?.formMethod || form.method || 'POST';
+        const submitAction = submit?.hasAttribute('formaction')
+          ? submit.formAction
+          : form.action;
+        const submitMethod = submit?.hasAttribute('formmethod')
+          ? submit.formMethod
+          : (form.method || 'POST');
         const formData = new FormData(form);
         if (submit?.name) formData.append(submit.name, submit.value);
         const response = await fetch(submitAction, {

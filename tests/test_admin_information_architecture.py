@@ -134,11 +134,31 @@ def test_master_can_credit_real_jackcoin_from_client_card_idempotently(
                 ).lastrowid
             )
 
+        with transaction(settings.db_path) as conn:
+            fake_pref_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO preference_types(code,title,kind,is_active)
+                    VALUES ('jc','JC','counter',1)
+                    """
+                ).lastrowid
+            )
+            conn.execute(
+                """
+                INSERT INTO client_preferences(
+                    client_id,preference_type_id,balance_int,percent_value
+                ) VALUES (?,?,777,0)
+                """,
+                (client_id, fake_pref_id),
+            )
+
         page = client.get(f"/clients/{client_id}")
         assert page.status_code == 200
-        assert "Баланс игрока" in page.text
+        assert "Текущий баланс" in page.text
         assert "+ Начислить JC" in page.text
         assert "Отзыв на Яндекс Картах" in page.text
+        assert "Они не меняют баланс JACKCOIN" in page.text
+        assert ">777<" not in page.text
         assert f'action="/api/clients/{client_id}/jackcoin/credit"' in page.text
 
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)

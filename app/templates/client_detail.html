@@ -12,12 +12,15 @@
 
 <section class="section-head"><h2>JACKCOIN</h2></section>
 <section class="card jackcoin-admin-card">
-  <div class="pref-top"><h3>Баланс игрока</h3><strong>{{ jackcoin_balance }} JC</strong></div>
+  <div class="jackcoin-admin-head">
+    <div><small>Текущий баланс</small><strong>{{ jackcoin_balance }} JC</strong></div>
+    <span class="muted">Реальный баланс JACKCOIN игрока</span>
+  </div>
   {% if access_role == 'master' %}
-  <form class="pref-form" action="/api/clients/{{ client.id }}/jackcoin/credit" method="post" data-ajax-refresh=".jackcoin-admin-card">
+  <form class="jackcoin-credit-form" action="/api/clients/{{ client.id }}/jackcoin/credit" method="post" data-ajax-refresh=".jackcoin-admin-card">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="operation_token" value="{{ jackcoin_operation_token }}">
-    <label>Количество JC<input name="amount" type="number" min="1" max="1000000" value="200" required></label>
+    <label>JC<input name="amount" type="number" min="1" max="1000000" value="200" required></label>
     <label>Причина<select name="reason" required>
       <option value="Отзыв на Яндекс Картах">Отзыв на Яндекс Картах</option>
       <option value="Бонус от клуба">Бонус от клуба</option>
@@ -26,11 +29,11 @@
       <option value="Другое">Другое</option>
     </select></label>
     <label>Комментарий<input name="comment" maxlength="300" placeholder="Необязательно"></label>
-    <button class="plus-button" type="submit">+ Начислить JC</button>
+    <button class="plus-button jackcoin-credit-submit" type="submit">+ Начислить JC</button>
   </form>
   {% endif %}
   {% if jackcoin_ledger %}
-  <details class="app-data">
+  <details class="jackcoin-ledger-details">
     <summary>История JACKCOIN · последние {{ jackcoin_ledger|length }}</summary>
     <div class="table-wrap"><table><thead><tr><th>Время</th><th>JC</th><th>Причина</th></tr></thead><tbody>
     {% for item in jackcoin_ledger %}
@@ -41,7 +44,8 @@
   {% endif %}
 </section>
 
-<section class="section-head"><h2>Преференции</h2></section>
+<section class="section-head"><div><h2>Преференции</h2><p class="muted preference-note">FreeEntry, FreeReEntry, FreeAddon и скидки. Они не меняют баланс JACKCOIN.</p></div></section>
+
 <div class="preference-grid">
 {% for pref in preferences %}
   <article class="preference card">

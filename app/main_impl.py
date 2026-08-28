@@ -7163,7 +7163,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """
                 SELECT cp.*, pt.code, pt.title, pt.kind
                 FROM client_preferences cp JOIN preference_types pt ON pt.id = cp.preference_type_id
-                WHERE cp.client_id = ? AND pt.is_active = 1 ORDER BY pt.id
+                WHERE cp.client_id = ? AND pt.is_active = 1
+                  AND LOWER(TRIM(pt.code)) NOT IN ('jc','jackcoin')
+                  AND UPPER(REPLACE(TRIM(pt.title),' ','')) NOT IN ('JC','JACKCOIN')
+                ORDER BY pt.id
                 """,
                 (client_id,),
             ).fetchall()
