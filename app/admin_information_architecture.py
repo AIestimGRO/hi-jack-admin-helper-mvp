@@ -91,58 +91,185 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     )
 
 
+_CLIENT_SORT_KEYS = {
+    "id": "id",
+    "name": "sort_name COLLATE NOCASE",
+    "phone": "sort_phone",
+    "rating": "hijack_rating",
+    "balance": "jc_balance",
+    "earned": "jc_earned",
+    "last_jc": "jc_last_at",
+    "updated": "sort_updated",
+}
+
+
+def _client_filter_number(value: Any, *, integer: bool) -> int | float | None:
+    clean = str(value or "").strip().replace(",", ".")
+    if not clean:
+        return None
+    try:
+        return int(clean) if integer else float(clean)
+    except ValueError:
+        return None
+
+
+def _client_filter_date(value: Any) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        return ""
+    try:
+        return date.fromisoformat(clean).isoformat()
+    except ValueError:
+        return ""
+
+
 def _client_rows(
     conn: sqlite3.Connection,
     *,
     query: str,
     page: int,
+    filters: dict[str, str] | None = None,
+    sort: str = "updated",
+    direction: str = "desc",
     page_size: int = 50,
 ) -> tuple[list[sqlite3.Row], int]:
+    filters = filters or {}
     clean = " ".join(str(query or "").split())
-    where = "WHERE IFNULL(c.client_status,'')<>'deleted'"
-    params: list[Any] = []
+    base_clauses = ["IFNULL(c.client_status,'')<>'deleted'"]
+    base_params: list[Any] = []
     if clean:
         like = f"%{clean}%"
-        where += """
-          AND (
-            CAST(c.id AS TEXT)=? OR
-            IFNULL(c.phone_local,'') LIKE ? OR
-            IFNULL(c.phone_raw,'') LIKE ? OR
-            IFNULL(c.first_name,'') LIKE ? OR
-            IFNULL(c.nickname,'') LIKE ? OR
-            IFNULL(c.username,'') LIKE ? OR
-            IFNULL(c.email,'') LIKE ? OR
-            IFNULL(c.app_user_id,'') LIKE ?
-          )
-        """
-        params.extend([clean, like, like, like, like, like, like, like])
+        base_clauses.append(
+            """
+            (
+              CAST(c.id AS TEXT)=? OR
+              IFNULL(c.phone_local,'') LIKE ? OR
+              IFNULL(c.phone_raw,'') LIKE ? OR
+              IFNULL(c.first_name,'') LIKE ? OR
+              IFNULL(c.nickname,'') LIKE ? OR
+              IFNULL(c.username,'') LIKE ? OR
+              IFNULL(c.email,'') LIKE ? OR
+              IFNULL(c.app_user_id,'') LIKE ?
+            )
+            """
+        )
+        base_params.extend([clean, like, like, like, like, like, like, like])
 
-    total = int(
-        conn.execute(f"SELECT COUNT(*) FROM clients c {where}", params).fetchone()[0]
-    )
     rating_expr = "0"
     if _table_exists(conn, "hi_jack_rating_entries"):
         rating_expr = (
             "COALESCE((SELECT SUM(hre.rating_points) FROM hi_jack_rating_entries hre "
             "WHERE hre.client_id=c.id),0)"
         )
+
+    cte = f"""
+        WITH client_metrics AS (
+          SELECT c.*,
+                 LOWER(
+                   COALESCE(
+                     NULLIF(c.first_name,''),
+                     NULLIF(c.nickname,''),
+                     NULLIF(c.username,''),
+                     ''
+                   )
+                 ) AS sort_name,
+                 COALESCE(NULLIF(c.phone_local,''),NULLIF(c.phone_raw,''),'') AS sort_phone,
+                 COALESCE(c.updated_at,c.created_at) AS sort_updated,
+                 COALESCE((SELECT SUM(jl.amount) FROM jackcoin_ledger jl
+                           WHERE jl.client_id=c.id),0) AS jc_balance,
+                 COALESCE((SELECT SUM(CASE WHEN jl.amount>0 THEN jl.amount ELSE 0 END)
+                           FROM jackcoin_ledger jl WHERE jl.client_id=c.id),0) AS jc_earned,
+                 (SELECT MAX(jl.created_at) FROM jackcoin_ledger jl
+                  WHERE jl.client_id=c.id) AS jc_last_at,
+                 {rating_expr} AS hijack_rating
+          FROM clients c
+          WHERE {" AND ".join(base_clauses)}
+        )
+    """
+
+    metric_clauses = ["1=1"]
+    metric_params: list[Any] = []
+
+    client_id = str(filters.get("client_id") or "").strip()
+    if client_id:
+        if client_id.isdigit():
+            metric_clauses.append("id=?")
+            metric_params.append(int(client_id))
+        else:
+            metric_clauses.append("0=1")
+
+    name = " ".join(str(filters.get("name") or "").split())
+    if name:
+        like = f"%{name}%"
+        metric_clauses.append(
+            """
+            (
+              IFNULL(first_name,'') LIKE ? OR
+              IFNULL(nickname,'') LIKE ? OR
+              IFNULL(username,'') LIKE ? OR
+              IFNULL(email,'') LIKE ?
+            )
+            """
+        )
+        metric_params.extend([like, like, like, like])
+
+    phone = "".join(
+        character
+        for character in str(filters.get("phone") or "")
+        if character.isdigit()
+    )
+    if phone:
+        metric_clauses.append("IFNULL(phone_local,'') LIKE ?")
+        metric_params.append(f"%{phone[-10:]}%")
+
+    for key, column, integer, operator in (
+        ("rating_min", "hijack_rating", False, ">="),
+        ("rating_max", "hijack_rating", False, "<="),
+        ("balance_min", "jc_balance", True, ">="),
+        ("balance_max", "jc_balance", True, "<="),
+        ("earned_min", "jc_earned", True, ">="),
+        ("earned_max", "jc_earned", True, "<="),
+    ):
+        value = _client_filter_number(filters.get(key), integer=integer)
+        if value is not None:
+            metric_clauses.append(f"{column}{operator}?")
+            metric_params.append(value)
+
+    last_from = _client_filter_date(filters.get("last_jc_from"))
+    if last_from:
+        metric_clauses.append("date(jc_last_at)>=date(?)")
+        metric_params.append(last_from)
+    last_to = _client_filter_date(filters.get("last_jc_to"))
+    if last_to:
+        metric_clauses.append("date(jc_last_at)<=date(?)")
+        metric_params.append(last_to)
+
+    metric_where = " WHERE " + " AND ".join(metric_clauses)
+    total = int(
+        conn.execute(
+            cte + " SELECT COUNT(*) FROM client_metrics" + metric_where,
+            (*base_params, *metric_params),
+        ).fetchone()[0]
+    )
+
+    sort_key = sort if sort in _CLIENT_SORT_KEYS else "updated"
+    direction_sql = "ASC" if str(direction).lower() == "asc" else "DESC"
+    sort_expr = _CLIENT_SORT_KEYS[sort_key]
+    if sort_key == "last_jc":
+        order_sql = (
+            "CASE WHEN jc_last_at IS NULL THEN 1 ELSE 0 END ASC, "
+            f"jc_last_at {direction_sql}, id {direction_sql}"
+        )
+    else:
+        order_sql = f"{sort_expr} {direction_sql}, id {direction_sql}"
+
     offset = (max(1, page) - 1) * page_size
     rows = conn.execute(
-        f"""
-        SELECT c.*,
-               COALESCE((SELECT SUM(jl.amount) FROM jackcoin_ledger jl
-                         WHERE jl.client_id=c.id),0) AS jc_balance,
-               COALESCE((SELECT SUM(CASE WHEN jl.amount>0 THEN jl.amount ELSE 0 END)
-                         FROM jackcoin_ledger jl WHERE jl.client_id=c.id),0) AS jc_earned,
-               (SELECT MAX(jl.created_at) FROM jackcoin_ledger jl
-                WHERE jl.client_id=c.id) AS jc_last_at,
-               {rating_expr} AS hijack_rating
-        FROM clients c
-        {where}
-        ORDER BY COALESCE(c.updated_at,c.created_at) DESC, c.id DESC
-        LIMIT ? OFFSET ?
-        """,
-        (*params, page_size, offset),
+        cte
+        + " SELECT * FROM client_metrics"
+        + metric_where
+        + f" ORDER BY {order_sql} LIMIT ? OFFSET ?",
+        (*base_params, *metric_params, page_size, offset),
     ).fetchall()
     return list(rows), total
 
@@ -211,10 +338,83 @@ def install_admin_information_architecture(app: FastAPI) -> FastAPI:
         request: Request,
         q: str = Query(""),
         page: int = Query(1, ge=1),
+        sort: str = Query("updated"),
+        direction: str = Query("desc"),
+        client_id: str = Query(""),
+        name: str = Query(""),
+        phone: str = Query(""),
+        rating_min: str = Query(""),
+        rating_max: str = Query(""),
+        balance_min: str = Query(""),
+        balance_max: str = Query(""),
+        earned_min: str = Query(""),
+        earned_max: str = Query(""),
+        last_jc_from: str = Query(""),
+        last_jc_to: str = Query(""),
     ):
         _require_master(request)
+        sort = sort if sort in _CLIENT_SORT_KEYS else "updated"
+        direction = "asc" if str(direction).lower() == "asc" else "desc"
+        filters = {
+            "client_id": str(client_id or "").strip(),
+            "name": str(name or "").strip(),
+            "phone": str(phone or "").strip(),
+            "rating_min": str(rating_min or "").strip(),
+            "rating_max": str(rating_max or "").strip(),
+            "balance_min": str(balance_min or "").strip(),
+            "balance_max": str(balance_max or "").strip(),
+            "earned_min": str(earned_min or "").strip(),
+            "earned_max": str(earned_max or "").strip(),
+            "last_jc_from": str(last_jc_from or "").strip(),
+            "last_jc_to": str(last_jc_to or "").strip(),
+        }
         with connect(settings.db_path) as conn:
-            rows, total = _client_rows(conn, query=q, page=page)
+            rows, total = _client_rows(
+                conn,
+                query=q,
+                page=page,
+                filters=filters,
+                sort=sort,
+                direction=direction,
+            )
+
+        preserved = {"q": str(q or "").strip()}
+        preserved.update(
+            {
+                key: value
+                for key, value in filters.items()
+                if str(value or "").strip()
+            }
+        )
+        has_filters = bool(preserved["q"] or any(filters.values()))
+        sort_defaults = {
+            "id": "asc",
+            "name": "asc",
+            "phone": "asc",
+            "rating": "desc",
+            "balance": "desc",
+            "earned": "desc",
+            "last_jc": "desc",
+        }
+        sort_links: dict[str, str] = {}
+        for key, default_direction in sort_defaults.items():
+            next_direction = (
+                ("desc" if direction == "asc" else "asc")
+                if sort == key
+                else default_direction
+            )
+            params = {
+                **preserved,
+                "sort": key,
+                "direction": next_direction,
+            }
+            sort_links[key] = "/master/clients?" + urlencode(params)
+
+        pagination_params = {
+            **preserved,
+            "sort": sort,
+            "direction": direction,
+        }
         return templates.TemplateResponse(
             request,
             "admin_clients_workspace.html",
@@ -222,6 +422,12 @@ def install_admin_information_architecture(app: FastAPI) -> FastAPI:
                 request,
                 clients=rows,
                 q=q,
+                filters=filters,
+                sort=sort,
+                direction=direction,
+                sort_links=sort_links,
+                has_filters=has_filters,
+                pagination_query=urlencode(pagination_params),
                 page=page,
                 total=total,
                 page_size=50,
