@@ -346,6 +346,9 @@ def issue_reward(
     price_paid_jc: int = 0,
     enforce_active: bool = True,
     now: datetime | None = None,
+    admin_id: int | None = None,
+    admin_name: str = "system",
+    event_details: dict[str, Any] | None = None,
 ) -> sqlite3.Row:
     existing = conn.execute(
         "SELECT * FROM vault_member_rewards WHERE idempotency_key=?",
@@ -395,11 +398,18 @@ def issue_reward(
     reward = conn.execute(
         "SELECT * FROM vault_member_rewards WHERE id=?", (cursor.lastrowid,)
     ).fetchone()
+    details = {
+        "source_id": source_id,
+        "price_paid_jc": int(price_paid_jc),
+        **(event_details or {}),
+    }
     _insert_event(
         conn,
         reward=reward,
         action="issued" if source_type == "admin" else f"{source_type}_issued",
-        details={"source_id": source_id, "price_paid_jc": int(price_paid_jc)},
+        admin_id=admin_id,
+        admin_name=admin_name,
+        details=details,
     )
     return reward
 
@@ -692,6 +702,64 @@ def redeem_reward(
         action="redeemed",
         admin_id=admin_id,
         admin_name=admin_name,
+    )
+    return updated
+
+
+def redeem_reward_by_admin(
+    conn: sqlite3.Connection,
+    *,
+    reward_id: int,
+    client_id: int,
+    admin_id: int,
+    admin_name: str,
+    now: datetime | None = None,
+) -> sqlite3.Row:
+    reward = conn.execute(
+        """
+        SELECT * FROM vault_member_rewards
+        WHERE id=? AND client_id=?
+        """,
+        (int(reward_id), int(client_id)),
+    ).fetchone()
+    if not reward:
+        raise ValueError("vault_reward_not_found")
+    if reward["status"] != "active":
+        raise ValueError(f"vault_reward_{reward['status']}")
+
+    current = _utc_now(now)
+    valid_from = datetime.fromisoformat(str(reward["valid_from"]))
+    valid_until = (
+        datetime.fromisoformat(str(reward["valid_until"]))
+        if reward["valid_until"]
+        else None
+    )
+    if current < _utc_now(valid_from):
+        raise ValueError("vault_reward_not_started")
+    if valid_until and current > _utc_now(valid_until):
+        raise ValueError("vault_reward_expired")
+
+    conn.execute(
+        """
+        UPDATE vault_member_rewards
+        SET status='redeemed', redeemed_at=?, redeemed_by_admin_id=?
+        WHERE id=? AND client_id=? AND status='active'
+        """,
+        (_timestamp(current), int(admin_id), int(reward_id), int(client_id)),
+    )
+    updated = conn.execute(
+        "SELECT * FROM vault_member_rewards WHERE id=?",
+        (int(reward_id),),
+    ).fetchone()
+    if not updated or updated["status"] != "redeemed":
+        raise RuntimeError("vault_reward_redeem_failed")
+    _insert_event(
+        conn,
+        reward=updated,
+        action="redeemed",
+        admin_id=int(admin_id),
+        admin_name=str(admin_name or "admin"),
+        details={"mode": "admin_direct"},
     )
     return updated
 

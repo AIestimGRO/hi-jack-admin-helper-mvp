@@ -161,9 +161,11 @@ from app.services.vault import (
     create_catalog_reward,
     expire_activations as expire_vault_activations,
     expire_rewards as expire_vault_rewards,
+    issue_reward as issue_vault_reward,
     purchase_reward as purchase_vault_reward,
     purchase_token as vault_purchase_token,
     redeem_reward as redeem_vault_reward,
+    redeem_reward_by_admin as redeem_vault_reward_by_admin,
     update_catalog_reward,
     valid_purchase_token,
 )
@@ -7199,12 +7201,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (client_id,),
             ).fetchall()
-        return client, prefs, logs, quiz_participation, jc_balance, jc_ledger
+            vault_catalog = conn.execute(
+                """
+                SELECT vcr.*,
+                       COUNT(CASE WHEN vmr.status<>'cancelled' THEN 1 END)
+                           AS allocated_count
+                FROM vault_catalog_rewards vcr
+                LEFT JOIN vault_member_rewards vmr
+                  ON vmr.catalog_reward_id=vcr.id
+                WHERE vcr.is_active=1
+                GROUP BY vcr.id
+                ORDER BY vcr.position,vcr.id
+                """
+            ).fetchall()
+            vault_rewards = conn.execute(
+                """
+                SELECT vmr.*,vcr.title,vcr.category
+                FROM vault_member_rewards vmr
+                JOIN vault_catalog_rewards vcr ON vcr.id=vmr.catalog_reward_id
+                WHERE vmr.client_id=?
+                ORDER BY
+                  CASE vmr.status WHEN 'active' THEN 0 ELSE 1 END,
+                  vmr.id DESC
+                LIMIT 40
+                """,
+                (client_id,),
+            ).fetchall()
+        return (
+            client,
+            prefs,
+            logs,
+            quiz_participation,
+            jc_balance,
+            jc_ledger,
+            vault_catalog,
+            vault_rewards,
+        )
 
     @app.get("/clients/{client_id:int}", response_class=HTMLResponse)
     async def client_detail(request: Request, client_id: int, ok: str = "", error: str = ""):
         require_auth(request)
-        client, prefs, logs, quiz_participation, jc_balance, jc_ledger = load_client(client_id)
+        (
+            client,
+            prefs,
+            logs,
+            quiz_participation,
+            jc_balance,
+            jc_ledger,
+            vault_catalog,
+            vault_rewards,
+        ) = load_client(client_id)
         return templates.TemplateResponse(
             request,
             "client_detail.html",
@@ -7217,6 +7263,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 jackcoin_balance=jc_balance,
                 jackcoin_ledger=jc_ledger,
                 jackcoin_operation_token=secrets.token_urlsafe(24),
+                vault_catalog=vault_catalog,
+                vault_rewards=vault_rewards,
+                vault_operation_token=secrets.token_urlsafe(24),
                 ok=ok,
                 error=error,
             ),
@@ -7352,6 +7401,233 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if inserted
             else "Это начисление уже было сохранено"
         )
+        return RedirectResponse(
+            f"/clients/{client_id}?ok={quote(message)}",
+            status_code=303,
+        )
+
+    @app.post("/api/clients/{client_id:int}/vault/issue")
+    async def client_vault_issue(
+        request: Request,
+        client_id: int,
+        catalog_reward_id: int = Form(...),
+        reason: str = Form(...),
+        comment: str = Form(""),
+        operation_token: str = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        clean_reason = " ".join(str(reason or "").split())[:120]
+        clean_comment = " ".join(str(comment or "").split())[:300]
+        clean_token = "".join(
+            character
+            for character in str(operation_token or "")
+            if character.isalnum() or character in {"_", "-"}
+        )[:128]
+        if not clean_reason:
+            return RedirectResponse(
+                f"/clients/{client_id}?error={quote('Укажите причину выдачи карты')}",
+                status_code=303,
+            )
+        if len(clean_token) < 12:
+            return RedirectResponse(
+                f"/clients/{client_id}?error={quote('Обновите карточку клиента и повторите выдачу')}",
+                status_code=303,
+            )
+
+        idempotency_key = f"admin:vault:issue:{client_id}:{clean_token}"
+        try:
+            with transaction(settings.db_path) as conn:
+                client_row = conn.execute(
+                    "SELECT id FROM clients WHERE id=? AND IFNULL(client_status,'')<>'deleted'",
+                    (client_id,),
+                ).fetchone()
+                if not client_row:
+                    raise ValueError("client_not_found")
+                existing = conn.execute(
+                    "SELECT * FROM vault_member_rewards WHERE idempotency_key=?",
+                    (idempotency_key,),
+                ).fetchone()
+                if existing:
+                    reward = existing
+                    inserted = False
+                else:
+                    reward = issue_vault_reward(
+                        conn,
+                        client_id=client_id,
+                        catalog_reward_id=int(catalog_reward_id),
+                        source_type="admin",
+                        source_id=clean_token,
+                        idempotency_key=idempotency_key,
+                        price_paid_jc=0,
+                        enforce_active=True,
+                        admin_id=int(request.session["admin_id"]),
+                        admin_name=request.session["admin_name"],
+                        event_details={
+                            "reason": clean_reason,
+                            "comment": clean_comment,
+                        },
+                    )
+                    inserted = True
+                    audit(
+                        conn,
+                        admin_id=request.session["admin_id"],
+                        admin_name=request.session["admin_name"],
+                        action="manual_vault_issue",
+                        entity_type="vault_member_reward",
+                        entity_id=int(reward["id"]),
+                        details={
+                            "client_id": client_id,
+                            "catalog_reward_id": int(catalog_reward_id),
+                            "reason": clean_reason,
+                            "comment": clean_comment,
+                            "price_paid_jc": 0,
+                        },
+                    )
+                catalog = conn.execute(
+                    "SELECT title FROM vault_catalog_rewards WHERE id=?",
+                    (int(reward["catalog_reward_id"]),),
+                ).fetchone()
+        except ValueError as exc:
+            messages = {
+                "client_not_found": "Клиент не найден",
+                "catalog_reward_not_found": "Карточка не найдена в THE VAULT",
+                "catalog_reward_inactive": "Эта карточка сейчас выключена в THE VAULT",
+                "catalog_reward_sold_out": "Тираж этой карточки закончился",
+            }
+            return RedirectResponse(
+                f"/clients/{client_id}?error={quote(messages.get(str(exc), str(exc)))}",
+                status_code=303,
+            )
+
+        title = catalog["title"] if catalog else f"#{reward['catalog_reward_id']}"
+        message = (
+            f"Карта «{title}» выдана без списания JC"
+            if inserted
+            else "Эта выдача уже была сохранена"
+        )
+        return RedirectResponse(
+            f"/clients/{client_id}?ok={quote(message)}",
+            status_code=303,
+        )
+
+    @app.post("/api/clients/{client_id:int}/vault/{reward_id:int}/redeem")
+    async def client_vault_redeem(
+        request: Request,
+        client_id: int,
+        reward_id: int,
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                title_row = conn.execute(
+                    """
+                    SELECT vcr.title
+                    FROM vault_member_rewards vmr
+                    JOIN vault_catalog_rewards vcr
+                      ON vcr.id=vmr.catalog_reward_id
+                    WHERE vmr.id=? AND vmr.client_id=?
+                    """,
+                    (reward_id, client_id),
+                ).fetchone()
+                reward = redeem_vault_reward_by_admin(
+                    conn,
+                    reward_id=reward_id,
+                    client_id=client_id,
+                    admin_id=int(request.session["admin_id"]),
+                    admin_name=request.session["admin_name"],
+                )
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="manual_vault_redeem",
+                    entity_type="vault_member_reward",
+                    entity_id=reward_id,
+                    details={
+                        "client_id": client_id,
+                        "code": reward["code"],
+                    },
+                )
+        except ValueError as exc:
+            messages = {
+                "vault_reward_not_found": "Карта не найдена у этого клиента",
+                "vault_reward_redeemed": "Карта уже списана",
+                "vault_reward_expired": "Срок действия карты истёк",
+                "vault_reward_cancelled": "Карта уже удалена",
+                "vault_reward_not_started": "Срок действия карты ещё не начался",
+            }
+            return RedirectResponse(
+                f"/clients/{client_id}?error={quote(messages.get(str(exc), str(exc)))}",
+                status_code=303,
+            )
+        title = title_row["title"] if title_row else reward["code"]
+        return RedirectResponse(
+            f"/clients/{client_id}?ok={quote(f'Карта «{title}» списана')}",
+            status_code=303,
+        )
+
+    @app.post("/api/clients/{client_id:int}/vault/{reward_id:int}/cancel")
+    async def client_vault_cancel(
+        request: Request,
+        client_id: int,
+        reward_id: int,
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                owned = conn.execute(
+                    """
+                    SELECT vmr.*,vcr.title
+                    FROM vault_member_rewards vmr
+                    JOIN vault_catalog_rewards vcr
+                      ON vcr.id=vmr.catalog_reward_id
+                    WHERE vmr.id=? AND vmr.client_id=?
+                    """,
+                    (reward_id, client_id),
+                ).fetchone()
+                if not owned:
+                    raise ValueError("vault_reward_not_found")
+                reward = cancel_vault_reward(
+                    conn,
+                    reward_id=reward_id,
+                    admin_id=int(request.session["admin_id"]),
+                    admin_name=request.session["admin_name"],
+                )
+                audit(
+                    conn,
+                    admin_id=request.session["admin_id"],
+                    admin_name=request.session["admin_name"],
+                    action="manual_vault_cancel",
+                    entity_type="vault_member_reward",
+                    entity_id=reward_id,
+                    details={
+                        "client_id": client_id,
+                        "code": reward["code"],
+                        "jackcoin_refunded": int(reward["price_paid_jc"] or 0),
+                    },
+                )
+        except ValueError as exc:
+            messages = {
+                "vault_reward_not_found": "Карта не найдена у этого клиента",
+                "vault_reward_redeemed": "Списанную карту удалить нельзя",
+                "vault_reward_expired": "Истёкшую карту удалить нельзя",
+                "vault_reward_cancelled": "Карта уже удалена",
+            }
+            return RedirectResponse(
+                f"/clients/{client_id}?error={quote(messages.get(str(exc), str(exc)))}",
+                status_code=303,
+            )
+
+        refund = int(reward["price_paid_jc"] or 0)
+        message = f"Карта «{owned['title']}» удалена из активных"
+        if refund:
+            message += f"; клиенту возвращено {refund} JC"
         return RedirectResponse(
             f"/clients/{client_id}?ok={quote(message)}",
             status_code=303,

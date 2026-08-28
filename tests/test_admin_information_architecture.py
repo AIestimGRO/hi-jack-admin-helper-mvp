@@ -9,6 +9,7 @@ from PIL import Image
 from app.config import Settings
 from app.db import transaction
 from app.main import create_app
+from app.services.vault import create_catalog_reward
 
 
 def make_client(tmp_path: Path) -> tuple[TestClient, Settings]:
@@ -220,6 +221,185 @@ def test_master_can_credit_real_jackcoin_from_client_card_idempotently(
         assert refreshed.status_code == 200
         assert "200 JC" in refreshed.text
         assert "Проверено администратором" in refreshed.text
+
+
+def test_master_can_issue_spend_and_remove_vault_cards_from_client(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_client(tmp_path)
+    with client:
+        login_master(client)
+        with transaction(settings.db_path) as conn:
+            client_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(first_name,nickname,source)
+                    VALUES ('Vault','Player','test')
+                    """
+                ).lastrowid
+            )
+            admin_id = int(
+                conn.execute(
+                    "SELECT id FROM admins WHERE username='master'"
+                ).fetchone()[0]
+            )
+            catalog = create_catalog_reward(
+                conn,
+                code="admin_card",
+                title="Free ReEntry Card",
+                description="Test card",
+                category="entry",
+                price_jc=400,
+                validity_days=7,
+                inventory_total=5,
+                redeem_instructions="Show card",
+                position=10,
+                admin_id=admin_id,
+            )
+
+        page = client.get(f"/clients/{client_id}")
+        assert page.status_code == 200
+        assert "Карты THE VAULT" in page.text
+        assert "Free ReEntry Card" in page.text
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        token = re.search(
+            r'name="operation_token" value="([^"]+)"',
+            page.text[page.text.index("vault-client-issue-form"):],
+        ).group(1)
+
+        issue = client.post(
+            f"/api/clients/{client_id}/vault/issue",
+            data={
+                "csrf_token": csrf,
+                "operation_token": token,
+                "catalog_reward_id": str(catalog["id"]),
+                "reason": "Бонус от клуба",
+                "comment": "Ручная выдача",
+            },
+            follow_redirects=False,
+        )
+        assert issue.status_code == 303
+
+        # Same browser operation token is idempotent.
+        duplicate = client.post(
+            f"/api/clients/{client_id}/vault/issue",
+            data={
+                "csrf_token": csrf,
+                "operation_token": token,
+                "catalog_reward_id": str(catalog["id"]),
+                "reason": "Бонус от клуба",
+                "comment": "Ручная выдача",
+            },
+            follow_redirects=False,
+        )
+        assert duplicate.status_code == 303
+
+        with transaction(settings.db_path) as conn:
+            first = conn.execute(
+                """
+                SELECT * FROM vault_member_rewards
+                WHERE client_id=? ORDER BY id
+                """,
+                (client_id,),
+            ).fetchall()
+            assert len(first) == 1
+            assert first[0]["source_type"] == "admin"
+            assert int(first[0]["price_paid_jc"]) == 0
+            first_id = int(first[0]["id"])
+            assert conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM jackcoin_ledger WHERE client_id=?",
+                (client_id,),
+            ).fetchone()[0] == 0
+
+        refreshed = client.get(f"/clients/{client_id}")
+        assert "Списать" in refreshed.text
+        assert "Удалить" in refreshed.text
+        csrf = re.search(
+            r'name="csrf_token" value="([^"]+)"',
+            refreshed.text,
+        ).group(1)
+
+        spent = client.post(
+            f"/api/clients/{client_id}/vault/{first_id}/redeem",
+            data={"csrf_token": csrf},
+            follow_redirects=False,
+        )
+        assert spent.status_code == 303
+        with transaction(settings.db_path) as conn:
+            assert conn.execute(
+                "SELECT status FROM vault_member_rewards WHERE id=?",
+                (first_id,),
+            ).fetchone()[0] == "redeemed"
+
+        refreshed = client.get(f"/clients/{client_id}")
+        csrf = re.search(
+            r'name="csrf_token" value="([^"]+)"',
+            refreshed.text,
+        ).group(1)
+        token = re.findall(
+            r'name="operation_token" value="([^"]+)"',
+            refreshed.text,
+        )[-1]
+        second_issue = client.post(
+            f"/api/clients/{client_id}/vault/issue",
+            data={
+                "csrf_token": csrf,
+                "operation_token": token,
+                "catalog_reward_id": str(catalog["id"]),
+                "reason": "Компенсация",
+                "comment": "",
+            },
+            follow_redirects=False,
+        )
+        assert second_issue.status_code == 303
+
+        with transaction(settings.db_path) as conn:
+            second_id = int(
+                conn.execute(
+                    """
+                    SELECT id FROM vault_member_rewards
+                    WHERE client_id=? AND status='active'
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (client_id,),
+                ).fetchone()[0]
+            )
+
+        refreshed = client.get(f"/clients/{client_id}")
+        csrf = re.search(
+            r'name="csrf_token" value="([^"]+)"',
+            refreshed.text,
+        ).group(1)
+        removed = client.post(
+            f"/api/clients/{client_id}/vault/{second_id}/cancel",
+            data={"csrf_token": csrf},
+            follow_redirects=False,
+        )
+        assert removed.status_code == 303
+
+        with transaction(settings.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT status,price_paid_jc FROM vault_member_rewards
+                WHERE client_id=? ORDER BY id
+                """,
+                (client_id,),
+            ).fetchall()
+            audits = conn.execute(
+                """
+                SELECT action FROM admin_audit_log
+                WHERE entity_type='vault_member_reward'
+                ORDER BY id
+                """
+            ).fetchall()
+
+        assert [row["status"] for row in rows] == ["redeemed", "cancelled"]
+        assert all(int(row["price_paid_jc"]) == 0 for row in rows)
+        assert {
+            "manual_vault_issue",
+            "manual_vault_redeem",
+            "manual_vault_cancel",
+        }.issubset({row["action"] for row in audits})
 
 
 def test_jackside_workspace_renders_legacy_source_without_async_loading(tmp_path: Path) -> None:

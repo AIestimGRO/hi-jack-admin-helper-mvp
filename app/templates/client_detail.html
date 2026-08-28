@@ -44,6 +44,62 @@
   {% endif %}
 </section>
 
+<section class="section-head"><div><h2>Карты THE VAULT</h2><p class="muted preference-note">Выдача администратором не списывает JACKCOIN. «Списать» = отметить использованной; «Удалить» = отменить и убрать из активных.</p></div></section>
+<section class="card vault-client-card">
+  {% if access_role == 'master' %}
+  <form class="vault-client-issue-form" action="/api/clients/{{ client.id }}/vault/issue" method="post" data-ajax-refresh=".vault-client-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="operation_token" value="{{ vault_operation_token }}">
+    <label>Карточка
+      <select name="catalog_reward_id" required>
+        <option value="">Выберите карточку</option>
+        {% for reward in vault_catalog %}
+          {% set sold_out = reward.inventory_total is not none and reward.allocated_count >= reward.inventory_total %}
+          <option value="{{ reward.id }}" {% if sold_out %}disabled{% endif %}>{{ reward.title }}{% if reward.validity_days %} · {{ reward.validity_days }} дн.{% endif %}{% if reward.inventory_total is not none %} · остаток {{ reward.inventory_total - reward.allocated_count }}{% else %} · без лимита{% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Причина
+      <select name="reason" required>
+        <option value="Бонус от клуба">Бонус от клуба</option>
+        <option value="Отзыв">Отзыв</option>
+        <option value="Компенсация">Компенсация</option>
+        <option value="Акция">Акция</option>
+        <option value="Другое">Другое</option>
+      </select>
+    </label>
+    <label>Комментарий<input name="comment" maxlength="300" placeholder="Необязательно"></label>
+    <button class="plus-button" type="submit">+ Выдать карточку</button>
+  </form>
+  {% endif %}
+
+  <div class="vault-client-reward-list">
+    {% for reward in vault_rewards %}
+    <article class="vault-client-reward" data-vault-reward-id="{{ reward.id }}">
+      <div class="vault-client-reward-main">
+        <strong>{{ reward.title }}</strong>
+        <span>{{ {'active':'Активна','redeemed':'Списана','expired':'Истекла','cancelled':'Удалена'}.get(reward.status, reward.status) }} · {{ {'purchase':'Куплена','final_prize':'Приз','admin':'Выдана админом'}.get(reward.source_type, reward.source_type) }}</span>
+        <small>{% if reward.valid_until %}до {{ display_datetime(reward.valid_until) }}{% else %}без срока{% endif %} · {{ reward.code }}</small>
+      </div>
+      {% if reward.status == 'active' and access_role == 'master' %}
+      <div class="vault-client-reward-actions">
+        <form action="/api/clients/{{ client.id }}/vault/{{ reward.id }}/redeem" method="post" data-ajax-refresh=".vault-client-card" onsubmit="return confirm('Списать карту {{ reward.title }} как использованную?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button" type="submit">Списать</button>
+        </form>
+        <form action="/api/clients/{{ client.id }}/vault/{{ reward.id }}/cancel" method="post" data-ajax-refresh=".vault-client-card" onsubmit="return confirm('Удалить карту {{ reward.title }} из активных? Купленные за JC карты будут возвращены клиенту с возвратом JACKCOIN.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="danger-outline" type="submit">Удалить</button>
+        </form>
+      </div>
+      {% endif %}
+    </article>
+    {% else %}
+    <div class="empty">У клиента пока нет карт THE VAULT</div>
+    {% endfor %}
+  </div>
+</section>
+
 <section class="section-head"><div><h2>Преференции</h2><p class="muted preference-note">FreeEntry, FreeReEntry, FreeAddon и скидки. Они не меняют баланс JACKCOIN.</p></div></section>
 
 <div class="preference-grid">

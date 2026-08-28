@@ -137,3 +137,21 @@
 @media(max-width:760px){.jackcoin-admin-head{align-items:flex-start}.jackcoin-admin-head>.muted{max-width:34ch}.jackcoin-credit-form{grid-template-columns:1fr 1fr}.jackcoin-credit-form label:nth-of-type(3){grid-column:1/-1}.jackcoin-credit-submit{width:100%}}
 @media(max-width:430px){.jackcoin-admin-head{display:grid}.jackcoin-credit-form{grid-template-columns:1fr}.jackcoin-credit-form label:nth-of-type(3){grid-column:auto}}
 
+/* Client detail: admin THE VAULT card controls. */
+.vault-client-card{padding:16px 18px;display:grid;gap:12px}
+.vault-client-issue-form{display:grid;grid-template-columns:minmax(220px,1.2fr) minmax(150px,.7fr) minmax(180px,1fr) auto;align-items:end;gap:8px}
+.vault-client-issue-form label{gap:5px;font-size:11px}
+.vault-client-issue-form input,.vault-client-issue-form select{min-height:42px}
+.vault-client-issue-form button{min-height:42px;white-space:nowrap}
+.vault-client-reward-list{display:grid;gap:7px;padding-top:11px;border-top:1px solid var(--line)}
+.vault-client-reward{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 11px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.018)}
+.vault-client-reward-main{display:grid;gap:2px;min-width:0}
+.vault-client-reward-main strong,.vault-client-reward-main span,.vault-client-reward-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vault-client-reward-main span{font-size:11px;color:#b6c4c1}
+.vault-client-reward-main small{font-size:10px;color:var(--muted)}
+.vault-client-reward-actions{display:flex;gap:7px;flex:0 0 auto}
+.vault-client-reward-actions form{margin:0}
+.vault-client-reward-actions button{min-height:36px;padding:0 11px}
+@media(max-width:760px){.vault-client-issue-form{grid-template-columns:1fr 1fr}.vault-client-issue-form label:nth-of-type(3){grid-column:1/-1}.vault-client-issue-form button{width:100%}.vault-client-reward{align-items:flex-start}.vault-client-reward-actions{flex-direction:column}}
+@media(max-width:430px){.vault-client-issue-form{grid-template-columns:1fr}.vault-client-issue-form label:nth-of-type(3){grid-column:auto}.vault-client-reward{display:grid}.vault-client-reward-actions{flex-direction:row}.vault-client-reward-actions form{flex:1}.vault-client-reward-actions button{width:100%}}
+

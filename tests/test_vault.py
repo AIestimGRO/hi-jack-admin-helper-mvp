@@ -27,9 +27,11 @@ from app.services.vault import (
     create_catalog_reward,
     expire_activations,
     expire_rewards,
+    issue_reward,
     purchase_reward,
     purchase_token,
     redeem_reward,
+    redeem_reward_by_admin,
     valid_purchase_token,
 )
 
@@ -200,6 +202,86 @@ def test_inventory_and_cancellation_refund_are_transactional(tmp_path) -> None:
         assert jackcoin_balance(conn, first_client) == 500
         assert second["status"] == "active"
         assert jackcoin_balance(conn, second_client) == 0
+
+
+def test_admin_issue_redeem_and_cancel_are_auditable_without_charging_jc(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "vault-admin-controls.sqlite3"
+    init_db(db_path)
+    now = datetime(2026, 8, 28, 10, 0, tzinfo=timezone.utc)
+    with transaction(db_path) as conn:
+        client_id = _client(conn, 1)
+        catalog = _catalog(conn, price=500, inventory=3, validity_days=30)
+
+        issued = issue_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            source_type="admin",
+            source_id="manual-one",
+            idempotency_key="admin:issue:one",
+            price_paid_jc=0,
+            now=now,
+            admin_id=1,
+            admin_name="Master",
+            event_details={"reason": "Бонус от клуба"},
+        )
+        assert issued["status"] == "active"
+        assert issued["source_type"] == "admin"
+        assert int(issued["price_paid_jc"]) == 0
+        assert jackcoin_balance(conn, client_id) == 0
+
+        spent = redeem_reward_by_admin(
+            conn,
+            reward_id=int(issued["id"]),
+            client_id=client_id,
+            admin_id=1,
+            admin_name="Master",
+            now=now + timedelta(minutes=5),
+        )
+        assert spent["status"] == "redeemed"
+
+        removable = issue_reward(
+            conn,
+            client_id=client_id,
+            catalog_reward_id=int(catalog["id"]),
+            source_type="admin",
+            source_id="manual-two",
+            idempotency_key="admin:issue:two",
+            price_paid_jc=0,
+            now=now,
+            admin_id=1,
+            admin_name="Master",
+        )
+        removed = cancel_reward(
+            conn,
+            reward_id=int(removable["id"]),
+            admin_id=1,
+            admin_name="Master",
+        )
+        assert removed["status"] == "cancelled"
+        assert jackcoin_balance(conn, client_id) == 0
+
+        events = conn.execute(
+            """
+            SELECT action,admin_name,details
+            FROM vault_reward_events
+            WHERE client_id=?
+            ORDER BY id
+            """,
+            (client_id,),
+        ).fetchall()
+
+    assert [row["action"] for row in events] == [
+        "issued",
+        "redeemed",
+        "issued",
+        "cancelled",
+    ]
+    assert events[0]["admin_name"] == "Master"
+    assert "Бонус от клуба" in events[0]["details"]
+    assert events[1]["admin_name"] == "Master"
 
 
 def test_redeem_is_one_time_and_expiry_is_recorded(tmp_path) -> None:
