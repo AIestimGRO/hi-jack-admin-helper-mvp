@@ -133,6 +133,11 @@ def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS ux_legal_reference_documents_active
             ON legal_reference_documents(code) WHERE is_active=1;
 
+        CREATE TABLE IF NOT EXISTS legal_content_policy_state (
+            policy_key TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS member_optional_consent_state (
             account_id INTEGER NOT NULL REFERENCES member_accounts(id)
                 ON DELETE CASCADE,
@@ -221,6 +226,7 @@ def ensure_legal_registration_schema(conn: sqlite3.Connection) -> None:
         """
     )
     _seed_documents(conn)
+    _blank_active_legal_content_once(conn)
 
 
 def _seed_documents(conn: sqlite3.Connection) -> None:
@@ -289,6 +295,30 @@ def _seed_documents(conn: sqlite3.Connection) -> None:
                     meta["kind"],
                 ),
             )
+
+
+def _blank_active_legal_content_once(conn: sqlite3.Connection) -> None:
+    policy_key = "blank-active-legal-content-2026-08-28"
+    applied = conn.execute(
+        "SELECT 1 FROM legal_content_policy_state WHERE policy_key=?",
+        (policy_key,),
+    ).fetchone()
+    if applied:
+        return
+    conn.execute(
+        "UPDATE legal_documents SET content='' WHERE is_active=1 AND content<>''"
+    )
+    conn.execute(
+        """
+        UPDATE legal_reference_documents
+        SET content=''
+        WHERE is_active=1 AND content<>''
+        """
+    )
+    conn.execute(
+        "INSERT INTO legal_content_policy_state(policy_key) VALUES (?)",
+        (policy_key,),
+    )
 
 
 def _active_reference(conn: sqlite3.Connection, code: str) -> sqlite3.Row | None:
@@ -513,56 +543,7 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                         status_code=401,
                     )
 
-        pending_email = ""
-        marketing_choice: bool | None = None
-        if method == "POST" and path == "/account/register/verify":
-            code_id = request.session.get("member_registration_code_id")
-            marketing_choice = bool(
-                request.session.get("member_registration_marketing", False)
-            )
-            if code_id:
-                with connect(settings.db_path) as conn:
-                    row = conn.execute(
-                        """
-                        SELECT email_normalized FROM member_email_codes
-                        WHERE id=? AND purpose='register'
-                        """,
-                        (int(code_id),),
-                    ).fetchone()
-                if row:
-                    pending_email = str(row["email_normalized"] or "")
-
-        response = await call_next(request)
-
-        if (
-            method == "POST"
-            and path == "/account/register/verify"
-            and response.status_code in {302, 303}
-            and pending_email
-            and marketing_choice is not None
-        ):
-            recorded = False
-            with transaction(settings.db_path) as conn:
-                account = conn.execute(
-                    """
-                    SELECT id FROM member_accounts
-                    WHERE email_normalized=? ORDER BY id DESC LIMIT 1
-                    """,
-                    (pending_email,),
-                ).fetchone()
-                if account:
-                    _record_optional_consent(
-                        conn,
-                        settings=settings,
-                        request=request,
-                        account_id=int(account["id"]),
-                        code="marketing-consent",
-                        granted=marketing_choice,
-                    )
-                    recorded = True
-            if recorded:
-                request.session.pop("member_registration_marketing", None)
-        return response
+        return await call_next(request)
 
     @app.get("/legal/{public_code}", response_class=HTMLResponse)
     async def legal_document_page(request: Request, public_code: str):
@@ -587,7 +568,6 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
     async def registration_legal_extra(
         request: Request,
         birth_date: str = Form(...),
-        marketing: bool = Form(False),
         csrf_token: str = Form(...),
     ):
         _check_csrf(request, csrf_token)
@@ -602,7 +582,8 @@ def install_legal_registration(app: FastAPI) -> FastAPI:
                 },
                 status_code=409,
             )
-        request.session["member_registration_marketing"] = bool(marketing)
+        request.session["member_registration_birth_date"] = str(birth_date)
+        request.session.pop("member_registration_marketing", None)
         return JSONResponse({"ok": True})
 
     @app.get("/account/legal", response_class=HTMLResponse)

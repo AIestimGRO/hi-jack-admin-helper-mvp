@@ -132,10 +132,8 @@ from app.services.jackside_issues import (
 )
 from app.services.member_accounts import (
     MEMBER_COOKIE_NAME,
-    active_legal_documents,
     authenticate_account,
     authenticated_member,
-    consent_payload,
     generate_email_code as generate_member_email_code,
     hash_password,
     issue_session as issue_member_session,
@@ -765,34 +763,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request.session.pop("member_next", None)
         return value or "/account"
 
-    def member_registration_flow(request: Request) -> dict[str, Any]:
-        flow = request.session.get("member_registration_flow")
-        if not isinstance(flow, dict):
-            flow = {"accepted": {}}
-            request.session["member_registration_flow"] = flow
-        if not isinstance(flow.get("accepted"), dict):
-            flow["accepted"] = {}
-        return flow
-
     def member_telegram_redirect_uri(request: Request) -> str:
         return str(request.url_for("member_telegram_callback"))
 
     def missing_member_documents(account_id: int) -> list[sqlite3.Row]:
-        with connect(settings.db_path) as conn:
-            return conn.execute(
-                """
-                SELECT ld.* FROM legal_documents ld
-                WHERE ld.is_active=1
-                  AND NOT EXISTS (
-                    SELECT 1 FROM member_consents mc
-                    WHERE mc.account_id=? AND mc.document_code=ld.code
-                      AND mc.document_version=ld.version
-                  )
-                ORDER BY CASE ld.code
-                    WHEN 'privacy' THEN 1 WHEN 'rewards' THEN 2 ELSE 99 END, ld.id
-                """,
-                (account_id,),
-            ).fetchall()
+        # Preserve document rows and historical proof, but do not gate access
+        # while legal document bodies are intentionally blank.
+        _ = account_id
+        return []
+
 
     @app.get("/account/telegram/start")
     async def member_telegram_start(request: Request):
@@ -932,18 +911,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return RedirectResponse(
                 member_continue_path(request, consume=True), status_code=303
             )
-        flow = member_registration_flow(request)
-        with connect(settings.db_path) as conn:
-            documents = active_legal_documents(conn)
-        accepted = flow["accepted"]
+        request.session.pop("member_registration_flow", None)
+        request.session.pop("member_registration_marketing", None)
         pending_id = request.session.get("member_registration_code_id")
         pending_email = ""
         draft = request.session.get("member_registration_draft") or {}
-        if "privacy" not in accepted:
-            step = "privacy"
-        elif "rewards" not in accepted:
-            step = "rewards"
-        elif pending_id:
+        if pending_id:
             step = "verify"
             with connect(settings.db_path) as conn:
                 row = conn.execute(
@@ -973,7 +946,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             member_context(
                 request,
                 step=step,
-                documents=documents,
                 email_available=bool(settings.smtp_host and settings.smtp_from),
                 email_code_minutes=settings.email_code_minutes,
                 pending_email=pending_email,
@@ -986,39 +958,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/account/register/consent")
     async def member_register_consent(
         request: Request,
-        document_code: str = Form(...),
+        document_code: str = Form(""),
         accepted: bool = Form(False),
         csrf_token: str = Form(...),
     ):
         member_portal_or_404()
         check_csrf(request, csrf_token)
-        if document_code not in {"privacy", "rewards"} or not accepted:
-            return member_redirect(
-                "/account/register",
-                "Для продолжения необходимо принять условия",
-                error=True,
-            )
-        flow = member_registration_flow(request)
-        expected = "privacy" if "privacy" not in flow["accepted"] else "rewards"
-        if document_code != expected:
-            request.session.pop("member_registration_flow", None)
-            return member_redirect(
-                "/account/register",
-                "Последовательность регистрации устарела. Начните заново",
-                error=True,
-            )
-        with connect(settings.db_path) as conn:
-            document = active_legal_documents(conn).get(document_code)
-        if not document:
-            return member_redirect(
-                "/account/register", "Документ временно недоступен", error=True
-            )
-        flow["accepted"][document_code] = {
-            "version": str(document["version"]),
-            "accepted_at": quiz_timestamp(utc_now()),
-        }
-        request.session["member_registration_flow"] = flow
+        _ = (document_code, accepted)
+        request.session.pop("member_registration_flow", None)
         return RedirectResponse("/account/register", status_code=303)
+
 
     @app.post("/account/register/request-code")
     async def member_register_request_code(
@@ -1054,13 +1003,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise ValueError(
                     "Укажите российский номер телефона из 10 цифр, например +7 999 123-45-67"
                 )
-            flow = member_registration_flow(request)
             if password != password_confirmation:
                 raise ValueError("Пароли не совпадают")
             password_hash = hash_password(password)
             with connect(settings.db_path) as conn:
-                documents = active_legal_documents(conn)
-                consents_json = consent_payload(documents, flow["accepted"])
                 if conn.execute(
                     "SELECT 1 FROM member_accounts WHERE email_normalized=?",
                     (normalized_email,),
@@ -1077,7 +1023,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "phone": phone.strip()[:80],
                     "phone_local": phone_local,
                     "first_name": first_name.strip()[:100],
-                    "consents": json.loads(consents_json),
+                    "consents": [],
                 },
                 ensure_ascii=False,
                 sort_keys=True,

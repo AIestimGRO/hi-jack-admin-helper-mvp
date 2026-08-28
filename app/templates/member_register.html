@@ -3,40 +3,16 @@
 {% block content %}
 <section class="member-card registration-card">
   <div class="registration-progress" aria-label="Этап регистрации">
-    <span class="{{ 'active' if step == 'privacy' else 'done' }}">1</span>
+    <span class="{{ 'active' if step == 'profile' else 'done' }}">1</span>
     <i></i>
-    <span class="{{ 'active' if step == 'rewards' else ('done' if step in ['profile','verify'] else '') }}">2</span>
-    <i></i>
-    <span class="{{ 'active' if step in ['profile','verify'] else '' }}">3</span>
+    <span class="{{ 'active' if step == 'verify' else '' }}">2</span>
   </div>
 
   {% if ok %}<div class="member-alert success">{{ ok }}</div>{% endif %}
   {% if error %}<div class="member-alert error">{{ error }}</div>{% endif %}
 
-  {% if step in ['privacy', 'rewards'] %}
-    {% set document = documents[step] %}
-    <p class="member-eyebrow">Первый вход · шаг {{ 1 if step == 'privacy' else 2 }} из 3</p>
-    <h1>{{ document.title }}</h1>
-    <p class="document-version">Редакция {{ document.version }}</p>
-    {% if step == 'rewards' %}
-      <p class="member-muted">Перед предоставлением согласия тебе доступна <a href="/legal/privacy-policy" target="_blank" rel="noopener">Политика обработки и защиты персональных данных</a>.</p>
-    {% endif %}
-    <div class="legal-copy">{{ document.content }}</div>
-    <form class="member-form consent-form" action="/account/register/consent" method="post" data-consent-form>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="document_code" value="{{ step }}">
-      <label class="member-check">
-        <input name="accepted" type="checkbox" value="true" required data-consent-checkbox>
-        {% if step == 'privacy' %}
-        <span>Я принимаю Пользовательское соглашение и Правила Hi, Jack! Club</span>
-        {% else %}
-        <span>Я даю согласие на обработку моих персональных данных</span>
-        {% endif %}
-      </label>
-      <button class="member-primary" type="submit" disabled data-consent-submit>Далее</button>
-    </form>
-  {% elif step == 'profile' %}
-    <p class="member-eyebrow">Создание аккаунта · шаг 3 из 3</p>
+  {% if step == 'profile' %}
+    <p class="member-eyebrow">Создание аккаунта · шаг 1 из 2</p>
     <h1>Личные данные</h1>
     <p class="member-muted">Почта для входа · телефон для карты клуба</p>
     {% if not email_available %}
@@ -51,19 +27,10 @@
       <small class="password-match-message" data-registration-extra-message hidden></small>
       <label>Пароль <small>От 6 символов, минимум одна буква</small><input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password></label>
       <label>Повторите пароль<input name="password_confirmation" type="password" minlength="6" maxlength="128" autocomplete="new-password" required data-registration-password-confirmation><small class="password-match-message" data-password-match-message hidden>Пароли не совпадают</small></label>
-
-      <div class="registration-optional-consent">
-        <label class="member-check">
-          <input name="marketing_consent" type="checkbox" value="true" data-registration-marketing>
-          <span>Хочу получать новости, акции и специальные предложения Hi, Jack! Club</span>
-        </label>
-        <small class="member-muted">Необязательно. Чекбокс выключен по умолчанию, отказ не препятствует регистрации. <a href="/legal/marketing-consent" target="_blank" rel="noopener">Полный текст согласия</a></small>
-      </div>
-
       <button class="member-primary" type="submit" {% if not email_available %}disabled{% endif %} data-registration-submit>Получить код</button>
     </form>
   {% else %}
-    <p class="member-eyebrow">Подтверждение почты</p>
+    <p class="member-eyebrow">Подтверждение почты · шаг 2 из 2</p>
     <h1>Введите код</h1>
     <p class="member-muted">Код отправлен на <strong>{{ pending_email }}</strong><br>Действует {{ email_code_minutes }} минут</p>
     <form class="member-form" action="/account/register/verify" method="post">
@@ -84,15 +51,7 @@
     <p class="member-muted member-verify-hint">Нет письма? Проверьте «Спам»</p>
   {% endif %}
 
-  <div class="registration-legal-links">
-    <a href="/legal/user-agreement" target="_blank" rel="noopener">Пользовательское соглашение</a>
-    <a href="/legal/privacy-policy" target="_blank" rel="noopener">Политика персональных данных</a>
-    <a href="/legal/personal-data-consent" target="_blank" rel="noopener">Согласие на обработку ПД</a>
-  </div>
   <p class="member-switch">Уже есть аккаунт? <a href="/account/login">Войти</a></p>
 </section>
-<style>
-.registration-optional-consent{display:grid;gap:6px;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}.registration-optional-consent small{line-height:1.45}.registration-legal-links{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:14px}.registration-legal-links a{font-size:11px;color:rgba(255,255,255,.55)}
-</style>
 <script src="{{ url_for('static', path='/js/member-registration-extra.js') }}?v={{ asset_version }}" defer></script>
 {% endblock %}

@@ -4,7 +4,6 @@
 
   const birthday = form.querySelector('[data-registration-birth-date]');
   const phone = form.querySelector('[data-registration-phone]');
-  const marketing = form.querySelector('[data-registration-marketing]');
   const message = form.querySelector('[data-registration-extra-message]');
   const submit = form.querySelector('[data-registration-submit]');
 
@@ -44,11 +43,6 @@
     }
 
     const csrf = form.querySelector('input[name="csrf_token"]')?.value || '';
-    const legalPayload = new FormData();
-    legalPayload.set('csrf_token', csrf);
-    legalPayload.set('birth_date', birthday.value);
-    if (marketing?.checked) legalPayload.set('marketing', 'true');
-
     const identityPayload = new FormData();
     identityPayload.set('csrf_token', csrf);
     identityPayload.set('birth_date', birthday.value);
@@ -56,7 +50,6 @@
 
     if (submit) submit.disabled = true;
     try {
-      await postForm('/api/account/register/legal-extra', legalPayload);
       await postForm('/api/account/register/draft-extra', identityPayload);
       form.dataset.extraValidated = '1';
       form.requestSubmit();

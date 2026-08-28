@@ -70,44 +70,26 @@ def _request() -> Request:
     )
 
 
-def test_supplied_legal_documents_and_registration_labels_are_kept_separate() -> None:
+def test_legal_source_slots_are_empty_and_registration_has_no_consent_ui() -> None:
     root = Path(__file__).resolve().parents[1]
-    agreement = (root / "data/legal/01_user_agreement.txt").read_text(
-        encoding="utf-8"
-    )
-    policy = (root / "data/legal/02_privacy_policy.txt").read_text(encoding="utf-8")
-    consent = (root / "data/legal/03_personal_data_consent.txt").read_text(
-        encoding="utf-8"
-    )
-    marketing = (root / "data/legal/04_marketing_consent.txt").read_text(
-        encoding="utf-8"
-    )
-    image = (root / "data/legal/05_image_consent.txt").read_text(encoding="utf-8")
-    rating = (root / "data/legal/06_public_rating_consent.txt").read_text(
-        encoding="utf-8"
-    )
+    for filename in (
+        "01_user_agreement.txt",
+        "02_privacy_policy.txt",
+        "03_personal_data_consent.txt",
+        "04_marketing_consent.txt",
+        "05_image_consent.txt",
+        "06_public_rating_consent.txt",
+    ):
+        assert (root / "data/legal" / filename).read_text(encoding="utf-8") == ""
+
     register = (root / "app/templates/member_register.html").read_text(
         encoding="utf-8"
     )
-
-    assert "достигшее 18 лет" in agreement
-    assert "Политика подлежит размещению в свободном доступе" in policy
-    assert "Настоящее Согласие не предоставляет Оператору право распространять" in consent
-    assert "НЕ ЯВЛЯЕТСЯ ОБЯЗАТЕЛЬНЫМ УСЛОВИЕМ РЕГИСТРАЦИИ" in marketing
-    assert "НЕ ЯВЛЯЕТСЯ ОБЯЗАТЕЛЬНЫМ УСЛОВИЕМ РЕГИСТРАЦИИ" in image
-    assert "оформляется отдельно от общего согласия" in rating
-
-    assert (
-        "Я принимаю Пользовательское соглашение и Правила Hi, Jack! Club"
-        in register
-    )
-    assert "Я даю согласие на обработку моих персональных данных" in register
-    assert 'href="/legal/privacy-policy"' in register
-    assert 'name="marketing_consent" type="checkbox"' in register
-    assert (
-        'name="marketing_consent" type="checkbox" value="true" '
-        "data-registration-marketing>" in register
-    )
+    assert "data-registration-form" in register
+    assert "data-consent-form" not in register
+    assert 'type="checkbox"' not in register
+    assert "marketing_consent" not in register
+    assert "/legal/" not in register
 
 
 def test_schema_replaces_legacy_seed_but_preserves_master_published_version(
@@ -135,6 +117,12 @@ def test_schema_replaces_legacy_seed_but_preserves_master_published_version(
         assert current["title"] == (
             "Пользовательское соглашение и Правила Hi, Jack! Club"
         )
+        assert conn.execute(
+            """
+            SELECT content FROM legal_documents
+            WHERE code='privacy' AND is_active=1
+            """
+        ).fetchone()["content"] == ""
         reference_count = conn.execute(
             """
             SELECT COUNT(*) FROM legal_reference_documents
@@ -260,58 +248,110 @@ def test_optional_and_public_rating_consent_proof_is_versioned_and_redacted_on_d
         assert rating_event["user_agent"] is None
 
 
-def test_registration_flow_has_two_mandatory_actions_policy_link_and_optional_marketing(
+def test_registration_starts_with_profile_and_public_legal_body_is_empty(
     tmp_path: Path,
 ) -> None:
-    client = TestClient(create_app(_settings(tmp_path)))
+    settings = _settings(tmp_path)
+    client = TestClient(create_app(settings))
     with client:
-        first = client.get("/account/register")
-        assert first.status_code == 200
-        assert (
-            "Я принимаю Пользовательское соглашение и Правила Hi, Jack! Club"
-            in first.text
-        )
-        token = _csrf(first.text)
-        accepted = client.post(
+        page = client.get("/account/register")
+        assert page.status_code == 200
+        assert "data-registration-form" in page.text
+        assert "data-consent-form" not in page.text
+        assert 'type="checkbox"' not in page.text
+        assert "marketing_consent" not in page.text
+        assert "/legal/" not in page.text
+
+        stale = client.post(
             "/account/register/consent",
             data={
-                "csrf_token": token,
+                "csrf_token": _csrf(page.text),
                 "document_code": "privacy",
                 "accepted": "true",
             },
             follow_redirects=False,
         )
-        assert accepted.status_code == 303
-
-        second = client.get("/account/register")
-        assert "Я даю согласие на обработку моих персональных данных" in second.text
-        assert "/legal/privacy-policy" in second.text
-        token = _csrf(second.text)
-        accepted = client.post(
-            "/account/register/consent",
-            data={
-                "csrf_token": token,
-                "document_code": "rewards",
-                "accepted": "true",
-            },
-            follow_redirects=False,
-        )
-        assert accepted.status_code == 303
-
-        profile = client.get("/account/register")
-        assert (
-            "Хочу получать новости, акции и специальные предложения Hi, Jack! Club"
-            in profile.text
-        )
-        assert "data-registration-marketing>" in profile.text
-        assert "/legal/marketing-consent" in profile.text
+        assert stale.status_code == 303
+        assert stale.headers["location"] == "/account/register"
 
         policy = client.get("/legal/privacy-policy")
         assert policy.status_code == 200
-        assert (
-            "ПОЛИТИКА В ОТНОШЕНИИ ОБРАБОТКИ И ЗАЩИТЫ ПЕРСОНАЛЬНЫХ ДАННЫХ"
-            in policy.text
+        assert "legal-document-card" in policy.text
+        assert "Политика в отношении обработки и защиты персональных данных" in policy.text
+        assert "Политика подлежит размещению в свободном доступе" not in policy.text
+
+        with transaction(settings.db_path) as conn:
+            active_bodies = conn.execute(
+                """
+                SELECT content FROM legal_documents WHERE is_active=1
+                UNION ALL
+                SELECT content FROM legal_reference_documents WHERE is_active=1
+                """
+            ).fetchall()
+            assert active_bodies
+            assert all(str(row["content"] or "") == "" for row in active_bodies)
+
+
+def test_existing_consent_history_is_preserved_when_document_bodies_are_blank(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    TestClient(create_app(settings))
+    with transaction(settings.db_path) as conn:
+        client_id = int(
+            conn.execute(
+                """
+                INSERT INTO clients(first_name,client_status,source)
+                VALUES ('History User','existing','test')
+                """
+            ).lastrowid
         )
+        account_id = int(
+            conn.execute(
+                """
+                INSERT INTO member_accounts(
+                    client_id,email,email_normalized,password_hash,email_verified_at
+                ) VALUES (?,?,?,?,CURRENT_TIMESTAMP)
+                """,
+                (client_id, "history@example.com", "history@example.com", "hash"),
+            ).lastrowid
+        )
+        document = conn.execute(
+            "SELECT id,code,version FROM legal_documents WHERE code='privacy' AND is_active=1"
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO member_consents(
+                account_id,document_id,document_code,document_version,
+                ip_hash,user_agent
+            ) VALUES (?,?,?,?,?,?)
+            """,
+            (
+                account_id,
+                int(document["id"]),
+                str(document["code"]),
+                str(document["version"]),
+                "proof",
+                "pytest",
+            ),
+        )
+        before = conn.execute(
+            "SELECT COUNT(*) FROM member_consents WHERE account_id=?",
+            (account_id,),
+        ).fetchone()[0]
+        ensure_legal_registration_schema(conn)
+        after = conn.execute(
+            "SELECT COUNT(*) FROM member_consents WHERE account_id=?",
+            (account_id,),
+        ).fetchone()[0]
+        content = conn.execute(
+            "SELECT content FROM legal_documents WHERE id=?",
+            (int(document["id"]),),
+        ).fetchone()["content"]
+
+    assert before == 1
+    assert after == 1
+    assert content == ""
 
 
 def test_registration_rejects_under_18_before_account_creation(tmp_path: Path) -> None:

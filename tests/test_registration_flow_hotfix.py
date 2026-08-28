@@ -30,12 +30,17 @@ def _csrf(html: str) -> str:
     return match.group(1)
 
 
-def test_duplicate_consent_submit_does_not_reset_registration_flow(tmp_path: Path) -> None:
+def test_cached_consent_submit_is_ignored_and_registration_stays_on_profile(
+    tmp_path: Path,
+) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
     with client:
-        first = client.get("/account/register")
-        token = _csrf(first.text)
-        accepted = client.post(
+        page = client.get("/account/register")
+        assert "data-registration-form" in page.text
+        assert "data-consent-form" not in page.text
+        token = _csrf(page.text)
+
+        stale = client.post(
             "/account/register/consent",
             data={
                 "csrf_token": token,
@@ -44,50 +49,12 @@ def test_duplicate_consent_submit_does_not_reset_registration_flow(tmp_path: Pat
             },
             follow_redirects=False,
         )
-        assert accepted.status_code == 303
+        assert stale.status_code == 303
+        assert stale.headers["location"] == "/account/register"
 
-        duplicate = client.post(
-            "/account/register/consent",
-            data={
-                "csrf_token": token,
-                "document_code": "privacy",
-                "accepted": "true",
-            },
-            follow_redirects=False,
-        )
-        assert duplicate.status_code == 303
-
-        second = client.get("/account/register")
-        assert "data-consent-form" in second.text
-        assert 'value="rewards"' in second.text
-        assert 'value="privacy"' not in second.text
-
-        token = _csrf(second.text)
-        accepted = client.post(
-            "/account/register/consent",
-            data={
-                "csrf_token": token,
-                "document_code": "rewards",
-                "accepted": "true",
-            },
-            follow_redirects=False,
-        )
-        assert accepted.status_code == 303
-
-        duplicate = client.post(
-            "/account/register/consent",
-            data={
-                "csrf_token": token,
-                "document_code": "rewards",
-                "accepted": "true",
-            },
-            follow_redirects=False,
-        )
-        assert duplicate.status_code == 303
-
-        profile = client.get("/account/register")
-        assert "data-registration-form" in profile.text
-        assert "data-consent-form" not in profile.text
+        page = client.get("/account/register")
+        assert "data-registration-form" in page.text
+        assert "data-consent-form" not in page.text
 
 
 def test_legal_extra_accepts_adult_registration_state(tmp_path: Path) -> None:
@@ -100,7 +67,6 @@ def test_legal_extra_accepts_adult_registration_state(tmp_path: Path) -> None:
             data={
                 "csrf_token": token,
                 "birth_date": "1990-01-01",
-                "marketing": "true",
             },
         )
         assert response.status_code == 200
