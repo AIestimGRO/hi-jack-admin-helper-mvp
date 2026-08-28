@@ -23,7 +23,6 @@ def install_registration_flow_hotfix(app: FastAPI) -> FastAPI:
     if getattr(app.state, "registration_flow_hotfix_installed", False):
         return app
     app.state.registration_flow_hotfix_installed = True
-    settings = app.state.settings
 
     @app.post("/account/register/consent")
     async def member_register_consent_idempotent(
