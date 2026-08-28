@@ -30,46 +30,21 @@ def legacy_password_fixture(request, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def current_member_registration_contract(request, monkeypatch):
-    """Adapt legacy member-account tests to the current legal registration steps."""
+    """Adapt legacy member-account tests to registration without legal consent."""
     module = getattr(request, "module", None)
     if module is None or module.__name__.split(".")[-1] != "test_member_accounts":
         yield
         return
 
     def accept_registration_documents(client) -> None:
-        agreement = client.get("/account/register")
-        assert agreement.status_code == 200
-        assert (
-            "Пользовательское соглашение и Правила Hi, Jack! Club"
-            in agreement.text
-        )
-        response = client.post(
-            "/account/register/consent",
-            data={
-                "document_code": "privacy",
-                "accepted": "true",
-                "csrf_token": module.csrf_from(agreement),
-            },
-            follow_redirects=False,
-        )
-        assert response.status_code == 303
-
-        consent = client.get("/account/register")
-        assert "Согласие на обработку персональных данных" in consent.text
-        response = client.post(
-            "/account/register/consent",
-            data={
-                "document_code": "rewards",
-                "accepted": "true",
-                "csrf_token": module.csrf_from(consent),
-            },
-            follow_redirects=False,
-        )
-        assert response.status_code == 303
-
-        # Browser JS persists this before request-code. Legacy tests call the
-        # request-code endpoint directly, so mirror that browser-side step here.
+        # The helper name is kept for legacy tests, but registration no longer
+        # presents or requires legal-document consent checkboxes. Browser JS
+        # still persists the adult birth date before the request-code submit.
         profile = client.get("/account/register")
+        assert profile.status_code == 200
+        assert "data-registration-form" in profile.text
+        assert "data-consent-form" not in profile.text
+        assert 'type="checkbox"' not in profile.text
         legal_extra = client.post(
             "/api/account/register/legal-extra",
             data={
