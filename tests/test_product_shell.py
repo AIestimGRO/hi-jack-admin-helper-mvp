@@ -10,9 +10,11 @@ from PIL import Image
 from app.db import connect, init_db
 from app.product_shell import (
     _ensure_product_shell_schema,
+    _fetch_partner_tournament_icon_png,
     _partner_tournament_rows,
     _prepare_avatar,
     _prepare_engagement_icon,
+    _public_tournaments,
     _upsert_partner_tournaments,
     install_product_shell,
 )
@@ -116,6 +118,7 @@ def test_product_shell_registers_expected_routes(tmp_path: Path) -> None:
     paths = {route.path for route in app.routes}
 
     assert "/api/account/product-shell" in paths
+    assert "/api/account/tournaments/{external_id}/icon" in paths
     assert "/account/profile/update" in paths
     assert "/account/profile/avatar" in paths
     assert "/account/chats" in paths
@@ -280,6 +283,94 @@ def test_neon_tournament_fallback_uses_jackside_brand_asset() -> None:
 
     assert asset.is_file()
     assert '/static/img/brand/jackside-logo.webp' in javascript
+
+def test_partner_icon_is_delivered_through_same_origin_account_route(
+    tmp_path: Path,
+) -> None:
+    settings = _partner_settings(tmp_path / "partner-proxy.sqlite3")
+    settings.partner_tournaments_url = (
+        "https://hi-jack-club.matthew-0203.ru/"
+        "api/tournaments/partner/tournaments/?status=IN_QUEUE"
+    )
+    db_path = settings.db_path
+    init_db(db_path)
+    _ensure_product_shell_schema(db_path)
+    _upsert_partner_tournaments(
+        db_path,
+        [
+            {
+                "external_id": "82",
+                "title": "JACK CODE: WHITE",
+                "starts_at": "2030-01-03T17:00:00+00:00",
+                "description": "Club",
+                "format_text": "",
+                "max_slots": 60,
+                "external_url": "https://t.me/HJCapp_bot/app?startapp=tournament_82",
+                "external_icon_url": (
+                    "https://hi-jack-club.matthew-0203.ru/storage/"
+                    "tournaments/icons/white.png"
+                ),
+            }
+        ],
+    )
+
+    with connect(db_path) as conn:
+        rows = _public_tournaments(conn, settings=settings)
+
+    assert len(rows) == 1
+    assert rows[0]["external_icon_url"].startswith(
+        "/api/account/tournaments/82/icon?v="
+    )
+    assert "hi-jack-club.matthew-0203.ru" not in rows[0]["external_icon_url"]
+
+
+def test_partner_icon_proxy_fetches_with_partner_key_and_normalizes_png(
+    tmp_path: Path,
+) -> None:
+    settings = _partner_settings(tmp_path / "partner-fetch.sqlite3")
+    settings.partner_tournaments_url = (
+        "https://hi-jack-club.matthew-0203.ru/"
+        "api/tournaments/partner/tournaments/?status=IN_QUEUE"
+    )
+    settings.partner_api_key = "test-partner-key"
+    settings.partner_tournament_timeout_seconds = 4
+    source = (
+        "https://hi-jack-club.matthew-0203.ru/storage/"
+        "tournaments/icons/white.png"
+    )
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, _limit: int) -> bytes:
+            return _image_bytes(size=(320, 180))
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["key"] = request.get_header("X-partner-api-key")
+        captured["accept"] = request.get_header("Accept")
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    normalized = _fetch_partner_tournament_icon_png(
+        settings,
+        source,
+        urlopen_func=fake_urlopen,
+    )
+    image = Image.open(io.BytesIO(normalized))
+
+    assert captured["url"] == source
+    assert captured["key"] == "test-partner-key"
+    assert captured["accept"] == "image/*"
+    assert float(captured["timeout"]) == 4.0
+    assert image.size == (512, 512)
+    assert image.mode == "RGBA"
+
 
 def test_partner_tournament_location_is_not_duplicated_in_meta(tmp_path: Path) -> None:
     settings = _partner_settings(tmp_path / "partner-location.sqlite3")

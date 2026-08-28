@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import io
 import json
@@ -12,12 +13,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request as UrlRequest, urlopen
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
@@ -34,6 +35,7 @@ ENGAGEMENT_ICON_SIZE = 512
 MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_ICON_UPLOAD_BYTES = 2 * 1024 * 1024
 MAX_PARTNER_TOURNAMENT_PAYLOAD_BYTES = 2 * 1024 * 1024
+MAX_PARTNER_TOURNAMENT_ICON_BYTES = 5 * 1024 * 1024
 _SCHEMA_LOCK = threading.Lock()
 _TOURNAMENT_SYNC_LOCK = threading.Lock()
 _TOURNAMENT_SYNC_LAST_ATTEMPT = 0.0
@@ -411,6 +413,60 @@ def _partner_icon_url(item: dict[str, Any], settings: Any) -> str:
     return candidate[:1000]
 
 
+def _partner_icon_is_same_partner_origin(icon_url: str, settings: Any) -> bool:
+    icon = urlparse(str(icon_url or "").strip())
+    partner = urlparse(_partner_tournaments_url(settings))
+    if icon.scheme != "https" or not icon.hostname or not partner.hostname:
+        return False
+    if icon.hostname.lower() != partner.hostname.lower():
+        return False
+    icon_port = icon.port or (443 if icon.scheme == "https" else None)
+    partner_port = partner.port or (443 if partner.scheme == "https" else 80)
+    return icon_port == partner_port
+
+
+def _partner_icon_proxy_url(external_id: str, source_url: str) -> str:
+    version = hashlib.sha256(str(source_url).encode("utf-8")).hexdigest()[:12]
+    return (
+        f"/api/account/tournaments/{quote(str(external_id), safe='')}/icon"
+        f"?v={version}"
+    )
+
+
+def _fetch_partner_tournament_icon_png(
+    settings: Any,
+    icon_url: str,
+    *,
+    urlopen_func: Any = urlopen,
+) -> bytes:
+    if not _partner_icon_is_same_partner_origin(icon_url, settings):
+        raise ValueError("partner_tournament_icon_origin_invalid")
+
+    headers = {
+        "Accept": "image/*",
+        "User-Agent": "HiJackScheduleSync/1.0",
+    }
+    api_key = _partner_api_key(settings)
+    if api_key:
+        headers["X-Partner-Api-Key"] = api_key
+
+    request = UrlRequest(
+        str(icon_url),
+        headers=headers,
+        method="GET",
+    )
+    with urlopen_func(
+        request,
+        timeout=_partner_timeout_seconds(settings),
+    ) as response:
+        raw = response.read(MAX_PARTNER_TOURNAMENT_ICON_BYTES + 1)
+    if not raw:
+        raise ValueError("partner_tournament_icon_empty")
+    if len(raw) > MAX_PARTNER_TOURNAMENT_ICON_BYTES:
+        raise ValueError("partner_tournament_icon_too_large")
+    return _prepare_engagement_icon(raw)
+
+
 def _partner_tournament_rows(payload: Any, settings: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for item in _partner_payload_items(payload):
@@ -572,7 +628,12 @@ def _maybe_sync_partner_tournaments(settings: Any) -> int | None:
             return None
 
 
-def _public_tournaments(conn: sqlite3.Connection, *, limit: int = 12) -> list[dict[str, Any]]:
+def _public_tournaments(
+    conn: sqlite3.Connection,
+    *,
+    settings: Any | None = None,
+    limit: int = 12,
+) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = conn.execute(
         """
@@ -585,7 +646,24 @@ def _public_tournaments(conn: sqlite3.Connection, *, limit: int = 12) -> list[di
         """,
         (now, max(1, min(int(limit), 50))),
     ).fetchall()
-    return [dict(row) for row in rows]
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        source_url = str(item.get("external_icon_url") or "").strip()
+        external_id = str(item.get("external_id") or "").strip()
+        if (
+            settings is not None
+            and item.get("source_kind") == "miniapp"
+            and external_id
+            and source_url
+            and _partner_icon_is_same_partner_origin(source_url, settings)
+        ):
+            item["external_icon_url"] = _partner_icon_proxy_url(
+                external_id,
+                source_url,
+            )
+        result.append(item)
+    return result
 
 
 def install_product_shell(app: FastAPI) -> FastAPI:
@@ -607,13 +685,58 @@ def install_product_shell(app: FastAPI) -> FastAPI:
                     request.app.state.product_shell_schema_ready = True
         return await call_next(request)
 
+    @app.get("/api/account/tournaments/{external_id}/icon")
+    async def account_partner_tournament_icon(request: Request, external_id: str):
+        _current_member(request, required=True)
+        with connect(settings.db_path) as conn:
+            tournament = conn.execute(
+                """
+                SELECT external_icon_url
+                FROM club_tournaments
+                WHERE source_kind='miniapp' AND external_id=?
+                  AND is_published=1
+                LIMIT 1
+                """,
+                (str(external_id),),
+            ).fetchone()
+        source_url = (
+            str(tournament["external_icon_url"] or "").strip()
+            if tournament
+            else ""
+        )
+        if not source_url or not _partner_icon_is_same_partner_origin(
+            source_url,
+            settings,
+        ):
+            raise HTTPException(status_code=404, detail="tournament_icon_not_found")
+        try:
+            image = await run_in_threadpool(
+                _fetch_partner_tournament_icon_png,
+                settings,
+                source_url,
+            )
+        except Exception:
+            logging.exception(
+                "partner tournament icon fetch failed for external_id=%s",
+                external_id,
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="tournament_icon_unavailable",
+            ) from None
+        return Response(
+            image,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=300"},
+        )
+
     @app.get("/api/account/product-shell")
     async def account_product_shell(request: Request):
         member = _current_member(request, required=True)
         await run_in_threadpool(_maybe_sync_partner_tournaments, settings)
         with connect(settings.db_path) as conn:
             avatar = _avatar_record(conn, int(member["id"]))
-            tournaments = _public_tournaments(conn)
+            tournaments = _public_tournaments(conn, settings=settings)
         nickname = str(member["nickname"] or "").strip()
         return JSONResponse(
             {
@@ -858,5 +981,7 @@ __all__ = [
     "install_product_shell",
     "_ensure_product_shell_schema",
     "_partner_tournament_rows",
+    "_fetch_partner_tournament_icon_png",
+    "_public_tournaments",
     "_upsert_partner_tournaments",
 ]
