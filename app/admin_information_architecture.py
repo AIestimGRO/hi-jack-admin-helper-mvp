@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 import sqlite3
 from datetime import date, datetime, timezone
@@ -29,7 +30,17 @@ from app.services.jackside_issues import (
 from app.services.phone import display_phone
 
 
-ASSET_VERSION = "admin-ia-v3"
+def _asset_version() -> str:
+    static_dir = BASE_DIR / "app" / "static"
+    digest = hashlib.sha256()
+    for asset_path in sorted(path for path in static_dir.rglob("*") if path.is_file()):
+        digest.update(asset_path.relative_to(static_dir).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(asset_path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
+ASSET_VERSION = _asset_version()
 
 
 def _csrf(request: Request) -> str:
