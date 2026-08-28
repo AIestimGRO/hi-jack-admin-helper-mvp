@@ -108,15 +108,125 @@ def test_master_clients_is_primary_workspace_with_business_metrics(tmp_path: Pat
         assert page.status_code == 200
         assert "Клиенты" in page.text
         assert "HI, JACK! рейтинг" in page.text
-        assert "Баланс" in page.text
+        assert "Баланс JC" in page.text
         assert "100 JC" in page.text
-        assert "заработано 150" in page.text
+        assert "Заработано JC" in page.text
+        assert "150 JC" in page.text
         assert "Последняя операция JC" in page.text
+        for field in (
+            "client_id",
+            "name",
+            "phone",
+            "rating_min",
+            "rating_max",
+            "balance_min",
+            "balance_max",
+            "earned_min",
+            "earned_max",
+            "last_jc_from",
+            "last_jc_to",
+        ):
+            assert f'name="{field}"' in page.text
+        for key in ("id", "name", "phone", "rating", "balance", "earned", "last_jc"):
+            assert f"sort={key}" in page.text
         assert "data-client-scan-start" in page.text
         assert "Сканер" in page.text
         assert "href=\"/clients/import\"" not in page.text
         assert "Основное" not in page.text
         assert "Выпуски JACKSIDE" not in page.text
+
+
+def test_master_clients_sort_and_filter_server_side(tmp_path: Path) -> None:
+    client, settings = make_client(tmp_path)
+    with client:
+        login_master(client)
+        with transaction(settings.db_path) as conn:
+            alice = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(first_name,nickname,phone_local,email,source)
+                    VALUES ('Alice','Ace','1111111111','alice@test.local','test')
+                    """
+                ).lastrowid
+            )
+            bob = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(first_name,nickname,phone_local,email,source)
+                    VALUES ('Bob','Big Stack','2222222222','bob@test.local','test')
+                    """
+                ).lastrowid
+            )
+            cara = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(first_name,nickname,phone_local,email,source)
+                    VALUES ('Cara','Calm','3333333333','cara@test.local','test')
+                    """
+                ).lastrowid
+            )
+            conn.execute(
+                """
+                INSERT INTO jackcoin_ledger(
+                    client_id,amount,operation_type,source_type,source_id,
+                    idempotency_key,comment,created_at
+                ) VALUES (?,100,'earn','test','alice','ia:filter:alice','Alice JC',
+                          '2026-08-10 12:00:00')
+                """,
+                (alice,),
+            )
+            conn.execute(
+                """
+                INSERT INTO jackcoin_ledger(
+                    client_id,amount,operation_type,source_type,source_id,
+                    idempotency_key,comment,created_at
+                ) VALUES (?,300,'earn','test','bob','ia:filter:bob','Bob JC',
+                          '2026-08-20 12:00:00')
+                """,
+                (bob,),
+            )
+
+        sorted_page = client.get(
+            "/master/clients?sort=balance&direction=desc"
+        )
+        assert sorted_page.status_code == 200
+        sorted_ids = [
+            int(value)
+            for value in re.findall(
+                r'data-client-id="(\d+)"',
+                sorted_page.text,
+            )
+        ]
+        assert sorted_ids[:3] == [bob, alice, cara]
+
+        balance_filtered = client.get(
+            "/master/clients?balance_min=150&sort=balance&direction=desc"
+        )
+        assert balance_filtered.status_code == 200
+        assert re.findall(
+            r'data-client-id="(\d+)"',
+            balance_filtered.text,
+        ) == [str(bob)]
+
+        name_filtered = client.get("/master/clients?name=ali")
+        assert re.findall(
+            r'data-client-id="(\d+)"',
+            name_filtered.text,
+        ) == [str(alice)]
+
+        phone_filtered = client.get("/master/clients?phone=2222")
+        assert re.findall(
+            r'data-client-id="(\d+)"',
+            phone_filtered.text,
+        ) == [str(bob)]
+
+        date_filtered = client.get(
+            "/master/clients?last_jc_from=2026-08-15&sort=last_jc&direction=desc"
+        )
+        assert re.findall(
+            r'data-client-id="(\d+)"',
+            date_filtered.text,
+        ) == [str(bob)]
 
 
 def test_master_can_credit_real_jackcoin_from_client_card_idempotently(
