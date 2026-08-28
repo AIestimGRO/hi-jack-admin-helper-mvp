@@ -37,42 +37,113 @@
     </form>
   </section>
 
-  <form class="ia-search" method="get" action="/master/clients">
-    <input name="q" value="{{ q }}" placeholder="Телефон, имя, ник, username, email или ID" autocomplete="off">
-    <button class="primary" type="submit">Найти</button>
-    {% if q %}<a class="button" href="/master/clients">Сбросить</a>{% endif %}
+  <form class="card ia-client-filter-form" method="get" action="/master/clients">
+    <div class="ia-client-filter-primary">
+      <input name="q" value="{{ q }}" placeholder="Поиск: телефон, имя, ник, username, email или ID" autocomplete="off">
+      <button class="primary" type="submit">Применить</button>
+      {% if has_filters %}<a class="button" href="/master/clients">Сбросить всё</a>{% endif %}
+    </div>
+
+    <details class="ia-client-filter-details" {% if has_filters %}open{% endif %}>
+      <summary>Фильтры и сортировка</summary>
+      <div class="ia-client-filter-grid">
+        <label>ID клиента<input name="client_id" type="number" min="1" value="{{ filters.client_id }}" placeholder="Например 42"></label>
+        <label>Имя / ник / username / email<input name="name" value="{{ filters.name }}" placeholder="Часть значения"></label>
+        <label>Телефон<input name="phone" inputmode="numeric" value="{{ filters.phone }}" placeholder="Последние цифры"></label>
+        <label>Сортировать
+          <select name="sort">
+            <option value="updated" {% if sort=='updated' %}selected{% endif %}>Последнее изменение</option>
+            <option value="id" {% if sort=='id' %}selected{% endif %}>ID</option>
+            <option value="name" {% if sort=='name' %}selected{% endif %}>Клиент</option>
+            <option value="phone" {% if sort=='phone' %}selected{% endif %}>Телефон</option>
+            <option value="rating" {% if sort=='rating' %}selected{% endif %}>HI, JACK! рейтинг</option>
+            <option value="balance" {% if sort=='balance' %}selected{% endif %}>Баланс JC</option>
+            <option value="earned" {% if sort=='earned' %}selected{% endif %}>Заработано JC</option>
+            <option value="last_jc" {% if sort=='last_jc' %}selected{% endif %}>Последняя операция JC</option>
+          </select>
+        </label>
+        <label>Рейтинг
+          <span class="ia-client-range">
+            <input name="rating_min" type="number" step="0.1" value="{{ filters.rating_min }}" placeholder="от">
+            <input name="rating_max" type="number" step="0.1" value="{{ filters.rating_max }}" placeholder="до">
+          </span>
+        </label>
+        <label>Баланс JC
+          <span class="ia-client-range">
+            <input name="balance_min" type="number" value="{{ filters.balance_min }}" placeholder="от">
+            <input name="balance_max" type="number" value="{{ filters.balance_max }}" placeholder="до">
+          </span>
+        </label>
+        <label>Заработано JC
+          <span class="ia-client-range">
+            <input name="earned_min" type="number" min="0" value="{{ filters.earned_min }}" placeholder="от">
+            <input name="earned_max" type="number" min="0" value="{{ filters.earned_max }}" placeholder="до">
+          </span>
+        </label>
+        <label>Порядок
+          <select name="direction">
+            <option value="desc" {% if direction=='desc' %}selected{% endif %}>По убыванию</option>
+            <option value="asc" {% if direction=='asc' %}selected{% endif %}>По возрастанию</option>
+          </select>
+        </label>
+        <label>Последняя операция JC — от<input name="last_jc_from" type="date" value="{{ filters.last_jc_from }}"></label>
+        <label>Последняя операция JC — до<input name="last_jc_to" type="date" value="{{ filters.last_jc_to }}"></label>
+      </div>
+      <div class="ia-client-filter-actions">
+        <button class="primary" type="submit">Применить фильтры</button>
+        {% if has_filters %}<a class="button" href="/master/clients">Очистить</a>{% endif %}
+      </div>
+    </details>
   </form>
 
   <div class="ia-list-head">
     <strong>{{ total }} клиентов</strong>
-    <span class="muted">Показаны последние обновлённые{% if q %} по запросу «{{ q }}»{% endif %}</span>
+    <span class="muted">
+      {% if has_filters %}Показаны клиенты по выбранным условиям{% else %}Все активные клиенты{% endif %}
+    </span>
   </div>
 
-  <div class="ia-client-list">
-    {% for client in clients %}
-    <a class="card ia-client-row" href="/clients/{{ client.id }}">
-      <div class="ia-avatar">{{ (client.first_name or client.nickname or client.username or '?')[:1]|upper }}</div>
-      <div class="ia-client-identity">
-        <strong>{{ client.first_name or client.nickname or ('Client #' ~ client.id) }}</strong>
-        <span>{% if client.nickname %}{{ client.nickname }}{% endif %}{% if client.username %} · @{{ client.username.lstrip('@') }}{% endif %}</span>
-        <small>{{ display_phone(client.phone_local, client.phone_raw) }} · ID {{ client.id }}</small>
-      </div>
-      <div class="ia-client-metric"><small>HI, JACK! рейтинг</small><strong>{{ client.hijack_rating|round(1) }}</strong></div>
-      <div class="ia-client-metric"><small>Баланс</small><strong>{{ client.jc_balance }} JC</strong><span>заработано {{ client.jc_earned }}</span></div>
-      <div class="ia-client-metric ia-client-last"><small>Последняя операция JC</small><strong>{{ display_datetime(client.jc_last_at) if client.jc_last_at else '—' }}</strong></div>
-      <span class="chevron">›</span>
-    </a>
-    {% else %}
-    <div class="card smart-empty">Клиенты не найдены. Измените запрос.</div>
-    {% endfor %}
+  <div class="ia-client-table-wrap">
+    <div class="ia-client-sort-head" aria-label="Сортировка клиентов">
+      {% for key, title in [('id','ID'),('name','Клиент'),('phone','Телефон'),('rating','Рейтинг'),('balance','Баланс JC'),('earned','Заработано JC'),('last_jc','Последняя операция JC')] %}
+      <a class="{{ 'active' if sort==key else '' }}" href="{{ sort_links[key] }}">
+        <span>{{ title }}</span>{% if sort==key %}<b>{{ '↑' if direction=='asc' else '↓' }}</b>{% endif %}
+      </a>
+      {% endfor %}
+      <span></span>
+    </div>
+
+    <div class="ia-client-list">
+      {% for client in clients %}
+      <a class="card ia-client-row" href="/clients/{{ client.id }}" data-client-id="{{ client.id }}">
+        <div class="ia-client-id-col"><small>ID</small><strong>{{ client.id }}</strong></div>
+        <div class="ia-client-person">
+          <div class="ia-avatar">{{ (client.first_name or client.nickname or client.username or '?')[:1]|upper }}</div>
+          <div class="ia-client-identity">
+            <strong>{{ client.first_name or client.nickname or ('Client #' ~ client.id) }}</strong>
+            <span>{% if client.nickname %}{{ client.nickname }}{% endif %}{% if client.username %} · @{{ client.username.lstrip('@') }}{% endif %}</span>
+            <small>{{ client.email or client.app_user_id or '—' }} · {{ display_phone(client.phone_local, client.phone_raw) }} · ID {{ client.id }}</small>
+          </div>
+        </div>
+        <div class="ia-client-phone"><small>Телефон</small><strong>{{ display_phone(client.phone_local, client.phone_raw) }}</strong></div>
+        <div class="ia-client-metric"><small>HI, JACK! рейтинг</small><strong>{{ client.hijack_rating|round(1) }}</strong></div>
+        <div class="ia-client-metric"><small>Баланс JC</small><strong>{{ client.jc_balance }} JC</strong></div>
+        <div class="ia-client-metric"><small>Заработано JC</small><strong>{{ client.jc_earned }} JC</strong></div>
+        <div class="ia-client-metric ia-client-last"><small>Последняя операция JC</small><strong>{{ display_datetime(client.jc_last_at) if client.jc_last_at else '—' }}</strong></div>
+        <span class="chevron">›</span>
+      </a>
+      {% else %}
+      <div class="card smart-empty">Клиенты не найдены. Измените фильтры.</div>
+      {% endfor %}
+    </div>
   </div>
 
   {% set pages = ((total + page_size - 1) // page_size) %}
   {% if pages > 1 %}
   <nav class="ia-pagination" aria-label="Страницы клиентов">
-    {% if page > 1 %}<a class="button" href="/master/clients?page={{ page-1 }}&q={{ q|urlencode }}">← Назад</a>{% endif %}
+    {% if page > 1 %}<a class="button" href="/master/clients?page={{ page-1 }}&{{ pagination_query }}">← Назад</a>{% endif %}
     <span>{{ page }} / {{ pages }}</span>
-    {% if page < pages %}<a class="button" href="/master/clients?page={{ page+1 }}&q={{ q|urlencode }}">Далее →</a>{% endif %}
+    {% if page < pages %}<a class="button" href="/master/clients?page={{ page+1 }}&{{ pagination_query }}">Далее →</a>{% endif %}
   </nav>
   {% endif %}
 </section>
