@@ -256,7 +256,7 @@ def test_member_portal_is_hidden_by_default(tmp_path: Path) -> None:
         assert client.get("/account/register").status_code == 404
 
 
-def test_registration_consents_account_session_and_profile(
+def test_registration_without_legal_consents_keeps_account_session_and_profile(
     tmp_path: Path, monkeypatch
 ) -> None:
     client, settings = make_member_client(tmp_path)
@@ -373,29 +373,17 @@ def test_registration_consents_account_session_and_profile(
                 VALUES ('privacy', '2.0', 'Новая политика', 'Обновлённые условия')
                 """
             )
-        gated = client.get("/account", follow_redirects=False)
-        assert gated.status_code == 303
-        assert gated.headers["location"] == "/account/consents"
-        consent_page = client.get("/account/consents")
-        assert "Новая политика" in consent_page.text
-        document_id = re.search(
-            r'name="document_id" value="([0-9]+)"', consent_page.text
-        ).group(1)
-        accepted = client.post(
-            "/account/consents",
-            data={
-                "document_id": document_id,
-                "accepted": "true",
-                "csrf_token": csrf_from(consent_page),
-            },
-            follow_redirects=False,
-        )
-        assert accepted.status_code == 303
-        assert client.get("/account").status_code == 200
+        # Consent collection is intentionally suspended. Even if a non-empty
+        # legal edition exists in storage, existing members are not re-gated.
+        ungated = client.get("/account", follow_redirects=False)
+        assert ungated.status_code == 200
+        consent_page = client.get("/account/consents", follow_redirects=False)
+        assert consent_page.status_code == 303
+        assert consent_page.headers["location"] == "/account"
 
     with connect(settings.db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM member_accounts").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM member_consents").fetchone()[0] == 3
+        assert conn.execute("SELECT COUNT(*) FROM member_consents").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM member_sessions").fetchone()[0] == 1
         account = conn.execute("SELECT * FROM member_accounts").fetchone()
         assert account["email_normalized"] == "player@example.com"
