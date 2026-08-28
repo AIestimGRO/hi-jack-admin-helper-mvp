@@ -140,6 +140,7 @@ from app.services.member_accounts import (
     hash_password,
     issue_session as issue_member_session,
     jackcoin_balance,
+    credit_jackcoin_manually,
     member_code_hash,
     revoke_session as revoke_member_session,
 )
@@ -7184,16 +7185,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """,
                 (client_id,),
             ).fetchall()
-        return client, prefs, logs, quiz_participation
+            jc_balance = jackcoin_balance(conn, client_id)
+            jc_ledger = conn.execute(
+                """
+                SELECT id,amount,operation_type,source_type,source_id,comment,created_at
+                FROM jackcoin_ledger
+                WHERE client_id=?
+                ORDER BY created_at DESC,id DESC
+                LIMIT 50
+                """,
+                (client_id,),
+            ).fetchall()
+        return client, prefs, logs, quiz_participation, jc_balance, jc_ledger
 
     @app.get("/clients/{client_id:int}", response_class=HTMLResponse)
     async def client_detail(request: Request, client_id: int, ok: str = "", error: str = ""):
         require_auth(request)
-        client, prefs, logs, quiz_participation = load_client(client_id)
+        client, prefs, logs, quiz_participation, jc_balance, jc_ledger = load_client(client_id)
         return templates.TemplateResponse(
             request,
             "client_detail.html",
-            context(request, client=client, preferences=prefs, logs=logs, quiz_participation=quiz_participation, ok=ok, error=error),
+            context(
+                request,
+                client=client,
+                preferences=prefs,
+                logs=logs,
+                quiz_participation=quiz_participation,
+                jackcoin_balance=jc_balance,
+                jackcoin_ledger=jc_ledger,
+                jackcoin_operation_token=secrets.token_urlsafe(24),
+                ok=ok,
+                error=error,
+            ),
         )
 
     @app.post("/api/clients/{client_id:int}/quiz/{campaign}/extra-attempt")
@@ -7269,6 +7292,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         output = io.BytesIO()
         image.save(output, format="PNG")
         return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+    @app.post("/api/clients/{client_id:int}/jackcoin/credit")
+    async def client_jackcoin_credit(
+        request: Request,
+        client_id: int,
+        amount: int = Form(...),
+        reason: str = Form(...),
+        comment: str = Form(""),
+        operation_token: str = Form(...),
+        csrf_token: str = Form(...),
+    ):
+        require_master(request, api=True)
+        check_csrf(request, csrf_token)
+        try:
+            with transaction(settings.db_path) as conn:
+                inserted, balance = credit_jackcoin_manually(
+                    conn,
+                    client_id=client_id,
+                    amount=int(amount),
+                    admin_id=int(request.session["admin_id"]),
+                    reason=reason,
+                    comment=comment,
+                    operation_token=operation_token,
+                )
+                if inserted:
+                    audit(
+                        conn,
+                        admin_id=request.session["admin_id"],
+                        admin_name=request.session["admin_name"],
+                        action="manual_jackcoin_credit",
+                        entity_type="client",
+                        entity_id=client_id,
+                        details={
+                            "amount": int(amount),
+                            "reason": " ".join(str(reason or "").split())[:120],
+                            "comment": " ".join(str(comment or "").split())[:300],
+                            "balance": balance,
+                        },
+                    )
+        except ValueError as exc:
+            messages = {
+                "invalid_jackcoin_amount": "Количество JACKCOIN должно быть от 1 до 1000000",
+                "jackcoin_reason_required": "Укажите причину начисления JACKCOIN",
+                "invalid_jackcoin_operation_token": "Обновите карточку клиента и повторите начисление",
+                "client_not_found": "Клиент не найден",
+            }
+            message = messages.get(str(exc), str(exc))
+            return RedirectResponse(
+                f"/clients/{client_id}?error={quote(message)}",
+                status_code=303,
+            )
+
+        message = (
+            f"Начислено {int(amount)} JC"
+            if inserted
+            else "Это начисление уже было сохранено"
+        )
+        return RedirectResponse(
+            f"/clients/{client_id}?ok={quote(message)}",
+            status_code=303,
+        )
 
     @app.post("/api/preferences/add")
     async def preference_add(

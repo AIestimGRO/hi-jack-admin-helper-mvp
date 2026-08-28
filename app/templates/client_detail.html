@@ -10,6 +10,37 @@
   {% if client.phone_local %}<button class="primary qr-open" type="button" data-qr-url="/api/clients/{{ client.id }}/qr" data-phone="{{ client.phone_local }}">Показать QR</button>{% else %}<span class="pill warning">QR недоступен: проверьте телефон</span>{% endif %}
 </section>
 
+<section class="section-head"><h2>JACKCOIN</h2></section>
+<section class="card jackcoin-admin-card">
+  <div class="pref-top"><h3>Баланс игрока</h3><strong>{{ jackcoin_balance }} JC</strong></div>
+  {% if access_role == 'master' %}
+  <form class="pref-form" action="/api/clients/{{ client.id }}/jackcoin/credit" method="post" data-ajax-refresh=".jackcoin-admin-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="operation_token" value="{{ jackcoin_operation_token }}">
+    <label>Количество JC<input name="amount" type="number" min="1" max="1000000" value="200" required></label>
+    <label>Причина<select name="reason" required>
+      <option value="Отзыв на Яндекс Картах">Отзыв на Яндекс Картах</option>
+      <option value="Бонус от клуба">Бонус от клуба</option>
+      <option value="Компенсация">Компенсация</option>
+      <option value="Ручная корректировка">Ручная корректировка</option>
+      <option value="Другое">Другое</option>
+    </select></label>
+    <label>Комментарий<input name="comment" maxlength="300" placeholder="Необязательно"></label>
+    <button class="plus-button" type="submit">+ Начислить JC</button>
+  </form>
+  {% endif %}
+  {% if jackcoin_ledger %}
+  <details class="app-data">
+    <summary>История JACKCOIN · последние {{ jackcoin_ledger|length }}</summary>
+    <div class="table-wrap"><table><thead><tr><th>Время</th><th>JC</th><th>Причина</th></tr></thead><tbody>
+    {% for item in jackcoin_ledger %}
+      <tr><td>{{ item.created_at[5:16] }}</td><td><span class="delta {{ 'plus' if item.amount > 0 else 'minus' }}">{{ '+' if item.amount > 0 else '' }}{{ item.amount }}</span></td><td>{{ item.comment or item.source_type }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  </details>
+  {% endif %}
+</section>
+
 <section class="section-head"><h2>Преференции</h2></section>
 <div class="preference-grid">
 {% for pref in preferences %}

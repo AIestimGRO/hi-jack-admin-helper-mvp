@@ -77,6 +77,9 @@ def test_admin_simple_mutations_use_reload_free_transport() -> None:
     assert "installGenericReloadFreeActions" in script
     assert "event.defaultPrevented" in script
     assert "new FormData(form)" in script
+    assert "submit?.formAction || form.action" in script
+    assert "submit?.formMethod || form.method || 'POST'" in script
+    assert "formData.append(submit.name, submit.value)" in script
     assert "X-Requested-With" in script
     assert "window.scrollTo(scrollX, scrollY)" in script
     assert "'/master/club-links'" in script

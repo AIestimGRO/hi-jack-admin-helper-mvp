@@ -117,6 +117,7 @@ def test_quiz_manager_can_run_content_and_rewards_but_not_master_system() -> Non
         ("/master/engagement-icons", "GET"),
         ("/clients/import", "GET"),
         ("/api/clients/42/comment", "POST"),
+        ("/api/clients/42/jackcoin/credit", "POST"),
         ("/api/clients/42/quiz/test/extra-attempt", "POST"),
         ("/api/master/admins", "POST"),
         ("/api/master/hijack-rating/transfer-owner", "POST"),

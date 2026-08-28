@@ -118,6 +118,90 @@ def test_master_clients_is_primary_workspace_with_business_metrics(tmp_path: Pat
         assert "Выпуски JACKSIDE" not in page.text
 
 
+def test_master_can_credit_real_jackcoin_from_client_card_idempotently(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_client(tmp_path)
+    with client:
+        login_master(client)
+        with transaction(settings.db_path) as conn:
+            client_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO clients(first_name,nickname,source)
+                    VALUES ('Олег','Олег адвокат','test')
+                    """
+                ).lastrowid
+            )
+
+        page = client.get(f"/clients/{client_id}")
+        assert page.status_code == 200
+        assert "Баланс игрока" in page.text
+        assert "+ Начислить JC" in page.text
+        assert "Отзыв на Яндекс Картах" in page.text
+        assert f'action="/api/clients/{client_id}/jackcoin/credit"' in page.text
+
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
+        token = re.search(
+            r'name="operation_token" value="([^"]+)"',
+            page.text,
+        ).group(1)
+        payload = {
+            "csrf_token": csrf,
+            "operation_token": token,
+            "amount": "200",
+            "reason": "Отзыв на Яндекс Картах",
+            "comment": "Проверено администратором",
+        }
+
+        response = client.post(
+            f"/api/clients/{client_id}/jackcoin/credit",
+            data=payload,
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert "ok=" in response.headers["location"]
+
+        # Repeating the exact browser operation token must not double-credit.
+        duplicate = client.post(
+            f"/api/clients/{client_id}/jackcoin/credit",
+            data=payload,
+            follow_redirects=False,
+        )
+        assert duplicate.status_code == 303
+
+        with transaction(settings.db_path) as conn:
+            ledger = conn.execute(
+                """
+                SELECT amount,operation_type,source_type,comment,created_by_admin_id
+                FROM jackcoin_ledger
+                WHERE client_id=?
+                """,
+                (client_id,),
+            ).fetchall()
+            audit_rows = conn.execute(
+                """
+                SELECT action,details FROM admin_audit_log
+                WHERE entity_type='client' AND entity_id=?
+                  AND action='manual_jackcoin_credit'
+                """,
+                (client_id,),
+            ).fetchall()
+
+        assert len(ledger) == 1
+        assert int(ledger[0]["amount"]) == 200
+        assert ledger[0]["operation_type"] == "earn"
+        assert ledger[0]["source_type"] == "admin"
+        assert "Отзыв на Яндекс Картах" in ledger[0]["comment"]
+        assert int(ledger[0]["created_by_admin_id"]) > 0
+        assert len(audit_rows) == 1
+
+        refreshed = client.get(f"/clients/{client_id}")
+        assert refreshed.status_code == 200
+        assert "200 JC" in refreshed.text
+        assert "Проверено администратором" in refreshed.text
+
+
 def test_jackside_workspace_renders_legacy_source_without_async_loading(tmp_path: Path) -> None:
     client, settings = make_client(tmp_path)
     with client:

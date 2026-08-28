@@ -221,9 +221,13 @@
       }
 
       try {
-        const response = await fetch(form.action, {
-          method: (form.method || 'POST').toUpperCase(),
-          body: new FormData(form),
+        const submitAction = submit?.formAction || form.action;
+        const submitMethod = submit?.formMethod || form.method || 'POST';
+        const formData = new FormData(form);
+        if (submit?.name) formData.append(submit.name, submit.value);
+        const response = await fetch(submitAction, {
+          method: submitMethod.toUpperCase(),
+          body: formData,
           credentials: 'same-origin',
           redirect: 'follow',
           headers: { 'X-Requested-With': 'XMLHttpRequest' },
