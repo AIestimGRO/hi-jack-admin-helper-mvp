@@ -40,9 +40,6 @@ def _asset_version() -> str:
     return digest.hexdigest()[:12]
 
 
-ASSET_VERSION = _asset_version()
-
-
 def _csrf(request: Request) -> str:
     token = str(request.session.get("csrf") or "")
     if not token:
@@ -79,12 +76,19 @@ def _display_local_datetime(value: Any, timezone_name: str = "Europe/Moscow") ->
 
 
 def _context(request: Request, **values: Any) -> dict[str, Any]:
+    asset_version = getattr(
+        request.app.state,
+        "admin_information_architecture_asset_version",
+        "",
+    )
+    if not asset_version:
+        asset_version = _asset_version()
     return {
         "request": request,
         "csrf_token": _csrf(request),
         "admin_name": request.session.get("admin_name", "Master"),
         "admin_role": request.session.get("admin_role", "master_admin"),
-        "asset_version": ASSET_VERSION,
+        "asset_version": asset_version,
         **values,
     }
 
@@ -334,6 +338,7 @@ def install_admin_information_architecture(app: FastAPI) -> FastAPI:
     if getattr(app.state, "admin_information_architecture_installed", False):
         return app
     app.state.admin_information_architecture_installed = True
+    app.state.admin_information_architecture_asset_version = _asset_version()
     settings = app.state.settings
     templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
     templates.env.globals["display_phone"] = display_phone

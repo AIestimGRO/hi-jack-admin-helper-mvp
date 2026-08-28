@@ -76,18 +76,22 @@ def _seed_legacy_friday(settings: Settings) -> int:
 def test_admin_ia_asset_version_tracks_static_content(tmp_path: Path) -> None:
     from app import admin_information_architecture as admin_ia
 
-    version = admin_ia._asset_version()
-    assert re.fullmatch(r"[0-9a-f]{12}", version)
-    assert version != "admin-ia-v3"
+    expected = admin_ia._asset_version()
+    assert re.fullmatch(r"[0-9a-f]{12}", expected)
+    assert expected != "admin-ia-v3"
 
     client, _settings = make_client(tmp_path)
     with client:
+        assert (
+            client.app.state.admin_information_architecture_asset_version
+            == expected
+        )
         login_master(client)
         page = client.get("/master/clients")
 
     assert page.status_code == 200
-    assert f"/static/css/admin-ia-v2.css?v={version}" in page.text
-    assert f"/static/js/admin-ia-v2.js?v={version}" in page.text
+    assert f"/static/css/admin-ia-v2.css?v={expected}" in page.text
+    assert f"/static/js/admin-ia-v2.js?v={expected}" in page.text
 
 
 def test_master_clients_is_primary_workspace_with_business_metrics(tmp_path: Path) -> None:
