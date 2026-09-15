@@ -1,0 +1,114 @@
+name: Apply JACKSIDE shared-IP fix
+
+on:
+  push:
+    branches:
+      - fix/jackside-shared-ip-start-limit-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply minimal owner fix and regression tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          main_path = Path('app/main_impl.py')
+          text = main_path.read_text(encoding='utf-8')
+          old = '''                recent_attempts = conn.execute(
+                      "SELECT COUNT(*) FROM quiz_attempts WHERE ip_hash=? AND created_at >= datetime('now', '-1 hour')",
+                      (ip_hash,),
+                  ).fetchone()[0]
+                  if recent_attempts >= 10:
+                      raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже")
+          '''
+          new = '''                if campaign_row["campaign_type"] != "daily_414":
+                      recent_attempts = conn.execute(
+                          "SELECT COUNT(*) FROM quiz_attempts WHERE ip_hash=? AND created_at >= datetime('now', '-1 hour')",
+                          (ip_hash,),
+                      ).fetchone()[0]
+                      if recent_attempts >= 10:
+                          raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже")
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one shared-IP limiter block, found {text.count(old)}')
+          main_path.write_text(text.replace(old, new), encoding='utf-8')
+
+          tests_path = Path('tests/test_member_accounts.py')
+          tests = tests_path.read_text(encoding='utf-8')
+          marker = 'def test_daily_414_start_ignores_shared_ip_classic_attempt_volume('
+          if marker not in tests:
+              tests += '''
+
+
+def test_daily_414_start_ignores_shared_ip_classic_attempt_volume(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    with client:
+        seed_daily_member(client, settings)
+        seed_daily_campaign(settings)
+
+        for index in range(10):
+            started = client.post(
+                "/api/quiz/start",
+                json={
+                    "campaign": "default",
+                    "phone": f"900100{index:04d}",
+                },
+            )
+            assert started.status_code == 200
+
+        jackside = client.post(
+            "/api/quiz/start",
+            json={"campaign": "daily_test"},
+        )
+        assert jackside.status_code == 200
+        assert jackside.json()["campaign_type"] == "daily_414"
+
+
+def test_classic_quiz_keeps_shared_ip_hourly_attempt_limit(
+    tmp_path: Path,
+) -> None:
+    client, _settings = make_member_client(tmp_path)
+    with client:
+        for index in range(10):
+            started = client.post(
+                "/api/quiz/start",
+                json={
+                    "campaign": "default",
+                    "phone": f"901100{index:04d}",
+                },
+            )
+            assert started.status_code == 200
+
+        blocked = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9011999999"},
+        )
+        assert blocked.status_code == 429
+        assert blocked.json()["error"] == "Слишком много попыток. Попробуйте позже"
+          '''
+              tests_path.write_text(tests, encoding='utf-8')
+          PY
+
+          git diff --check
+          git diff -- app/main_impl.py tests/test_member_accounts.py
+
+      - name: Remove one-shot workflow and commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-jackside-shared-ip-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/main_impl.py tests/test_member_accounts.py .github/workflows/apply-jackside-shared-ip-fix.yml
+          git commit -m "fix: allow JACKSIDE starts behind shared club IP"
+          git push origin HEAD:fix/jackside-shared-ip-start-limit-20260915
