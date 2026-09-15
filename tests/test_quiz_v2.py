@@ -489,3 +489,29 @@ def test_automatic_reward_and_visual_question_block(tmp_path):
         reward = conn.execute("SELECT status, code FROM quiz_reward_codes ORDER BY id DESC LIMIT 1").fetchone()
         assert reward["status"] == "used"
         assert reward["code"].startswith("AUTO-")
+
+
+def test_classic_quiz_keeps_shared_ip_hourly_attempt_limit(tmp_path):
+    from app.services.quiz import ip_fingerprint
+
+    client, settings = make_client(tmp_path)
+    with client:
+        shared_ip_hash = ip_fingerprint(settings.secret_key, "testclient")
+        with transaction(settings.db_path) as conn:
+            for index in range(10):
+                conn.execute(
+                    """
+                    INSERT INTO quiz_attempts(
+                        campaign_code, token_hash, questions_snapshot_json,
+                        status, ip_hash
+                    ) VALUES ('default', ?, '[]', 'submitted', ?)
+                    """,
+                    (f"shared-ip-classic-{index}", shared_ip_hash),
+                )
+
+        blocked = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9011999999"},
+        )
+        assert blocked.status_code == 429
+        assert blocked.json()["error"] == "Слишком много попыток. Попробуйте позже"

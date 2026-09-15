@@ -1463,3 +1463,33 @@ def test_daily_414_final_answer_is_saved_once(tmp_path: Path) -> None:
             },
         )
         assert changed.status_code == 409
+
+
+def test_daily_414_start_ignores_shared_ip_attempt_volume(
+    tmp_path: Path,
+) -> None:
+    from app.services.quiz import ip_fingerprint
+
+    client, settings = make_member_client(tmp_path)
+    with client:
+        client_id = seed_daily_member(client, settings)
+        seed_daily_campaign(settings)
+        shared_ip_hash = ip_fingerprint(settings.secret_key, "testclient")
+        with transaction(settings.db_path) as conn:
+            for index in range(10):
+                conn.execute(
+                    """
+                    INSERT INTO quiz_attempts(
+                        campaign_code, client_id, token_hash,
+                        questions_snapshot_json, status, ip_hash
+                    ) VALUES ('default', ?, ?, '[]', 'submitted', ?)
+                    """,
+                    (client_id, f"shared-ip-daily-{index}", shared_ip_hash),
+                )
+
+        jackside = client.post(
+            "/api/quiz/start",
+            json={"campaign": "daily_test"},
+        )
+        assert jackside.status_code == 200
+        assert jackside.json()["campaign_type"] == "daily_414"
