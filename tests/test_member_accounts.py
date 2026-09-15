@@ -1463,3 +1463,53 @@ def test_daily_414_final_answer_is_saved_once(tmp_path: Path) -> None:
             },
         )
         assert changed.status_code == 409
+
+
+
+def test_daily_414_start_ignores_shared_ip_classic_attempt_volume(
+    tmp_path: Path,
+) -> None:
+    client, settings = make_member_client(tmp_path)
+    with client:
+        seed_daily_member(client, settings)
+        seed_daily_campaign(settings)
+
+        for index in range(10):
+            started = client.post(
+                "/api/quiz/start",
+                json={
+                    "campaign": "default",
+                    "phone": f"900100{index:04d}",
+                },
+            )
+            assert started.status_code == 200
+
+        jackside = client.post(
+            "/api/quiz/start",
+            json={"campaign": "daily_test"},
+        )
+        assert jackside.status_code == 200
+        assert jackside.json()["campaign_type"] == "daily_414"
+
+
+def test_classic_quiz_keeps_shared_ip_hourly_attempt_limit(
+    tmp_path: Path,
+) -> None:
+    client, _settings = make_member_client(tmp_path)
+    with client:
+        for index in range(10):
+            started = client.post(
+                "/api/quiz/start",
+                json={
+                    "campaign": "default",
+                    "phone": f"901100{index:04d}",
+                },
+            )
+            assert started.status_code == 200
+
+        blocked = client.post(
+            "/api/quiz/start",
+            json={"campaign": "default", "phone": "9011999999"},
+        )
+        assert blocked.status_code == 429
+        assert blocked.json()["error"] == "Слишком много попыток. Попробуйте позже"
