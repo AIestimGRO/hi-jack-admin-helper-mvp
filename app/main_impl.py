@@ -3096,12 +3096,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 max_attempts = max(1, int(campaign_row["max_attempts"] or 3))
                 if attempts_used >= max_attempts:
                     raise HTTPException(status_code=429, detail="Лимит попыток для этого квиза исчерпан")
-                recent_attempts = conn.execute(
-                    "SELECT COUNT(*) FROM quiz_attempts WHERE ip_hash=? AND created_at >= datetime('now', '-1 hour')",
-                    (ip_hash,),
-                ).fetchone()[0]
-                if recent_attempts >= 10:
-                    raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже")
+                if campaign_row["campaign_type"] != "daily_414":
+                    recent_attempts = conn.execute(
+                        "SELECT COUNT(*) FROM quiz_attempts WHERE ip_hash=? AND created_at >= datetime('now', '-1 hour')",
+                        (ip_hash,),
+                    ).fetchone()[0]
+                    if recent_attempts >= 10:
+                        raise HTTPException(status_code=429, detail="Слишком много попыток. Попробуйте позже")
                 questions = load_db_questions(conn, campaign)
                 if campaign_row["campaign_type"] == "daily_414":
                     try:
