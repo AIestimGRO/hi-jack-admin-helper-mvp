@@ -31,17 +31,17 @@ def test_timing_stats_counts_failures_and_statuses() -> None:
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "target_url",
     [
         "http://127.0.0.1:8091",
         "https://quiz-v2.hijackpoker.ru",
         "https://club-v2.hijackpoker.ru",
     ],
 )
-def test_validate_target_allows_only_known_staging_paths(base_url: str) -> None:
+def test_validate_target_allows_only_known_staging_paths(target_url: str) -> None:
     validate_target(
         Path("/opt/hi-jack-admin-helper-v2/data/club_tools.sqlite3"),
-        base_url,
+        target_url,
     )
 
 
