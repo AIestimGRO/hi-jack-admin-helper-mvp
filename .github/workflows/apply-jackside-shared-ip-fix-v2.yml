@@ -1,0 +1,33 @@
+name: Apply JACKSIDE shared-IP source patch
+
+on:
+  push:
+    branches:
+      - fix/jackside-shared-ip-start-limit-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact source patch
+        run: python scripts/apply_jackside_shared_ip_fix.py
+      - name: Validate patch shape
+        run: |
+          git diff --check
+          git diff --name-only
+      - name: Commit product fix
+        run: |
+          git rm .github/workflows/apply-jackside-shared-ip-fix-v2.yml
+          git rm .github/workflows/probe-runner.yml
+          git rm scripts/apply_jackside_shared_ip_fix.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/main_impl.py tests/test_member_accounts.py
+          git commit -m "fix: allow JACKSIDE starts behind shared club IP"
+          git push origin HEAD:fix/jackside-shared-ip-start-limit-20260915
