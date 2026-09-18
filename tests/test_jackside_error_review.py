@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db import connect, transaction
 from app.main import create_app
+from app.services.auth import hash_pin
 from app.services.member_accounts import MEMBER_COOKIE_NAME, issue_session
 
 
@@ -23,7 +24,34 @@ def make_client(tmp_path: Path) -> tuple[TestClient, Settings]:
         quiz_public_base_url="https://quiz.example.test",
         member_portal_enabled=True,
     )
-    return TestClient(create_app(settings), base_url=settings.public_base_url), settings
+    test_client = TestClient(create_app(settings), base_url=settings.public_base_url)
+    # TestClient lifespan is not entered here, while the application extensions
+    # already initialize the additive schema. Seed the master explicitly so the
+    # admin HTTP test exercises the real login + CSRF flow deterministically.
+    with transaction(settings.db_path) as conn:
+        existing = conn.execute(
+            "SELECT id FROM admins WHERE username=? COLLATE NOCASE",
+            (settings.master_login,),
+        ).fetchone()
+        encoded = hash_pin(settings.admin_pin)
+        if existing:
+            conn.execute(
+                """
+                UPDATE admins
+                SET pin_hash=?, display_name=?, role='master_admin', is_active=1
+                WHERE id=?
+                """,
+                (encoded, settings.admin_name, int(existing["id"])),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO admins(username,display_name,pin_hash,role,is_active)
+                VALUES (?,?,?,'master_admin',1)
+                """,
+                (settings.master_login, settings.admin_name, encoded),
+            )
+    return test_client, settings
 
 
 def csrf_from(response) -> str:
