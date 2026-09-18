@@ -35,6 +35,7 @@ from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.hijack_rating_transfer import install_hijack_rating_transfer
 from app.jackside_critical_hotfix import install_jackside_critical_hotfix
+from app.jackside_error_review import install_jackside_error_review
 from app.jackside_final_outcome_only import install_jackside_final_outcome_only
 from app.jackside_final_recovery import install_jackside_final_recovery
 from app.jackside_rating_freshness import install_jackside_rating_freshness
@@ -134,6 +135,9 @@ def _install_extensions(application):
     application = install_admin_access_control(application)
     application = install_member_host_routing(application)
     application = install_admin_vault_scanner(application)
+    # Install last so its HTML asset wrappers remain outermost after all route
+    # compatibility extensions have finished replacing endpoints.
+    application = install_jackside_error_review(application)
     return _session_middleware_outermost(application)
 
 
