@@ -261,6 +261,7 @@
   </main>
   <script src="{{ url_for('static', path='/js/quiz.js') }}?v={{ asset_version }}" defer></script>
   {% if campaign_type == 'daily_414' %}
+  <script data-jackside-error-review src="{{ url_for('static', path='/js/jackside-error-review.js') }}?v={{ asset_version }}" defer></script>
   <script data-jackside-final-outcome src="{{ url_for('static', path='/js/jackside-final-outcome-only.js') }}?v={{ asset_version }}" defer></script>
   {% endif %}
 </body>
