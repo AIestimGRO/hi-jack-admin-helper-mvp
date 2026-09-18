@@ -260,6 +260,7 @@
     <section class="quiz-screen" data-screen="error"><div class="quiz-error-mark">!</div><h2>Сбой раздачи</h2><p class="quiz-lead quiz-error-message"></p><button class="quiz-primary" type="button" data-action="retry">Ещё раз</button></section>
   </main>
   <script src="{{ url_for('static', path='/js/quiz.js') }}?v={{ asset_version }}" defer></script>
+  <script data-jackside-error-review src="{{ url_for('static', path='/js/jackside-error-review.js') }}?v={{ asset_version }}" defer></script>
   {% if campaign_type == 'daily_414' %}
   <script data-jackside-final-outcome src="{{ url_for('static', path='/js/jackside-final-outcome-only.js') }}?v={{ asset_version }}" defer></script>
   {% endif %}
