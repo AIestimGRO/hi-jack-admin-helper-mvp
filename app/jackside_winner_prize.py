@@ -9,7 +9,6 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse
 
 from app.db import connect, transaction
-from app.jackside_error_review import install_jackside_error_review
 from app.product_shell import _check_csrf, _require_master
 from app.services import jackside_issues as issue_service
 
@@ -252,7 +251,7 @@ def install_jackside_winner_prize(app: FastAPI) -> FastAPI:
             headers={"Cache-Control": "private, no-store"},
         )
 
-    return install_jackside_error_review(app)
+    return app
 
 
 __all__ = [
