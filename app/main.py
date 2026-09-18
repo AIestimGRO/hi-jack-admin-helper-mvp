@@ -35,6 +35,7 @@ from app.hijack_rating_paging import install_hijack_rating_paging
 from app.hijack_rating_relink import install_hijack_rating_relink
 from app.hijack_rating_transfer import install_hijack_rating_transfer
 from app.jackside_critical_hotfix import install_jackside_critical_hotfix
+from app.jackside_error_review import install_jackside_error_review
 from app.jackside_final_outcome_only import install_jackside_final_outcome_only
 from app.jackside_final_recovery import install_jackside_final_recovery
 from app.jackside_rating_freshness import install_jackside_rating_freshness
@@ -120,6 +121,7 @@ def _install_extensions(application):
     application = install_account_links_hotfix(application)
     application = install_quiz_export(application)
     application = install_prelaunch_economy_compat(application)
+    application = install_jackside_error_review(application)
     application = install_prelaunch_profile_sharing(application)
     application = install_prelaunch_profile_privacy(application)
     application = install_prelaunch_data_integrity(application)
