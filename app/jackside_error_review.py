@@ -329,6 +329,33 @@ def install_jackside_error_review(app: FastAPI) -> FastAPI:
     settings = app.state.settings
     ensure_error_review_schema(settings.db_path)
 
+    @app.middleware("http")
+    async def error_review_quiz_asset_middleware(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path != "/quiz":
+            return response
+        content_type = str(response.headers.get("content-type") or "")
+        if "text/html" not in content_type or not hasattr(response, "body_iterator"):
+            return response
+        chunks: list[bytes] = []
+        async for chunk in response.body_iterator:
+            chunks.append(chunk if isinstance(chunk, bytes) else bytes(chunk))
+        body = b"".join(chunks)
+        marker = MEMBER_ASSET.encode("utf-8")
+        if marker not in body and b"</body>" in body:
+            body = body.replace(
+                b"</body>",
+                f'<script src="{MEMBER_ASSET}" defer></script></body>'.encode("utf-8"),
+                1,
+            )
+
+        async def body_iterator():
+            yield body
+
+        response.body_iterator = body_iterator()
+        response.headers["content-length"] = str(len(body))
+        return response
+
     @app.get("/api/quiz/error-review/status", response_class=JSONResponse)
     async def error_review_status(request: Request, campaign: str = "default"):
         member = _current_member(request, required=True)
@@ -659,7 +686,6 @@ def install_jackside_error_review(app: FastAPI) -> FastAPI:
             )
         return {"ok": True, "question_id": question_id, "explanation": explanation}
 
-    _wrap_html_asset(app, path="/quiz", asset_path=MEMBER_ASSET)
     _wrap_html_asset(
         app,
         path="/master/quiz-builder/{campaign_id:int}",
