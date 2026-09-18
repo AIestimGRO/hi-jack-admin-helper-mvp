@@ -25,9 +25,8 @@ def make_client(tmp_path: Path) -> tuple[TestClient, Settings]:
         member_portal_enabled=True,
     )
     test_client = TestClient(create_app(settings), base_url=settings.public_base_url)
-    # TestClient lifespan is not entered here, while the application extensions
-    # already initialize the additive schema. Seed the master explicitly so the
-    # admin HTTP test exercises the real login + CSRF flow deterministically.
+    # TestClient lifespan is not entered here. Seed the master explicitly so the
+    # admin HTTP checks exercise the real login and CSRF flow deterministically.
     with transaction(settings.db_path) as conn:
         existing = conn.execute(
             "SELECT id FROM admins WHERE username=? COLLATE NOCASE",
@@ -538,6 +537,10 @@ def test_admin_builder_exposes_configurable_price_and_question_explanation(
     updated_q1 = next(item for item in refreshed["questions"] if item["id"] == q1["id"])
     assert updated_q1["explanation"] == "Новый комментарий мастера"
 
+    # The JACKSIDE page requires a member session. Authenticate one before
+    # asserting the member-side review asset instead of following the login redirect.
+    seed_member(settings, client, suffix="9")
     quiz_page = client.get("/quiz?campaign=jackside_review_admin")
     assert quiz_page.status_code == 200
+    assert 'data-campaign-type="daily_414"' in quiz_page.text
     assert "/static/js/jackside-error-review.js" in quiz_page.text
