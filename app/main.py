@@ -62,6 +62,7 @@ from app.referral_entry_hotfix import install_referral_entry_hotfix
 from app.referral_registration_integrity import install_referral_registration_integrity
 from app.registration_flow_hotfix import install_registration_flow_hotfix
 from app.security_journal import install_security_journal
+from app.staff_admin_entry import install_staff_admin_entry
 from app.staff_quiz_admin import install_staff_quiz_admin
 from app.telegram_notifications import install_telegram_notifications
 from app.telegram_safety_hotfix import install_telegram_safety_hotfix
@@ -132,6 +133,7 @@ def _install_extensions(application):
     application = install_staff_quiz_admin(application)
     application = install_admin_information_architecture(application)
     application = install_admin_access_control(application)
+    application = install_staff_admin_entry(application)
     application = install_member_host_routing(application)
     application = install_admin_vault_scanner(application)
     return _session_middleware_outermost(application)
