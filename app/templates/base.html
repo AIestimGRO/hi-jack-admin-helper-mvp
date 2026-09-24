@@ -46,7 +46,7 @@
     <div class="admin-menu-head"><div><small>Навигация</small><strong>{{ admin_name }}</strong></div><button type="button" data-admin-menu-close aria-label="Закрыть">×</button></div>
     <nav>
       <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="{{ '/master/clients' if is_master else '/clients' }}"><span>◉</span><div><strong>Клиенты</strong><small>Поиск, рейтинг, JACKCOIN и учётные данные</small></div></a>
-      {% if is_bartender %}<a class="{{ 'active' if current_path.startswith('/staff/redeem') else '' }}" href="/staff/redeem"><span>♦</span><div><strong>Погасить JACK CARD</strong><small>Короткий код активированной карты</small></div></a>{% endif %}
+      {% if is_bartender or is_manager %}<a class="{{ 'active' if current_path.startswith('/staff/redeem') else '' }}" href="/staff/redeem"><span>♦</span><div><strong>Погасить JACK CARD</strong><small>Короткий код активированной карты</small></div></a>{% endif %}
 
       {% if can_content %}
       <span class="admin-nav-group-label">Игра</span>
@@ -91,7 +91,7 @@
     <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="{{ '/master/clients' if is_master else '/clients' }}"><span>◉</span><small>Клиенты</small></a>
     {% if can_content %}<a class="{{ 'active' if admin_section == 'jackside' else '' }}" href="{{ '/master/jackside' if is_master else '/staff/quizzes' }}"><span>4:14</span><small>JACKSIDE</small></a>{% endif %}
     {% if can_content %}<a class="{{ 'active' if admin_section == 'reports' else '' }}" href="{{ '/master/reports' if is_master else '/admin/quiz-results' }}"><span>Σ</span><small>Отчёты</small></a>{% endif %}
-    <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="{{ '/staff/redeem' if is_bartender else '/admin/vault' }}"><span>♦</span><small>{{ 'Погасить' if is_bartender else 'Store' }}</small></a>
+    <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="{{ '/admin/vault' if is_master else '/staff/redeem' }}"><span>♦</span><small>{{ 'Store' if is_master else 'Погасить' }}</small></a>
     <button type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span>•••</span><small>Ещё</small></button>
   </nav>
   {% endif %}
