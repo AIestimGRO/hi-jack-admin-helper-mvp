@@ -159,7 +159,9 @@ def test_master_creates_preference_and_standard_admin_has_no_master_access(tmp_p
         client.post("/logout", data={"csrf_token": token})
         login(client, username="masha", pin="1357")
         assert client.get("/clients").status_code == 200
-        assert client.get("/master").status_code == 403
+        master_page = client.get("/master", follow_redirects=False)
+        assert master_page.status_code == 303
+        assert master_page.headers["location"] == "/clients"
         assert client.post(
             "/api/master/preferences/create",
             data={"title": "Нельзя", "kind": "counter", "csrf_token": csrf_from(client, "/clients")},
