@@ -132,6 +132,14 @@ def manager_path_allowed(path: str, method: str) -> bool:
         return True
     if path == "/" and method == "GET":
         return True
+    if method == "GET" and path in {
+        "/master/clients",
+        "/master/jackside",
+        "/master/reports",
+    }:
+        return True
+    if method == "POST" and path == "/api/master/qr/resolve":
+        return True
     if path.startswith("/admin/quiz") or path.startswith("/api/admin/quiz"):
         return True
     if path.startswith("/admin/vault") or path.startswith("/api/vault/"):
