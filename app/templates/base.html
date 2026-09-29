@@ -27,6 +27,10 @@
 {% set is_master = access_role == 'master' %}
 {% set is_manager = access_role == 'quiz_manager' %}
 {% set is_bartender = access_role == 'bartender' %}
+{% set prod_workspace_role = is_master or is_manager %}
+{% set clients_href = '/master/clients' if prod_workspace_role else '/clients' %}
+{% set jackside_href = '/master/jackside' if prod_workspace_role else '/staff/quizzes' %}
+{% set reports_href = '/master/reports' if prod_workspace_role else '/admin/quiz-results' %}
 {% set admin_section = 'more' %}
 {% if current_path.startswith('/master/clients') or current_path.startswith('/clients') or current_path.startswith('/master/member-accounts') or current_path.startswith('/master/referrals') %}{% set admin_section = 'clients' %}
 {% elif current_path.startswith('/master/jackside') or current_path.startswith('/staff/quizzes') or (current_path == '/master' and master_tab == 'campaigns') %}{% set admin_section = 'jackside' %}
@@ -37,7 +41,7 @@
 <body class="admin-app-body admin-section-{{ admin_section }}" data-admin-access-role="{{ access_role }}">
   {% if request.session.get('authenticated') %}
   <header class="topbar">
-    <a class="brand" href="{{ '/clients' if is_bartender else ('/master/clients' if is_master else '/staff/quizzes') }}"><img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt=""><span><strong>Hi, Jack!</strong><small>Club Helper</small></span></a>
+    <a class="brand" href="{{ clients_href }}"><img src="{{ url_for('static', path='/img/brand/hi-jack-mark.webp') }}?v={{ asset_version }}" alt=""><span><strong>Hi, Jack!</strong><small>Club Helper</small></span></a>
     <span class="admin-current-user">{{ admin_name }}{% if request.session.get('admin_access_label') %}<small> · {{ request.session.get('admin_access_label') }}</small>{% endif %}</span>
     <button class="admin-menu-toggle" type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span></span><span></span><span></span><b>Меню</b></button>
   </header>
@@ -45,13 +49,13 @@
   <aside id="admin-menu" class="admin-menu-panel admin-persistent-nav" data-admin-menu hidden>
     <div class="admin-menu-head"><div><small>Навигация</small><strong>{{ admin_name }}</strong></div><button type="button" data-admin-menu-close aria-label="Закрыть">×</button></div>
     <nav>
-      <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="{{ '/master/clients' if is_master else '/clients' }}"><span>◉</span><div><strong>Клиенты</strong><small>Поиск, рейтинг, JACKCOIN и учётные данные</small></div></a>
-      {% if is_bartender or is_manager %}<a class="{{ 'active' if current_path.startswith('/staff/redeem') else '' }}" href="/staff/redeem"><span>♦</span><div><strong>Погасить JACK CARD</strong><small>Короткий код активированной карты</small></div></a>{% endif %}
+      <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="{{ clients_href }}"><span>◉</span><div><strong>Клиенты</strong><small>Поиск, рейтинг, JACKCOIN и учётные данные</small></div></a>
+      {% if is_bartender or is_manager %}<a class="{{ 'active' if current_path.startswith('/staff/redeem') else '' }}" href="/staff/redeem"><span>♦</span><div><strong>Погасить JACK CARD</strong><small>QR-сканер или короткий код активированной карты</small></div></a>{% endif %}
 
       {% if can_content %}
       <span class="admin-nav-group-label">Игра</span>
-      <a class="{{ 'active' if admin_section == 'jackside' else '' }}" href="{{ '/master/jackside' if is_master else '/staff/quizzes' }}"><span>4:14</span><div><strong>JACKSIDE</strong><small>Квизы, вопросы и новые выпуски</small></div></a>
-      <a class="{{ 'active' if admin_section == 'reports' else '' }}" href="{{ '/master/reports' if is_master else '/admin/quiz-results' }}"><span>Σ</span><div><strong>Результаты и аналитика</strong><small>Отчёты по игре и участникам</small></div></a>
+      <a class="{{ 'active' if admin_section == 'jackside' else '' }}" href="{{ jackside_href }}"><span>4:14</span><div><strong>JACKSIDE</strong><small>Квизы, вопросы и новые выпуски</small></div></a>
+      <a class="{{ 'active' if admin_section == 'reports' else '' }}" href="{{ reports_href }}"><span>Σ</span><div><strong>Результаты и аналитика</strong><small>Отчёты по игре и участникам</small></div></a>
       {% if is_master %}<a class="{{ 'active' if current_path.startswith('/master/hijack-rating') else '' }}" href="/master/hijack-rating"><span>HJ</span><div><strong>Рейтинг HI, JACK!</strong><small>Турниры и Excel-загрузки</small></div></a>{% endif %}
 
       {% if is_master %}
@@ -88,9 +92,9 @@
 
   {% if request.session.get('authenticated') %}
   <nav class="admin-bottom-nav" aria-label="Быстрые разделы">
-    <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="{{ '/master/clients' if is_master else '/clients' }}"><span>◉</span><small>Клиенты</small></a>
-    {% if can_content %}<a class="{{ 'active' if admin_section == 'jackside' else '' }}" href="{{ '/master/jackside' if is_master else '/staff/quizzes' }}"><span>4:14</span><small>JACKSIDE</small></a>{% endif %}
-    {% if can_content %}<a class="{{ 'active' if admin_section == 'reports' else '' }}" href="{{ '/master/reports' if is_master else '/admin/quiz-results' }}"><span>Σ</span><small>Отчёты</small></a>{% endif %}
+    <a class="{{ 'active' if admin_section == 'clients' else '' }}" href="{{ clients_href }}"><span>◉</span><small>Клиенты</small></a>
+    {% if can_content %}<a class="{{ 'active' if admin_section == 'jackside' else '' }}" href="{{ jackside_href }}"><span>4:14</span><small>JACKSIDE</small></a>{% endif %}
+    {% if can_content %}<a class="{{ 'active' if admin_section == 'reports' else '' }}" href="{{ reports_href }}"><span>Σ</span><small>Отчёты</small></a>{% endif %}
     <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="{{ '/admin/vault' if is_master else '/staff/redeem' }}"><span>♦</span><small>{{ 'Store' if is_master else 'Погасить' }}</small></a>
     <button type="button" data-admin-menu-toggle aria-expanded="false" aria-controls="admin-menu"><span>•••</span><small>Ещё</small></button>
   </nav>
