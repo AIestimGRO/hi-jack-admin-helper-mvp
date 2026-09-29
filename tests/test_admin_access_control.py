@@ -68,6 +68,8 @@ def test_bartender_allowlist_is_operational_only() -> None:
     ]
     denied = [
         ("/", "GET"),
+        ("/master/clients", "GET"),
+        ("/api/master/qr/resolve", "POST"),
         ("/clients/import", "GET"),
         ("/clients/123/comment", "POST"),
         ("/admin/vault", "GET"),
@@ -86,9 +88,13 @@ def test_bartender_allowlist_is_operational_only() -> None:
         assert not access_path_allowed(ACCESS_BARTENDER, path=path, method=method)
 
 
-def test_quiz_manager_can_run_content_and_rewards_but_not_master_system() -> None:
+def test_quiz_manager_can_use_prod_content_workspaces_but_not_master_system() -> None:
     allowed = [
         ("/", "GET"),
+        ("/master/clients", "GET"),
+        ("/master/jackside", "GET"),
+        ("/master/reports", "GET"),
+        ("/api/master/qr/resolve", "POST"),
         ("/clients", "GET"),
         ("/clients/42", "GET"),
         ("/admin/quiz-results", "GET"),
@@ -112,6 +118,8 @@ def test_quiz_manager_can_run_content_and_rewards_but_not_master_system() -> Non
         ("/master/economy", "GET"),
         ("/master/hijack-rating", "GET"),
         ("/master/member-accounts", "GET"),
+        ("/master/referrals", "GET"),
+        ("/master/settings", "GET"),
         ("/master/legal-documents", "GET"),
         ("/master/club-links", "GET"),
         ("/master/engagement-icons", "GET"),
@@ -136,6 +144,9 @@ def test_quiz_manager_can_run_content_and_rewards_but_not_master_system() -> Non
 def test_master_access_is_unrestricted() -> None:
     for path, method in (
         ("/master", "GET"),
+        ("/master/clients", "GET"),
+        ("/master/jackside", "GET"),
+        ("/master/reports", "GET"),
         ("/master/legal-documents", "GET"),
         ("/api/master/admins", "POST"),
         ("/clients/import", "GET"),
@@ -155,17 +166,18 @@ def test_quiz_manager_campaign_validation_keeps_safe_limits() -> None:
     assert values == ("Test quiz", 7, 20, 120, 2, 1)
 
 
-def test_scoped_navigation_does_not_send_manager_to_master_workspaces() -> None:
+def test_quiz_manager_navigation_uses_prod_workspaces_without_master_only_sections() -> None:
     base = (ROOT / "app/templates/base.html").read_text(encoding="utf-8")
     dashboard = (ROOT / "app/templates/dashboard.html").read_text(encoding="utf-8")
     client = (ROOT / "app/templates/client_detail.html").read_text(encoding="utf-8")
-    script = (ROOT / "app/static/js/prelaunch-admin.js").read_text(encoding="utf-8")
 
     assert "data-admin-access-role" in base
-    assert "'/master/jackside' if is_master else '/staff/quizzes'" in base
-    assert "'/master/reports' if is_master else '/admin/quiz-results'" in base
+    assert "{% set prod_workspace_role = is_master or is_manager %}" in base
+    assert "{% set clients_href = '/master/clients' if prod_workspace_role else '/clients' %}" in base
+    assert "{% set jackside_href = '/master/jackside' if prod_workspace_role else '/staff/quizzes' %}" in base
+    assert "{% set reports_href = '/master/reports' if prod_workspace_role else '/admin/quiz-results' %}" in base
+    assert "{% if is_master %}<a class=" in base
+    assert "href=\"/master/settings\"" in base
     assert "href=\"/staff-access\"" in base
     assert "access_role == 'quiz_manager'" in dashboard
     assert "{% if access_role == 'master' %}" in client
-    assert "document.body.dataset.adminAccessRole === 'quiz_manager'" in script
-    assert "link.href = '/staff/quizzes'" in script
