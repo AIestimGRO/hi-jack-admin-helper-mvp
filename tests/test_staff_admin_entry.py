@@ -79,7 +79,7 @@ def _make_entry_app(tmp_path: Path) -> tuple[TestClient, dict[str, int]]:
 
     @app.get("/staff/quizzes")
     async def staff_quizzes() -> PlainTextResponse:
-        return PlainTextResponse("quiz-manager-home")
+        return PlainTextResponse("legacy-quiz-manager-home")
 
     @app.get("/clients")
     async def clients() -> PlainTextResponse:
@@ -110,22 +110,22 @@ def _make_entry_app(tmp_path: Path) -> tuple[TestClient, dict[str, int]]:
 
 def test_scoped_admin_landing_is_role_specific() -> None:
     assert scoped_admin_landing(ACCESS_MASTER) is None
-    assert scoped_admin_landing(ACCESS_QUIZ_MANAGER) == "/staff/quizzes"
+    assert scoped_admin_landing(ACCESS_QUIZ_MANAGER) == "/master/clients"
     assert scoped_admin_landing(ACCESS_BARTENDER) == "/clients"
 
 
-def test_scoped_staff_login_and_stale_master_route_land_safely(tmp_path: Path) -> None:
+def test_scoped_staff_login_and_admin_host_route_land_safely(tmp_path: Path) -> None:
     client, _ = _make_entry_app(tmp_path)
     with client:
         manager = client.get("/login/manager", follow_redirects=True)
         assert manager.status_code == 200
-        assert manager.text == "quiz-manager-home"
+        assert manager.text == "master-clients"
         stale_manager = client.get("/master", follow_redirects=False)
         assert stale_manager.status_code == 303
-        assert stale_manager.headers["location"] == "/staff/quizzes"
+        assert stale_manager.headers["location"] == "/master/clients"
         admin_host_manager = client.get("/master/clients", follow_redirects=False)
-        assert admin_host_manager.status_code == 303
-        assert admin_host_manager.headers["location"] == "/staff/quizzes"
+        assert admin_host_manager.status_code == 200
+        assert admin_host_manager.text == "master-clients"
 
         bartender = client.get("/login/bartender", follow_redirects=True)
         assert bartender.status_code == 200
@@ -145,12 +145,20 @@ def test_scoped_staff_login_and_stale_master_route_land_safely(tmp_path: Path) -
         assert master_clients.text == "master-clients"
 
 
-def test_scoped_staff_navigation_exposes_redeem_without_widening_master_ui() -> None:
+def test_scoped_staff_navigation_uses_prod_workspaces_and_redeem() -> None:
     base = (ROOT / "app/templates/base.html").read_text(encoding="utf-8")
+    redeem = (ROOT / "app/templates/staff_redeem.html").read_text(encoding="utf-8")
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
 
+    assert "{% set prod_workspace_role = is_master or is_manager %}" in base
+    assert "{% set clients_href = '/master/clients' if prod_workspace_role else '/clients' %}" in base
+    assert "{% set jackside_href = '/master/jackside' if prod_workspace_role else '/staff/quizzes' %}" in base
+    assert "{% set reports_href = '/master/reports' if prod_workspace_role else '/admin/quiz-results' %}" in base
     assert "{% if is_bartender or is_manager %}" in base
     assert 'href="/staff/redeem"' in base
     assert "'/admin/vault' if is_master else '/staff/redeem'" in base
     assert "'Store' if is_master else 'Погасить'" in base
+    assert "data-vault-scanner" in redeem
+    assert "data-vault-redeem-form" in redeem
+    assert "admin-vault-scanner.js" in redeem
     assert "install_staff_admin_entry" in main
