@@ -25,6 +25,19 @@ def test_vault_scanner_reuses_existing_redeem_action() -> None:
     assert "/css/admin-vault-scanner.css" in html
 
 
+def test_staff_redeem_reuses_existing_camera_scanner_without_master_qr_api() -> None:
+    html = (ROOT / "app/templates/staff_redeem.html").read_text(encoding="utf-8")
+
+    assert "data-vault-scanner" in html
+    assert "data-vault-scan-video" in html
+    assert "data-vault-scan-start" in html
+    assert "data-vault-redeem-form" in html
+    assert 'action="/staff/redeem"' in html
+    assert 'class="primary vault-burn-button" type="submit"' in html
+    assert "/js/admin-vault-scanner.js" in html
+    assert "/css/admin-vault-scanner.css" in html
+
+
 def test_vault_code_input_is_locked_until_explicit_manual_tap() -> None:
     source = (ROOT / "app/static/js/admin-vault-scanner.js").read_text(
         encoding="utf-8"
@@ -165,7 +178,10 @@ def test_camera_permission_is_scoped_to_scanner_pages() -> None:
     source = (ROOT / "app/admin_vault_scanner.py").read_text(encoding="utf-8")
     main = (ROOT / "app/main.py").read_text(encoding="utf-8")
 
-    assert '_CAMERA_PATHS = frozenset({"/admin/vault", "/master/clients"})' in source
+    assert (
+        '_CAMERA_PATHS = frozenset({"/admin/vault", "/master/clients", "/staff/redeem"})'
+        in source
+    )
     assert "request.url.path in _CAMERA_PATHS" in source
     assert '"camera=(self), microphone=(), geolocation=()"' in source
     assert "install_admin_vault_scanner(application)" in main
