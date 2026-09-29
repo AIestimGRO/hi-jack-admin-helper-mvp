@@ -345,8 +345,12 @@
     const isDaily = builder?.dataset.campaignType === 'daily_414';
     if (document.body.dataset.adminAccessRole === 'quiz_manager') {
       document.querySelectorAll('a[href="/master?tab=campaigns"]').forEach((link) => {
-        link.href = '/staff/quizzes';
-        if (link.textContent.trim() === 'Настройки') link.textContent = 'К списку квизов';
+        link.href = isDaily ? '/master/jackside' : '/staff/quizzes';
+        if (link.classList.contains('back')) {
+          link.textContent = isDaily ? '← JACKSIDE' : '← Обычные квизы';
+        } else if (link.textContent.trim() === 'Настройки') {
+          link.textContent = isDaily ? 'К выпускам' : 'К списку квизов';
+        }
       });
       return;
     }
