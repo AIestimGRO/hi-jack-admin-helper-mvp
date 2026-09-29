@@ -11,7 +11,7 @@ from app.admin_access_control import (
 from app.db import connect
 
 
-_SCOPED_ENTRY_PATHS = frozenset({"/", "/master", "/master/"})
+_SCOPED_ENTRY_PATHS = frozenset({"/", "/master", "/master/", "/master/clients"})
 
 
 def scoped_admin_landing(access_role: str) -> str | None:
@@ -55,7 +55,7 @@ def install_staff_admin_entry(app: FastAPI) -> FastAPI:
             )
 
         landing = scoped_admin_landing(access_role)
-        if landing:
+        if landing and landing != request.url.path:
             return RedirectResponse(landing, status_code=303)
         return await call_next(request)
 
