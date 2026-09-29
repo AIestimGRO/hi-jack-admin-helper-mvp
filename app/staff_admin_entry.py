@@ -11,12 +11,12 @@ from app.admin_access_control import (
 from app.db import connect
 
 
-_SCOPED_ENTRY_PATHS = frozenset({"/", "/master", "/master/", "/master/clients"})
+_SCOPED_ENTRY_PATHS = frozenset({"/", "/master", "/master/"})
 
 
 def scoped_admin_landing(access_role: str) -> str | None:
     if access_role == ACCESS_QUIZ_MANAGER:
-        return "/staff/quizzes"
+        return "/master/clients"
     if access_role == ACCESS_BARTENDER:
         return "/clients"
     return None
