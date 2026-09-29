@@ -73,6 +73,10 @@ def _make_entry_app(tmp_path: Path) -> tuple[TestClient, dict[str, int]]:
     async def root() -> PlainTextResponse:
         return PlainTextResponse("master-root")
 
+    @app.get("/master/clients")
+    async def master_clients() -> PlainTextResponse:
+        return PlainTextResponse("master-clients")
+
     @app.get("/staff/quizzes")
     async def staff_quizzes() -> PlainTextResponse:
         return PlainTextResponse("quiz-manager-home")
@@ -119,6 +123,9 @@ def test_scoped_staff_login_and_stale_master_route_land_safely(tmp_path: Path) -
         stale_manager = client.get("/master", follow_redirects=False)
         assert stale_manager.status_code == 303
         assert stale_manager.headers["location"] == "/staff/quizzes"
+        admin_host_manager = client.get("/master/clients", follow_redirects=False)
+        assert admin_host_manager.status_code == 303
+        assert admin_host_manager.headers["location"] == "/staff/quizzes"
 
         bartender = client.get("/login/bartender", follow_redirects=True)
         assert bartender.status_code == 200
@@ -126,10 +133,16 @@ def test_scoped_staff_login_and_stale_master_route_land_safely(tmp_path: Path) -
         stale_bartender = client.get("/master", follow_redirects=False)
         assert stale_bartender.status_code == 303
         assert stale_bartender.headers["location"] == "/clients"
+        admin_host_bartender = client.get("/master/clients", follow_redirects=False)
+        assert admin_host_bartender.status_code == 303
+        assert admin_host_bartender.headers["location"] == "/clients"
 
         master = client.get("/login/master", follow_redirects=True)
         assert master.status_code == 200
         assert master.text == "master-root"
+        master_clients = client.get("/master/clients")
+        assert master_clients.status_code == 200
+        assert master_clients.text == "master-clients"
 
 
 def test_scoped_staff_navigation_exposes_redeem_without_widening_master_ui() -> None:
