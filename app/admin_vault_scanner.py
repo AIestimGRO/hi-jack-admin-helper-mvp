@@ -11,7 +11,7 @@ from app.product_shell import _check_csrf, _require_master
 
 
 _VAULT_CAMERA_POLICY = "camera=(self), microphone=(), geolocation=()"
-_CAMERA_PATHS = frozenset({"/admin/vault", "/master/clients"})
+_CAMERA_PATHS = frozenset({"/admin/vault", "/master/clients", "/staff/redeem"})
 _CARD_VALUE_RE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
 _CLIENT_PATH_RE = re.compile(r"^/clients/(?P<client_id>[1-9][0-9]*)/?$")
 
