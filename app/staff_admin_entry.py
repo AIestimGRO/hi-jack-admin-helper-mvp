@@ -11,7 +11,7 @@ from app.admin_access_control import (
 from app.db import connect
 
 
-_SCOPED_ENTRY_PATHS = frozenset({"/", "/master", "/master/"})
+_SCOPED_ENTRY_PATHS = frozenset({"/", "/master", "/master/", "/master/clients"})
 
 
 def scoped_admin_landing(access_role: str) -> str | None:
