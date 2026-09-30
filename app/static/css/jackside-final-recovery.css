@@ -260,3 +260,217 @@
   color: #c8f8f3;
   background: rgba(9,39,36,.7);
 }
+
+/* JACKSIDE error review: external stylesheet rules are intentional.
+   Runtime-injected style tags can be ignored by mobile CSP, so the visible
+   review contract lives in this already-loaded JACKSIDE stylesheet. */
+.jackside-review-offer {
+  margin-top: 18px !important;
+  padding: 18px !important;
+  border: 1px solid rgba(244,213,107,.38) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(145deg, rgba(244,213,107,.12), rgba(8,28,25,.88)) !important;
+  text-align: left !important;
+}
+
+.jackside-review-offer h3 {
+  margin: 4px 0 8px !important;
+  font-size: 1.18rem !important;
+}
+
+.jackside-review-offer > p:not(.quiz-kicker):not(.quiz-validation) {
+  margin: 0 0 10px !important;
+  color: rgba(255,255,255,.76) !important;
+}
+
+.jackside-review-offer .jackside-review-meta {
+  display: flex !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+  margin: 12px 0 !important;
+}
+
+.jackside-review-offer .jackside-review-meta span {
+  padding: 7px 10px !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.08) !important;
+  font-size: .9rem !important;
+}
+
+.jackside-review-offer [data-error-review-open] {
+  display: block !important;
+  width: min(100%, 360px) !important;
+  margin: 18px auto 0 !important;
+}
+
+.jackside-review-offer .quiz-validation {
+  margin-top: 10px !important;
+  text-align: center !important;
+}
+
+.quiz-screen[data-screen="error-review"] {
+  justify-content: flex-start !important;
+  padding: 28px 28px 88px !important;
+  border: 1px solid #173e3a !important;
+  border-radius: 24px !important;
+  background: linear-gradient(155deg, rgba(10,27,24,.48), rgba(4,11,10,.66)) !important;
+  backdrop-filter: blur(2px);
+  box-shadow: 0 24px 60px rgba(0,0,0,.24) !important;
+}
+
+.quiz-screen[data-screen="error-review"] .quiz-progress {
+  margin-bottom: 20px !important;
+}
+
+.quiz-screen[data-screen="error-review"] .quiz-section-label {
+  align-self: center !important;
+  text-align: center !important;
+}
+
+.quiz-screen[data-screen="error-review"] .quiz-question-title {
+  margin-bottom: 14px !important;
+  font-size: clamp(19px,5.3vw,28px) !important;
+  line-height: 1.22 !important;
+  letter-spacing: -.4px !important;
+}
+
+.quiz-screen[data-screen="error-review"] .quiz-question-media {
+  display: flex;
+  justify-content: center;
+  align-self: center;
+  width: fit-content;
+  max-width: min(92%, 420px);
+  margin: 4px auto 18px !important;
+  padding: 10px 14px !important;
+  border: 1px solid rgba(123,211,184,.32) !important;
+  border-radius: 18px !important;
+  background: radial-gradient(ellipse at center, #17614f 0, #0a3d33 68%, #062920 100%) !important;
+  box-shadow: inset 0 0 28px rgba(0,0,0,.26), 0 14px 28px rgba(0,0,0,.2) !important;
+}
+
+.quiz-screen[data-screen="error-review"] .quiz-question-media[hidden] {
+  display: none !important;
+}
+
+.jackside-review-image {
+  display: block !important;
+  width: auto !important;
+  max-width: 100% !important;
+  height: auto !important;
+  max-height: min(42vh,320px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  object-fit: contain !important;
+}
+
+.jackside-review-options {
+  display: grid !important;
+  gap: 10px !important;
+  margin-bottom: 8px !important;
+}
+
+.jackside-review-option {
+  cursor: default !important;
+}
+
+.jackside-review-option > div {
+  min-width: 0;
+}
+
+.jackside-review-option strong {
+  display: block !important;
+  color: #fff !important;
+  overflow-wrap: anywhere;
+}
+
+.jackside-review-option small {
+  display: none !important;
+}
+
+.jackside-review-option.is-wrong,
+.jackside-review-option.is-wrong:hover {
+  border-color: #ff6577 !important;
+  background: linear-gradient(135deg, rgba(173,31,50,.78), rgba(93,15,28,.88)) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,135,149,.2), 0 8px 22px rgba(126,16,34,.18) !important;
+}
+
+.jackside-review-option.is-wrong > span {
+  border-color: #ff9aa7 !important;
+  background: #e62c45 !important;
+  box-shadow: inset 0 0 0 4px #e62c45 !important;
+}
+
+.jackside-review-option.is-correct,
+.jackside-review-option.is-correct:hover {
+  border-color: #55dfa8 !important;
+  background: linear-gradient(135deg, rgba(20,139,94,.72), rgba(8,82,57,.88)) !important;
+  box-shadow: inset 0 0 0 1px rgba(138,235,186,.18), 0 8px 22px rgba(11,92,62,.16) !important;
+}
+
+.jackside-review-option.is-correct > span {
+  border-color: #8aebba !important;
+  background: #2fce85 !important;
+  box-shadow: inset 0 0 0 4px #2fce85 !important;
+}
+
+.jackside-review-option:not(.is-wrong):not(.is-correct),
+.jackside-review-option:not(.is-wrong):not(.is-correct):hover {
+  border-color: #3b6c65 !important;
+  background: rgba(7,17,15,.42) !important;
+}
+
+.jackside-review-explanation {
+  margin-top: 18px !important;
+  padding: 16px !important;
+  border: 1px solid rgba(82,198,201,.42) !important;
+  border-radius: 16px !important;
+  background: linear-gradient(145deg, rgba(0,105,133,.18), rgba(5,25,23,.72)) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.02) !important;
+}
+
+.jackside-review-explanation strong {
+  display: block !important;
+  margin-bottom: 7px !important;
+  color: #8de4e4 !important;
+  font-size: 13px !important;
+  letter-spacing: .25px !important;
+}
+
+.jackside-review-explanation p {
+  margin: 0 !important;
+  color: #e7f5f3 !important;
+  white-space: pre-wrap;
+  line-height: 1.5 !important;
+}
+
+.jackside-review-actions {
+  display: grid !important;
+  grid-template-columns: auto 1fr !important;
+  gap: 10px !important;
+  margin-top: 28px !important;
+}
+
+.jackside-review-actions .quiz-secondary {
+  min-width: 112px;
+}
+
+@media (max-width: 420px) {
+  .quiz-screen[data-screen="error-review"] {
+    width: 100% !important;
+    min-height: calc(100dvh - 92px) !important;
+    padding: 20px 15px 82px !important;
+    border-radius: 18px !important;
+  }
+
+  .jackside-review-actions {
+    grid-template-columns: 1fr 1.45fr !important;
+  }
+
+  .jackside-review-actions .quiz-secondary {
+    min-width: 0;
+  }
+}
