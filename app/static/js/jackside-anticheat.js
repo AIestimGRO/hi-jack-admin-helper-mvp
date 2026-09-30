@@ -15,6 +15,7 @@
   let currentIndex = 0;
   let hiddenTimer = null;
   let skipInFlight = false;
+  let internalNavigation = false;
 
   function safeParse(value) {
     try { return JSON.parse(value); } catch (_) { return null; }
@@ -140,6 +141,7 @@
   function forcedFinishScreen(result) {
     const success = app.querySelector('[data-screen="success"]');
     if (!success) {
+      internalNavigation = true;
       window.location.assign('/account?tab=stats');
       return;
     }
@@ -225,6 +227,7 @@
       if (data.finished) {
         const result = data.result || {};
         if (result.main_prize_eligible && result.final_table_starts_at) {
+          internalNavigation = true;
           window.location.reload();
           return;
         }
@@ -233,6 +236,7 @@
       }
 
       setNotice('Вы покинули страницу более чем на 1 секунду. Предыдущий вопрос засчитан как неправильный.');
+      internalNavigation = true;
       window.location.reload();
     } catch (error) {
       if (document.visibilityState === 'visible') {
@@ -298,6 +302,7 @@
   });
 
   window.addEventListener('pagehide', () => {
+    if (internalNavigation) return;
     if (!getStoredPending()) rememberHiddenQuestion();
   });
 
