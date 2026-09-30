@@ -38,26 +38,39 @@
       .jackside-review-offer p { margin: 0 0 10px; color: rgba(255,255,255,.76); }
       .jackside-review-offer .jackside-review-meta { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
       .jackside-review-offer .jackside-review-meta span { padding: 7px 10px; border-radius: 999px; background: rgba(255,255,255,.08); font-size: .9rem; }
-      .jackside-review-offer .quiz-validation { margin-top: 10px; }
-      .jackside-review-shell { width: 100%; }
-      .jackside-review-progress { margin: 0 0 14px; color: rgba(255,255,255,.62); font-size: .9rem; }
-      .jackside-review-card { width: 100%; padding: 0; text-align: left; }
-      .jackside-review-image { display: block; width: 100%; max-height: 310px; object-fit: contain; border-radius: 16px; margin: 14px 0; background: rgba(0,0,0,.2); }
-      .jackside-review-options { display: grid; gap: 10px; margin: 18px 0; }
-      .jackside-review-option { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; padding: 13px 14px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(255,255,255,.045); }
-      .jackside-review-option strong { display: block; }
-      .jackside-review-option small { display: block; margin-top: 4px; color: rgba(255,255,255,.66); }
-      .jackside-review-option.is-correct { border-color: rgba(72,210,151,.68); background: rgba(40,169,112,.16); }
-      .jackside-review-option.is-wrong { border-color: rgba(245,92,92,.66); background: rgba(207,54,54,.16); }
-      .jackside-review-option .jackside-review-mark { font-weight: 800; line-height: 1.3; }
-      .jackside-review-option.is-correct .jackside-review-mark { color: #70e7ae; }
-      .jackside-review-option.is-wrong .jackside-review-mark { color: #ff8080; }
-      .jackside-review-explanation { margin-top: 16px; padding: 15px 16px; border-radius: 16px; background: rgba(244,213,107,.1); border: 1px solid rgba(244,213,107,.25); }
-      .jackside-review-explanation strong { display: block; margin-bottom: 7px; color: #f4d56b; }
-      .jackside-review-explanation p { margin: 0; white-space: pre-wrap; line-height: 1.5; }
-      .jackside-review-actions { display: flex; gap: 10px; margin-top: 18px; }
-      .jackside-review-actions button, .jackside-review-actions a { flex: 1; }
-      @media (max-width: 520px) { .jackside-review-actions { flex-direction: column; } }
+      .jackside-review-offer [data-error-review-open] { display: block; width: min(100%, 360px); margin: 18px auto 0; }
+      .jackside-review-offer .quiz-validation { margin-top: 10px; text-align: center; }
+
+      .quiz-screen[data-screen="error-review"] { justify-content: flex-start; padding: 28px 28px 88px; border: 1px solid #173e3a; border-radius: 24px; background: linear-gradient(155deg, rgba(10,27,24,.48), rgba(4,11,10,.66)); backdrop-filter: blur(2px); box-shadow: 0 24px 60px rgba(0,0,0,.24); }
+      .quiz-screen[data-screen="error-review"] .quiz-progress { margin-bottom: 20px; }
+      .quiz-screen[data-screen="error-review"] .quiz-question-title { font-size: clamp(19px,5.3vw,28px); line-height: 1.22; letter-spacing: -.4px; margin-bottom: 14px; }
+      .quiz-screen[data-screen="error-review"] .quiz-section-label { align-self: center; text-align: center; }
+      .jackside-review-image { display: block; width: auto; max-width: 100%; height: auto; max-height: min(42vh,320px); margin: 0; padding: 0; border: 0; border-radius: 10px; background: transparent; box-shadow: none; object-fit: contain; }
+      .jackside-review-options { display: grid; gap: 10px; margin-bottom: 8px; }
+      .jackside-review-option { cursor: default; }
+      .jackside-review-option:hover { border-color: #3b6c65; background: rgba(7,17,15,.42); }
+      .jackside-review-option > div { min-width: 0; }
+      .jackside-review-option strong { display: block; overflow-wrap: anywhere; }
+      .jackside-review-option small { display: block; margin-top: 4px; font-size: 12px; font-weight: 750; }
+      .jackside-review-option.is-wrong { border-color: rgba(255,93,111,.88); background: rgba(173,31,50,.28); box-shadow: inset 0 0 0 1px rgba(255,93,111,.12); }
+      .jackside-review-option.is-wrong:hover { border-color: rgba(255,93,111,.88); background: rgba(173,31,50,.28); }
+      .jackside-review-option.is-wrong > span { border-color: #ff6577; background: #e62c45; box-shadow: inset 0 0 0 5px #e62c45; }
+      .jackside-review-option.is-wrong small { color: #ff9aa7; }
+      .jackside-review-option.is-correct { border-color: rgba(67,222,160,.82); background: rgba(24,139,96,.25); box-shadow: inset 0 0 0 1px rgba(67,222,160,.1); }
+      .jackside-review-option.is-correct:hover { border-color: rgba(67,222,160,.82); background: rgba(24,139,96,.25); }
+      .jackside-review-option.is-correct > span { border-color: #55dfa8; background: #2fce85; box-shadow: inset 0 0 0 5px #2fce85; }
+      .jackside-review-option.is-correct small { color: #8aebba; }
+      .jackside-review-option:not(.is-wrong):not(.is-correct) { opacity: .68; }
+      .jackside-review-explanation { margin-top: 18px; padding: 16px; border: 1px solid rgba(82,198,201,.35); border-radius: 14px; background: rgba(0,105,133,.12); }
+      .jackside-review-explanation strong { display: block; margin-bottom: 7px; color: #8de4e4; font-size: 13px; letter-spacing: .25px; }
+      .jackside-review-explanation p { margin: 0; color: #e7f5f3; white-space: pre-wrap; line-height: 1.5; }
+      .jackside-review-actions { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 28px; }
+      .jackside-review-actions .quiz-secondary { min-width: 112px; }
+      @media (max-width: 420px) {
+        .quiz-screen[data-screen="error-review"] { width: 100%; min-height: calc(100dvh - 92px); padding: 20px 15px 82px; border-radius: 18px; }
+        .jackside-review-actions { grid-template-columns: 1fr 1.45fr; }
+        .jackside-review-actions .quiz-secondary { min-width: 0; }
+      }
     `;
     document.head.append(style);
   }
@@ -140,14 +153,23 @@
     let screen = app.querySelector('[data-screen="error-review"]');
     if (screen) return screen;
     screen = document.createElement('section');
-    screen.className = 'quiz-screen daily-414-screen jackside-review-shell';
+    screen.className = 'quiz-screen jackside-review-shell';
     screen.dataset.screen = 'error-review';
     screen.innerHTML = `
-      <p class="quiz-kicker">Разбор ошибок</p>
-      <p class="jackside-review-progress" data-review-progress></p>
-      <div class="jackside-review-card" data-review-card></div>
-      <div class="jackside-review-actions">
-        <button class="quiz-secondary" type="button" data-review-prev>← Назад</button>
+      <div class="quiz-progress"><span data-review-progress-bar></span></div>
+      <p class="quiz-step" data-review-progress></p>
+      <p class="quiz-section-label">Разбор ошибок</p>
+      <figure class="quiz-question-media" data-review-media hidden>
+        <img class="quiz-question-image jackside-review-image" data-review-image alt="">
+      </figure>
+      <h2 class="quiz-question-title" data-review-title></h2>
+      <div class="quiz-options jackside-review-options" data-review-options></div>
+      <section class="jackside-review-explanation" data-review-explanation>
+        <strong>Комментарий к правильному ответу</strong>
+        <p></p>
+      </section>
+      <div class="quiz-actions jackside-review-actions">
+        <button class="quiz-secondary" type="button" data-review-prev>Назад</button>
         <button class="quiz-primary" type="button" data-review-next>Следующая ошибка</button>
       </div>`;
     app.append(screen);
@@ -169,33 +191,24 @@
     return screen;
   }
 
-  function optionHtml(option) {
-    const classes = ['jackside-review-option'];
-    let note = '';
-    let mark = '•';
-    if (option.correct) {
-      classes.push('is-correct');
-      mark = '✓';
-      note = option.selected ? 'Правильный ответ · ваш выбор' : 'Правильный ответ';
-    } else if (option.selected) {
-      classes.push('is-wrong');
-      mark = '×';
-      note = 'Ваш ответ';
-    }
+  function optionNode(option) {
     const holder = document.createElement('div');
-    holder.className = classes.join(' ');
+    holder.className = 'quiz-option jackside-review-option';
+    if (option.correct) holder.classList.add('is-correct');
+    else if (option.selected) holder.classList.add('is-wrong');
+
     const marker = document.createElement('span');
-    marker.className = 'jackside-review-mark';
-    marker.textContent = mark;
     const copy = document.createElement('div');
     const strong = document.createElement('strong');
     strong.textContent = option.text || '—';
     copy.append(strong);
-    if (note) {
-      const small = document.createElement('small');
-      small.textContent = note;
-      copy.append(small);
+
+    if (option.correct || option.selected) {
+      const note = document.createElement('small');
+      note.textContent = option.correct ? 'Правильный ответ' : 'Ваш ответ';
+      copy.append(note);
     }
+
     holder.append(marker, copy);
     return holder;
   }
@@ -205,41 +218,37 @@
     const questions = reviewState?.questions || [];
     const question = questions[reviewIndex];
     if (!question) return;
-    screen.querySelector('[data-review-progress]').textContent = `Ошибка ${reviewIndex + 1} из ${questions.length}`;
-    const card = screen.querySelector('[data-review-card]');
-    card.replaceChildren();
 
-    const title = document.createElement('h2');
-    title.textContent = question.title || 'Вопрос';
-    card.append(title);
-    if (question.image_path) {
-      const image = document.createElement('img');
-      image.className = 'jackside-review-image';
-      image.src = question.image_path;
-      image.alt = question.title || '';
-      card.append(image);
-    }
+    const progress = screen.querySelector('[data-review-progress]');
+    progress.textContent = `Ошибка ${reviewIndex + 1} из ${questions.length}`;
+    const progressBar = screen.querySelector('[data-review-progress-bar]');
+    progressBar.style.width = `${((reviewIndex + 1) / questions.length) * 100}%`;
 
-    const options = document.createElement('div');
-    options.className = 'jackside-review-options';
+    const media = screen.querySelector('[data-review-media]');
+    const image = screen.querySelector('[data-review-image]');
+    media.hidden = !question.image_path;
+    image.src = question.image_path || '';
+    image.alt = question.image_path ? (question.title || '') : '';
+
+    screen.querySelector('[data-review-title]').textContent = question.title || 'Вопрос';
+    const options = screen.querySelector('[data-review-options]');
+    options.replaceChildren();
+
     if (question.type === 'text') {
-      options.append(optionHtml({ text: question.user_answer || 'Нет ответа', selected: true, correct: false }));
+      options.append(optionNode({
+        text: question.user_answer || 'Нет ответа',
+        selected: true,
+        correct: false,
+      }));
       (question.correct_answers || []).forEach((answer) => {
-        options.append(optionHtml({ text: answer, selected: false, correct: true }));
+        options.append(optionNode({ text: answer, selected: false, correct: true }));
       });
     } else {
-      (question.options || []).forEach((option) => options.append(optionHtml(option)));
+      (question.options || []).forEach((option) => options.append(optionNode(option)));
     }
-    card.append(options);
 
-    const explanation = document.createElement('section');
-    explanation.className = 'jackside-review-explanation';
-    const heading = document.createElement('strong');
-    heading.textContent = 'Почему так?';
-    const text = document.createElement('p');
-    text.textContent = question.explanation || 'Комментарий к этому вопросу пока не добавлен.';
-    explanation.append(heading, text);
-    card.append(explanation);
+    const explanation = screen.querySelector('[data-review-explanation] p');
+    explanation.textContent = question.explanation || 'Комментарий к этому вопросу пока не добавлен.';
 
     const prev = screen.querySelector('[data-review-prev]');
     const next = screen.querySelector('[data-review-next]');
