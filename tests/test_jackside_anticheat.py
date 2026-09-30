@@ -60,7 +60,9 @@ def _seed_attempt(
     token: str = "x" * 43,
 ) -> tuple[str, str]:
     init_db(db_path)
-    campaign_code = "jackside_anticheat" if campaign_type == "daily_414" else "regular_anticheat"
+    campaign_code = (
+        "jackside_anticheat" if campaign_type == "daily_414" else "regular_anticheat"
+    )
     questions = _questions()
     for question in questions:
         question["campaign"] = campaign_code
@@ -91,7 +93,6 @@ def _seed_attempt(
 def test_visibility_under_one_second_does_not_skip_question(tmp_path: Path) -> None:
     db_path = tmp_path / "anticheat.sqlite3"
     _, token_hash = _seed_attempt(db_path)
-
     with transaction(db_path) as conn:
         result = apply_visibility_skip(
             conn,
@@ -99,14 +100,15 @@ def test_visibility_under_one_second_does_not_skip_question(tmp_path: Path) -> N
             question_id="q1",
             hidden_ms=ANTI_CHEAT_DEBOUNCE_MS - 1,
         )
-
     assert result == {
         "skipped": False,
         "reason": "debounce_not_reached",
         "debounce_ms": 1000,
     }
     with connect(db_path) as conn:
-        attempt = conn.execute("SELECT answers_json,current_index FROM quiz_attempts").fetchone()
+        attempt = conn.execute(
+            "SELECT answers_json,current_index FROM quiz_attempts"
+        ).fetchone()
     assert json.loads(attempt["answers_json"]) == {}
     assert int(attempt["current_index"]) == 0
 
@@ -114,7 +116,6 @@ def test_visibility_under_one_second_does_not_skip_question(tmp_path: Path) -> N
 def test_visibility_at_one_second_marks_wrong_and_advances_once(tmp_path: Path) -> None:
     db_path = tmp_path / "anticheat.sqlite3"
     _, token_hash = _seed_attempt(db_path)
-
     with transaction(db_path) as conn:
         first = apply_visibility_skip(
             conn,
@@ -139,9 +140,10 @@ def test_visibility_at_one_second_marks_wrong_and_advances_once(tmp_path: Path) 
     assert second["reason"] == "already_skipped"
 
     with connect(db_path) as conn:
-        attempt = conn.execute("SELECT answers_json,current_index FROM quiz_attempts").fetchone()
-    answers = json.loads(attempt["answers_json"])
-    assert answers == {"q1": ANTI_CHEAT_SKIP_SENTINEL}
+        attempt = conn.execute(
+            "SELECT answers_json,current_index FROM quiz_attempts"
+        ).fetchone()
+    assert json.loads(attempt["answers_json"]) == {"q1": ANTI_CHEAT_SKIP_SENTINEL}
     assert int(attempt["current_index"]) == 1
 
 
@@ -167,16 +169,17 @@ def test_visibility_skip_is_nonempty_but_scores_as_wrong(tmp_path: Path) -> None
         answers=answers,
     ) is True
     scoring = score_answers(questions, answers)
-    assert scoring["correct_count"] == 1
-    assert scoring["max_correct_count"] == 2
-    assert scoring["score"] == 1
-    assert scoring["max_score"] == 2
+    assert scoring == {
+        "score": 1,
+        "max_score": 2,
+        "correct_count": 1,
+        "max_correct_count": 2,
+    }
 
 
 def test_visibility_skip_never_overwrites_real_answer(tmp_path: Path) -> None:
     db_path = tmp_path / "anticheat.sqlite3"
     _, token_hash = _seed_attempt(db_path, answers={"q1": "a"})
-
     with transaction(db_path) as conn:
         result = apply_visibility_skip(
             conn,
@@ -186,7 +189,6 @@ def test_visibility_skip_never_overwrites_real_answer(tmp_path: Path) -> None:
         )
     assert result["skipped"] is False
     assert result["reason"] == "already_answered"
-
     with connect(db_path) as conn:
         attempt = conn.execute("SELECT answers_json FROM quiz_attempts").fetchone()
     assert json.loads(attempt["answers_json"])["q1"] == "a"
@@ -194,8 +196,7 @@ def test_visibility_skip_never_overwrites_real_answer(tmp_path: Path) -> None:
 
 def test_visibility_skip_is_jackside_only(tmp_path: Path) -> None:
     db_path = tmp_path / "anticheat.sqlite3"
-    _, token_hash = _seed_attempt(db_path, campaign_type="standard")
-
+    _, token_hash = _seed_attempt(db_path, campaign_type="classic")
     with transaction(db_path) as conn:
         with pytest.raises(ValueError, match="anti_cheat_not_enabled"):
             apply_visibility_skip(
@@ -213,7 +214,6 @@ def test_last_question_requests_canonical_finish(tmp_path: Path) -> None:
         answers={"q1": "a"},
         current_index=1,
     )
-
     with transaction(db_path) as conn:
         result = apply_visibility_skip(
             conn,
@@ -224,7 +224,6 @@ def test_last_question_requests_canonical_finish(tmp_path: Path) -> None:
     assert result["skipped"] is True
     assert result["last_question"] is True
     assert result["finish_required"] is True
-
     with connect(db_path) as conn:
         attempt = conn.execute("SELECT answers_json FROM quiz_attempts").fetchone()
     assert json.loads(attempt["answers_json"])["q2"] == ANTI_CHEAT_SKIP_SENTINEL
@@ -244,7 +243,6 @@ def test_http_skip_endpoint_advances_daily_attempt(tmp_path: Path) -> None:
         secret_key=settings.secret_key,
         token=token,
     )
-
     response = client.post(
         "/api/quiz/anti-cheat/skip",
         json={
@@ -256,7 +254,6 @@ def test_http_skip_endpoint_advances_daily_attempt(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["skipped"] is True
     assert response.json()["current_index"] == 1
-
     with connect(settings.db_path) as conn:
         attempt = conn.execute(
             "SELECT answers_json,current_index FROM quiz_attempts WHERE token_hash=?",
@@ -277,5 +274,7 @@ def test_browser_guard_uses_real_elapsed_one_second_and_keepalive() -> None:
     assert "sessionStorage.setItem(pendingKey" in source
     assert "'/api/quiz/anti-cheat/skip'" in source
     assert "keepalive" in source
+    assert "internalNavigation" in source
+    assert "if (internalNavigation) return" in source
     assert "Вы покинули страницу более чем на 1 секунду" in source
     assert "install_jackside_anticheat(application)" in main
