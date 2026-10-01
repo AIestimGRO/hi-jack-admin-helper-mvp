@@ -35,6 +35,7 @@
 {% if current_path.startswith('/master/clients') or current_path.startswith('/clients') or current_path.startswith('/master/member-accounts') or current_path.startswith('/master/referrals') %}{% set admin_section = 'clients' %}
 {% elif current_path.startswith('/master/jackside') or current_path.startswith('/staff/quizzes') or (current_path == '/master' and master_tab == 'campaigns') %}{% set admin_section = 'jackside' %}
 {% elif current_path.startswith('/master/reports') or current_path.startswith('/admin/quiz') or (current_path == '/master' and master_tab == 'analytics') %}{% set admin_section = 'reports' %}
+{% elif current_path.startswith('/master/economy-history') %}{% set admin_section = 'economy_history' %}
 {% elif current_path.startswith('/master/telegram') %}{% set admin_section = 'telegram' %}
 {% elif current_path.startswith('/admin/vault') or current_path.startswith('/staff/redeem') %}{% set admin_section = 'vault' %}
 {% endif %}
@@ -60,10 +61,11 @@
 
       {% if is_master %}
       <span class="admin-nav-group-label">Лояльность</span>
-      <a class="{{ 'active' if current_path.startswith('/master/economy') else '' }}" href="/master/economy"><span>JC</span><div><strong>Экономика JACKCOIN</strong><small>Начисления, серии и рефералы</small></div></a>
+      <a class="{{ 'active' if current_path == '/master/economy' or current_path.startswith('/master/economy/') else '' }}" href="/master/economy"><span>JC</span><div><strong>Экономика JACKCOIN</strong><small>Начисления, серии и рефералы</small></div></a>
       <a class="{{ 'active' if current_path == '/master' and master_tab == 'engagement' or current_path.startswith('/master/engagement-icons') else '' }}" href="/master?tab=engagement"><span>♛</span><div><strong>Звания и достижения</strong><small>Условия, награды и иконки коллекции</small></div></a>
       {% endif %}
-      <a class="{{ 'active' if current_path.startswith('/admin/vault') else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Каталог, карты и награды</small></div></a>
+      <a class="{{ 'active' if admin_section == 'vault' else '' }}" href="/admin/vault"><span>♦</span><div><strong>Hi, Store</strong><small>Каталог, карты и награды</small></div></a>
+      {% if is_master %}<a class="{{ 'active' if admin_section == 'economy_history' else '' }}" href="/master/economy-history"><span>↺</span><div><strong>История экономики</strong><small>JACKCOIN, карты, операции и исполнители</small></div></a>{% endif %}
 
       {% if is_master %}
       <span class="admin-nav-group-label">Коммуникации</span>
