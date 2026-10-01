@@ -10,7 +10,9 @@ from app.db import init_db, transaction
 from app.services import vault
 from app.vault_activation_policy import (
     CARD_ACTIVATION_MINUTES,
-    apply_vault_activation_policy,
+    activate_reward,
+    expire_activations,
+    redeem_reward,
 )
 from app.vault_audit_ui import _render_audit
 
@@ -58,14 +60,13 @@ def _seed_reward(conn) -> tuple[int, int]:
 
 
 def test_activation_is_fixed_to_15_minutes_and_timeout_consumes_card(tmp_path) -> None:
-    apply_vault_activation_policy()
     db_path = tmp_path / "vault-timeout.sqlite3"
     init_db(db_path)
     now = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
 
     with transaction(db_path) as conn:
         client_id, reward_id = _seed_reward(conn)
-        activated = vault.activate_reward(
+        activated = activate_reward(
             conn,
             reward_id=reward_id,
             client_id=client_id,
@@ -78,7 +79,7 @@ def test_activation_is_fixed_to_15_minutes_and_timeout_consumes_card(tmp_path) -
             now + timedelta(minutes=15)
         ).isoformat(timespec="seconds")
 
-        assert vault.expire_activations(
+        assert expire_activations(
             conn,
             client_id=client_id,
             now=now + timedelta(minutes=15),
@@ -104,14 +105,14 @@ def test_activation_is_fixed_to_15_minutes_and_timeout_consumes_card(tmp_path) -
         assert event["admin_name"] == "system"
 
         with pytest.raises(ValueError, match="vault_reward_redeemed"):
-            vault.activate_reward(
+            activate_reward(
                 conn,
                 reward_id=reward_id,
                 client_id=client_id,
                 now=now + timedelta(minutes=16),
             )
         with pytest.raises(ValueError, match="vault_reward_redeemed"):
-            vault.redeem_reward(
+            redeem_reward(
                 conn,
                 code=activation_code,
                 admin_id=1,
@@ -121,7 +122,6 @@ def test_activation_is_fixed_to_15_minutes_and_timeout_consumes_card(tmp_path) -
 
 
 def test_audit_renders_local_time_admin_and_system_actor(tmp_path) -> None:
-    apply_vault_activation_policy()
     db_path = tmp_path / "vault-audit.sqlite3"
     init_db(db_path)
     now = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
@@ -138,13 +138,13 @@ def test_audit_renders_local_time_admin_and_system_actor(tmp_path) -> None:
             """,
             (client_id,),
         )
-        vault.activate_reward(
+        activate_reward(
             conn,
             reward_id=reward_id,
             client_id=client_id,
             now=now,
         )
-        vault.expire_activations(
+        expire_activations(
             conn,
             client_id=client_id,
             now=now + timedelta(minutes=15),
