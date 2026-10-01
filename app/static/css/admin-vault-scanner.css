@@ -191,6 +191,11 @@ body.vault-scanner-open {
   min-height: 50px;
 }
 
+/* The full economy audit now lives in /master/economy-history. */
+.vault-events {
+  display: none !important;
+}
+
 @media (max-width: 520px) {
   .vault-scanner-actions {
     grid-template-columns: 1fr;
