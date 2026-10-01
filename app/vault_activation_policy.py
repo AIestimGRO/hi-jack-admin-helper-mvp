@@ -17,6 +17,7 @@ def _auto_redeem_expired_activation(
     *,
     current: str,
 ) -> bool:
+    consumed_at = str(reward["activation_expires_at"] or current)
     cursor = conn.execute(
         """
         UPDATE vault_member_rewards
@@ -39,9 +40,13 @@ def _auto_redeem_expired_activation(
         action="activation_timeout_redeemed",
         admin_name="system",
         details={
-            "expired_at": reward["activation_expires_at"] or current,
+            "expired_at": consumed_at,
             "reason": "activation_timeout",
         },
+    )
+    conn.execute(
+        "UPDATE vault_reward_events SET created_at=? WHERE id=last_insert_rowid()",
+        (consumed_at,),
     )
     return True
 
