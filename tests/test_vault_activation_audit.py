@@ -274,7 +274,7 @@ def test_member_countdown_updates_only_fixed_width_digits() -> None:
 
     assert "После подтверждения карта будет активна 15 минут." in source
     assert "Повторная активация будет невозможна." in source
-    assert "data.rewardCountdownValue = '1';" in source
+    assert "value.dataset.rewardCountdownValue = '1';" in source
     assert "value.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;" in source
     assert "node.textContent = `Карта активна" not in source
     assert "window.clearInterval(intervalId);" in source
