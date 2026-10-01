@@ -6,8 +6,9 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse
 
-from app.db import connect
+from app.db import transaction
 from app.product_shell import _check_csrf, _require_master
+from app.vault_activation_policy import expire_activations as expire_vault_activations
 
 
 _VAULT_CAMERA_POLICY = "camera=(self), microphone=(), geolocation=()"
@@ -112,7 +113,8 @@ def install_admin_vault_scanner(app: FastAPI) -> FastAPI:
         card_code = _card_code_from_scan(raw)
         phone_local = _client_phone_from_scan(raw)
 
-        with connect(settings.db_path) as conn:
+        with transaction(settings.db_path) as conn:
+            expire_vault_activations(conn)
             if scanned_client_id is not None:
                 client = conn.execute(
                     """
