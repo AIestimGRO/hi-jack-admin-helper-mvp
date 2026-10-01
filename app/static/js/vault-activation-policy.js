@@ -23,6 +23,25 @@
     });
   }
 
+  function buildStableCountdown(node) {
+    node.replaceChildren();
+    node.setAttribute('aria-live', 'off');
+
+    const prefix = document.createElement('span');
+    prefix.textContent = 'Карта активна ';
+
+    const value = document.createElement('strong');
+    value.dataset.rewardCountdownValue = '1';
+    value.className = 'reward-countdown-value';
+    value.textContent = '15:00';
+
+    const suffix = document.createElement('span');
+    suffix.textContent = ' · затем будет использована автоматически';
+
+    node.append(prefix, value, suffix);
+    return value;
+  }
+
   function mountCountdowns() {
     document.querySelectorAll('[data-reward-activation-countdown]').forEach((node) => {
       if (node.dataset.irreversibleCountdownInstalled === '1') return;
@@ -30,7 +49,10 @@
       const raw = node.dataset.rewardActivationCountdown || '';
       const expiresAt = Date.parse(raw);
       if (!Number.isFinite(expiresAt)) return;
+
+      const value = buildStableCountdown(node);
       let reloadQueued = false;
+      let intervalId = null;
 
       const tick = () => {
         const remaining = Math.max(0, expiresAt - Date.now());
@@ -38,9 +60,15 @@
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
         if (remaining > 0) {
-          node.textContent = `Карта активна ${minutes}:${String(seconds).padStart(2, '0')} · затем будет использована автоматически`;
+          value.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
           return;
         }
+
+        if (intervalId !== null) {
+          window.clearInterval(intervalId);
+          intervalId = null;
+        }
+        node.setAttribute('aria-live', 'polite');
         node.textContent = '15 минут истекли · карта считается использованной';
         if (!reloadQueued) {
           reloadQueued = true;
@@ -49,7 +77,7 @@
       };
 
       tick();
-      window.setInterval(tick, 1000);
+      if (!reloadQueued) intervalId = window.setInterval(tick, 1000);
     });
   }
 
