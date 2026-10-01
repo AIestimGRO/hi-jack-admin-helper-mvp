@@ -312,12 +312,19 @@ def query_economy_history(
     query = filters.get("client", "")
     if query:
         pattern = f"%{query}%"
-        compact = f"%{''.join(ch for ch in query if ch.isdigit())}%"
-        where.append(
-            "(client_name LIKE ? OR username LIKE ? OR phone_local LIKE ? OR phone_raw LIKE ? "
-            "OR CAST(client_id AS TEXT) LIKE ?)"
-        )
-        params.extend((pattern, pattern, compact, pattern, pattern))
+        digits = "".join(ch for ch in query if ch.isdigit())
+        clauses = [
+            "client_name LIKE ?",
+            "username LIKE ?",
+            "phone_raw LIKE ?",
+            "CAST(client_id AS TEXT) LIKE ?",
+        ]
+        values: list[Any] = [pattern, pattern, pattern, pattern]
+        if digits:
+            clauses.append("phone_local LIKE ?")
+            values.append(f"%{digits}%")
+        where.append("(" + " OR ".join(clauses) + ")")
+        params.extend(values)
 
     kind = filters.get("kind", "")
     if kind in {"jackcoin", "card"}:
@@ -360,7 +367,6 @@ def query_economy_history(
         params.append(jc_max)
 
     where_sql = " AND ".join(where)
-    offset = (page - 1) * page_size
 
     with connect(db_path) as conn:
         total = int(
@@ -369,6 +375,9 @@ def query_economy_history(
                 tuple(params),
             ).fetchone()["total"]
         )
+        pages = max(1, ceil(total / page_size))
+        page = min(page, pages)
+        offset = (page - 1) * page_size
         rows = conn.execute(
             cte
             + f"""
@@ -401,7 +410,11 @@ def query_economy_history(
     for row in rows:
         kind_value = str(row["kind"])
         amount = int(row["amount"] or 0)
-        detail = _card_detail(row["detail_raw"]) if kind_value == "card" else str(row["detail_raw"] or "")
+        detail = (
+            _card_detail(row["detail_raw"])
+            if kind_value == "card"
+            else str(row["detail_raw"] or "")
+        )
         entries.append(
             {
                 "created_at": _format_time(row["created_at"], timezone_name),
@@ -410,7 +423,9 @@ def query_economy_history(
                 "client": str(row["client_name"] or "—"),
                 "client_id": row["client_id"],
                 "phone": str(row["phone_local"] or row["phone_raw"] or ""),
-                "operation": _operation_label(kind_value, str(row["operation_code"] or ""), amount),
+                "operation": _operation_label(
+                    kind_value, str(row["operation_code"] or ""), amount
+                ),
                 "operation_group": str(row["operation_group"] or ""),
                 "value": _entry_value(row),
                 "source": _source_label(row["source_type"]),
@@ -422,15 +437,15 @@ def query_economy_history(
             }
         )
 
-    pages = max(1, ceil(total / page_size))
-    if page > pages:
-        page = pages
-
     sources = [
         {"value": str(row["source_type"]), "label": _source_label(row["source_type"])}
         for row in source_rows
     ]
-    actors = [str(row["actor_name"]) for row in actor_rows if str(row["actor_name"] or "").strip()]
+    actors = [
+        str(row["actor_name"])
+        for row in actor_rows
+        if str(row["actor_name"] or "").strip()
+    ]
 
     return {
         "entries": entries,
@@ -476,7 +491,10 @@ def install_vault_audit_ui(app: FastAPI) -> FastAPI:
     @app.get("/master/economy-history", response_class=HTMLResponse)
     async def economy_history(request: Request):
         if _role_from_request(request) != ACCESS_MASTER:
-            raise HTTPException(status_code=403, detail="Доступ только для мастер-администратора")
+            raise HTTPException(
+                status_code=403,
+                detail="Доступ только для мастер-администратора",
+            )
 
         filters = {
             "date_from": request.query_params.get("date_from", ""),
@@ -508,8 +526,12 @@ def install_vault_audit_ui(app: FastAPI) -> FastAPI:
             {
                 "request": request,
                 "csrf_token": str(request.session.get("csrf") or ""),
-                "admin_name": str(request.session.get("admin_name") or settings.admin_name),
-                "admin_role": str(request.session.get("admin_role") or "master_admin"),
+                "admin_name": str(
+                    request.session.get("admin_name") or settings.admin_name
+                ),
+                "admin_role": str(
+                    request.session.get("admin_role") or "master_admin"
+                ),
                 "asset_version": HISTORY_ASSET_VERSION,
                 "filters": filters,
                 "entries": result["entries"],
@@ -519,8 +541,16 @@ def install_vault_audit_ui(app: FastAPI) -> FastAPI:
                 "sources": result["sources"],
                 "actors": result["actors"],
                 "operation_filters": result["operation_filters"],
-                "prev_url": _page_url(request, current_page - 1) if current_page > 1 else "",
-                "next_url": _page_url(request, current_page + 1) if current_page < int(result["pages"]) else "",
+                "prev_url": (
+                    _page_url(request, current_page - 1)
+                    if current_page > 1
+                    else ""
+                ),
+                "next_url": (
+                    _page_url(request, current_page + 1)
+                    if current_page < int(result["pages"])
+                    else ""
+                ),
                 "timezone_name": settings.timezone_name,
             },
         )
