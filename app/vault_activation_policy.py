@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import ModuleType
 from typing import Any
 
@@ -88,14 +88,89 @@ def activate_reward(
     now: datetime | None = None,
 ) -> sqlite3.Row:
     del activation_minutes
-    expire_activations(conn, now=now, client_id=client_id)
-    return vault.activate_reward(
-        conn,
-        reward_id=reward_id,
-        client_id=client_id,
-        activation_minutes=CARD_ACTIVATION_MINUTES,
-        now=now,
+    current = vault._utc_now(now)
+    expire_activations(conn, now=current, client_id=client_id)
+    reward = conn.execute(
+        """
+        SELECT * FROM vault_member_rewards
+        WHERE id=? AND client_id=?
+        """,
+        (int(reward_id), int(client_id)),
+    ).fetchone()
+    if not reward:
+        raise ValueError("vault_reward_not_found")
+    if reward["status"] != "active":
+        raise ValueError(f"vault_reward_{reward['status']}")
+
+    valid_from = datetime.fromisoformat(str(reward["valid_from"]))
+    valid_until = (
+        datetime.fromisoformat(str(reward["valid_until"]))
+        if reward["valid_until"]
+        else None
     )
+    if current < vault._utc_now(valid_from):
+        raise ValueError("vault_reward_not_started")
+    if valid_until and current > vault._utc_now(valid_until):
+        raise ValueError("vault_reward_expired")
+
+    activation_expires_at = (
+        datetime.fromisoformat(str(reward["activation_expires_at"]))
+        if reward["activation_expires_at"]
+        else None
+    )
+    if (
+        reward["activated_at"]
+        and reward["activation_code"]
+        and activation_expires_at
+        and current < vault._utc_now(activation_expires_at)
+    ):
+        return reward
+
+    if reward["activation_code"] or reward["activated_at"]:
+        conn.execute(
+            """
+            UPDATE vault_member_rewards
+            SET activation_code=NULL, activated_at=NULL, activation_expires_at=NULL
+            WHERE id=? AND client_id=? AND status='active'
+            """,
+            (int(reward_id), int(client_id)),
+        )
+
+    activation_code = vault._new_activation_code(conn)
+    expires_at = current + timedelta(minutes=CARD_ACTIVATION_MINUTES)
+    conn.execute(
+        """
+        UPDATE vault_member_rewards
+        SET activation_code=?, activated_at=?, activation_expires_at=?
+        WHERE id=? AND client_id=? AND status='active'
+          AND activation_code IS NULL
+        """,
+        (
+            activation_code,
+            vault._timestamp(current),
+            vault._timestamp(expires_at),
+            int(reward_id),
+            int(client_id),
+        ),
+    )
+    updated = conn.execute(
+        "SELECT * FROM vault_member_rewards WHERE id=?",
+        (int(reward_id),),
+    ).fetchone()
+    if (
+        not updated
+        or not updated["activated_at"]
+        or not updated["activation_code"]
+        or not updated["activation_expires_at"]
+    ):
+        raise RuntimeError("vault_reward_activation_failed")
+    vault._insert_event(
+        conn,
+        reward=updated,
+        action="activated",
+        details={"expires_at": updated["activation_expires_at"]},
+    )
+    return updated
 
 
 def redeem_reward(
