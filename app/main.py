@@ -23,6 +23,7 @@ apply_referral_tree_visibility_policy()
 
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
+import app.admin_access_control as _admin_access_control_module  # noqa: E402
 from app.admin_access_control import install_admin_access_control
 from app.admin_account_lifecycle import install_admin_account_lifecycle
 from app.admin_information_architecture import install_admin_information_architecture
@@ -73,7 +74,7 @@ from app.telegram_scheduler import install_telegram_scheduler
 from app.telegram_transport import install_telegram_transport
 from app.vault_audit_ui import install_vault_audit_ui
 
-apply_vault_activation_policy(_main_impl_module)
+apply_vault_activation_policy(_main_impl_module, _admin_access_control_module)
 
 
 def _session_middleware_outermost(application):
