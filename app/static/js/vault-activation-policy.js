@@ -15,8 +15,8 @@
         if (!window.confirm(CONFIRM_TEXT)) event.preventDefault();
       });
 
-      const card = form.closest('.member-reward-card');
-      const note = card?.querySelector('.member-reward-instructions');
+      const card = form.closest('.jack-card');
+      const note = card?.querySelector('.jack-card-main + p');
       if (note) {
         note.textContent = 'Активируй карту только когда готов получить награду: после подтверждения у тебя будет 15 минут. Затем карта автоматически считается использованной.';
       }
@@ -27,7 +27,7 @@
     document.querySelectorAll('[data-reward-activation-countdown]').forEach((node) => {
       if (node.dataset.irreversibleCountdownInstalled === '1') return;
       node.dataset.irreversibleCountdownInstalled = '1';
-      const raw = node.dataset.expiresAt || '';
+      const raw = node.dataset.rewardActivationCountdown || '';
       const expiresAt = Date.parse(raw);
       if (!Number.isFinite(expiresAt)) return;
       let reloadQueued = false;
