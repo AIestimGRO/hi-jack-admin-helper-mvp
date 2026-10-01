@@ -58,6 +58,25 @@
   line-height: 1;
 }
 
+.member-app-page[data-performance-render="server"] .reward-activation-timer {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  width: 100%;
+  min-height: 18px;
+  gap: 0;
+}
+
+.member-app-page[data-performance-render="server"] .reward-countdown-value {
+  display: inline-block;
+  width: 5ch;
+  flex: 0 0 5ch;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  text-align: center;
+}
+
 .vault-catalog-pager {
   display: flex;
   align-items: center;
