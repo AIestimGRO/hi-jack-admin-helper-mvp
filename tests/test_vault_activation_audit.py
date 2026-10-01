@@ -56,7 +56,17 @@ def _seed_reward(conn) -> tuple[int, int]:
         admin_id=1,
         admin_name="Master Test",
     )
-    return client_id, int(reward["id"])
+    reward_id = int(reward["id"])
+    conn.execute(
+        """
+        UPDATE vault_member_rewards
+        SET valid_from='2026-10-01T08:00:00+00:00',
+            valid_until='2026-10-31T08:00:00+00:00'
+        WHERE id=?
+        """,
+        (reward_id,),
+    )
+    return client_id, reward_id
 
 
 def test_activation_is_fixed_to_15_minutes_and_timeout_consumes_card(tmp_path) -> None:
