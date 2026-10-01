@@ -95,7 +95,7 @@ def test_activation_is_fixed_to_15_minutes_and_timeout_consumes_card(tmp_path) -
 
         event = conn.execute(
             """
-            SELECT action,admin_name FROM vault_reward_events
+            SELECT action,admin_name,created_at FROM vault_reward_events
             WHERE member_reward_id=?
             ORDER BY id DESC LIMIT 1
             """,
@@ -103,6 +103,7 @@ def test_activation_is_fixed_to_15_minutes_and_timeout_consumes_card(tmp_path) -
         ).fetchone()
         assert event["action"] == "activation_timeout_redeemed"
         assert event["admin_name"] == "system"
+        assert event["created_at"] == consumed["activation_expires_at"]
 
         with pytest.raises(ValueError, match="vault_reward_redeemed"):
             activate_reward(
@@ -173,3 +174,18 @@ def test_member_asset_warns_about_irreversible_15_minute_activation() -> None:
     assert "form[action*=\"/account/rewards/\"][action$=\"/activate\"]" in source
     assert "node.dataset.rewardActivationCountdown" in source
     assert "window.location.reload()" in source
+
+
+def test_scanner_expires_activation_before_reporting_card_state() -> None:
+    source = (ROOT / "app" / "admin_vault_scanner.py").read_text(encoding="utf-8")
+
+    assert "from app.db import transaction" in source
+    assert "expire_vault_activations(conn)" in source
+    assert "with transaction(settings.db_path) as conn:" in source
+
+
+def test_full_economy_audit_is_master_only() -> None:
+    source = (ROOT / "app" / "vault_audit_ui.py").read_text(encoding="utf-8")
+
+    assert "_role_from_request(request) != ACCESS_MASTER" in source
+    assert "Полная история JACK CARDS и JACKCOIN" in source
