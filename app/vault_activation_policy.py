@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime
+from types import ModuleType
 from typing import Any
 
 import app.services.vault as vault
@@ -73,56 +74,56 @@ def expire_activations(
     return consumed
 
 
-def apply_vault_activation_policy() -> None:
-    if getattr(vault, "_hj_irreversible_activation_policy", False):
+def activate_reward(
+    conn: sqlite3.Connection,
+    *,
+    reward_id: int,
+    client_id: int,
+    activation_minutes: int = CARD_ACTIVATION_MINUTES,
+    now: datetime | None = None,
+) -> sqlite3.Row:
+    del activation_minutes
+    expire_activations(conn, now=now, client_id=client_id)
+    return vault.activate_reward(
+        conn,
+        reward_id=reward_id,
+        client_id=client_id,
+        activation_minutes=CARD_ACTIVATION_MINUTES,
+        now=now,
+    )
+
+
+def redeem_reward(
+    conn: sqlite3.Connection,
+    *,
+    code: str,
+    admin_id: int,
+    admin_name: str,
+    now: datetime | None = None,
+) -> sqlite3.Row:
+    expire_activations(conn, now=now)
+    return vault.redeem_reward(
+        conn,
+        code=code,
+        admin_id=admin_id,
+        admin_name=admin_name,
+        now=now,
+    )
+
+
+def apply_vault_activation_policy(main_impl: ModuleType) -> None:
+    if getattr(main_impl, "_hj_irreversible_activation_policy", False):
         return
-
-    original_activate_reward = vault.activate_reward
-    original_redeem_reward = vault.redeem_reward
-
-    def activate_reward(
-        conn: sqlite3.Connection,
-        *,
-        reward_id: int,
-        client_id: int,
-        activation_minutes: int = CARD_ACTIVATION_MINUTES,
-        now: datetime | None = None,
-    ) -> sqlite3.Row:
-        del activation_minutes
-        return original_activate_reward(
-            conn,
-            reward_id=reward_id,
-            client_id=client_id,
-            activation_minutes=CARD_ACTIVATION_MINUTES,
-            now=now,
-        )
-
-    def redeem_reward(
-        conn: sqlite3.Connection,
-        *,
-        code: str,
-        admin_id: int,
-        admin_name: str,
-        now: datetime | None = None,
-    ) -> sqlite3.Row:
-        expire_activations(conn, now=now)
-        return original_redeem_reward(
-            conn,
-            code=code,
-            admin_id=admin_id,
-            admin_name=admin_name,
-            now=now,
-        )
-
-    vault.DEFAULT_ACTIVATION_MINUTES = CARD_ACTIVATION_MINUTES
-    vault.expire_activations = expire_activations
-    vault.activate_reward = activate_reward
-    vault.redeem_reward = redeem_reward
-    vault._hj_irreversible_activation_policy = True
+    main_impl.activate_vault_reward = activate_reward
+    main_impl.expire_vault_activations = expire_activations
+    main_impl.redeem_vault_reward = redeem_reward
+    main_impl._hj_irreversible_activation_policy = True
 
 
 __all__ = [
     "CARD_ACTIVATION_MINUTES",
+    "activate_reward",
     "apply_vault_activation_policy",
     "expire_activations",
+    "redeem_reward",
 ]
