@@ -214,6 +214,133 @@
     observer.observe(status, { childList: true, characterData: true, subtree: true, attributes: true });
   }
 
+  function parseBulkComments(rawText) {
+    const source = String(rawText || '').trim();
+    const blocks = source.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
+    const items = [];
+    const cleanBlocks = [];
+    let hasComments = false;
+
+    blocks.forEach((block, index) => {
+      const lines = block.split(/\r?\n/);
+      const title = String(lines[0] || '').trim();
+      const cleanLines = [lines[0]];
+      const comments = [];
+      lines.slice(1).forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('!')) {
+          cleanLines.push(line);
+          return;
+        }
+        hasComments = true;
+        const comment = trimmed.slice(1).trim();
+        if (!comment) throw new Error(`Блок ${index + 1}: после ! добавьте комментарий к правильному ответу`);
+        comments.push(comment);
+      });
+      items.push({ title, explanation: comments.join('\n') });
+      cleanBlocks.push(cleanLines.join('\n'));
+    });
+
+    return { hasComments, items, cleanText: cleanBlocks.join('\n\n') };
+  }
+
+  function watchBulkForm(form) {
+    if (!form) return;
+    const status = form.querySelector('.form-status');
+    const helper = form.closest('.hj-bulk')?.querySelector('p.muted');
+    if (helper) {
+      helper.innerHTML = 'Первая строка — вопрос, <code>*</code> — правильный ответ, <code>-</code> — неправильный, <code>!</code> — комментарий к правильному ответу для разбора. Между вопросами оставьте пустую строку.';
+    }
+
+    let pending = null;
+    let resolving = false;
+
+    form.addEventListener('submit', (event) => {
+      const originalText = form.elements.bulk_text?.value || '';
+      let parsed;
+      try {
+        parsed = parseBulkComments(originalText);
+      } catch (error) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        status.textContent = error.message;
+        status.classList.remove('success');
+        status.classList.add('error');
+        toast(error.message, 'error');
+        return;
+      }
+      if (!parsed.hasComments) {
+        pending = null;
+        return;
+      }
+
+      const round = form.elements.game_round?.value || 'main';
+      if (round !== 'main') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        status.textContent = 'Комментарии через ! доступны только для вопросов основного раунда';
+        status.classList.remove('success');
+        status.classList.add('error');
+        toast(status.textContent, 'error');
+        return;
+      }
+
+      pending = {
+        originalText,
+        items: parsed.items,
+        knownIds: new Set((config?.questions || []).map((item) => Number(item.id))),
+      };
+      form.elements.bulk_text.value = parsed.cleanText;
+    }, true);
+
+    const observer = new MutationObserver(async () => {
+      if (resolving || !pending) return;
+      if (status.classList.contains('error')) {
+        form.elements.bulk_text.value = pending.originalText;
+        pending = null;
+        return;
+      }
+      if (!status.classList.contains('success')) return;
+
+      resolving = true;
+      const current = pending;
+      pending = null;
+      try {
+        const fresh = await loadConfig();
+        const candidates = (fresh.questions || [])
+          .filter((item) => !current.knownIds.has(Number(item.id)) && item.game_round === 'main')
+          .sort((a, b) => Number(a.id) - Number(b.id));
+        const used = new Set();
+        let saved = 0;
+
+        for (const item of current.items) {
+          if (!item.explanation) continue;
+          const created = candidates.find((candidate) => (
+            !used.has(Number(candidate.id))
+            && String(candidate.title || '').trim() === item.title
+          ));
+          if (!created) {
+            throw new Error(`Не удалось сопоставить комментарий с вопросом «${item.title}»`);
+          }
+          used.add(Number(created.id));
+          await saveExplanation(created.id, item.explanation);
+          saved += 1;
+        }
+        await loadConfig();
+        status.textContent = `${status.textContent} · комментариев сохранено: ${saved}`;
+        toast(`Вопросы добавлены, комментариев сохранено: ${saved}`);
+      } catch (error) {
+        status.textContent = `Вопросы созданы, но комментарии сохранены не полностью: ${error.message}`;
+        status.classList.remove('success');
+        status.classList.add('error');
+        toast(error.message, 'error');
+      } finally {
+        resolving = false;
+      }
+    });
+    observer.observe(status, { childList: true, characterData: true, subtree: true, attributes: true });
+  }
+
   function installStyle() {
     if (document.getElementById('jackside-error-review-admin-style')) return;
     const style = document.createElement('style');
@@ -239,6 +366,7 @@
       builder.querySelectorAll('[data-existing-question-form]').forEach(watchExistingForm);
       const newForm = builder.querySelector('#quick-question-form');
       if (newForm) watchNewForm(newForm);
+      watchBulkForm(builder.querySelector('#bulk-question-form'));
     } catch (error) {
       toast(`Не удалось загрузить настройки разбора ошибок: ${error.message}`, 'error');
     }
