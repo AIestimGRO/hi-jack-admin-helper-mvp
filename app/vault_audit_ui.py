@@ -313,6 +313,8 @@ def query_economy_history(
     if query:
         pattern = f"%{query}%"
         digits = "".join(ch for ch in query if ch.isdigit())
+        if len(digits) > 10:
+            digits = digits[-10:]
         clauses = [
             "client_name LIKE ?",
             "username LIKE ?",
