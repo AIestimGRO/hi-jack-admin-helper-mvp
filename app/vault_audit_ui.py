@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
 
+from app.admin_access_control import ACCESS_MASTER, _role_from_request
 from app.db import connect
 
 
@@ -60,7 +61,7 @@ def _wrap_html_route(
     *,
     path: str,
     marker: str,
-    transform: Callable[[str], str],
+    transform: Callable[[str, dict[str, Any]], str],
 ) -> None:
     route = _route(app, path)
     if route is None or getattr(route, marker, False):
@@ -77,7 +78,7 @@ def _wrap_html_route(
         if "text/html" not in content_type:
             return result
         source = bytes(result.body).decode("utf-8")
-        updated = transform(source)
+        updated = transform(source, kwargs)
         if updated == source:
             return result
         return _replace_html_response(result, updated)
@@ -244,7 +245,8 @@ def install_vault_audit_ui(app: FastAPI) -> FastAPI:
         return app
     app.state.vault_audit_ui_installed = True
 
-    def account_transform(source: str) -> str:
+    def account_transform(source: str, kwargs: dict[str, Any]) -> str:
+        del kwargs
         if ACTIVATION_ASSET in source or "</body>" not in source:
             return source
         return source.replace(
@@ -253,7 +255,10 @@ def install_vault_audit_ui(app: FastAPI) -> FastAPI:
             1,
         )
 
-    def vault_transform(source: str) -> str:
+    def vault_transform(source: str, kwargs: dict[str, Any]) -> str:
+        request = kwargs.get("request")
+        if request is None or _role_from_request(request) != ACCESS_MASTER:
+            return source
         if "vault-unified-audit" in source or "</main>" not in source:
             return source
         return source.replace("</main>", _render_audit(app) + "</main>", 1)
