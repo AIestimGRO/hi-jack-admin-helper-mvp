@@ -75,11 +75,20 @@ def test_hidden_reward_refreshes_into_my_cards_and_remains_usable(
     expect(card).to_contain_text("ГЛАВНЫЙ ПРИЗ")
     expect(page.locator('[data-store-link="cards"]')).to_have_class("active")
 
+    def accept_activation(dialog) -> None:
+        assert "карта будет активна 15 минут" in dialog.message
+        assert "Повторная активация будет невозможна" in dialog.message
+        dialog.accept()
+
+    page.once("dialog", accept_activation)
     card.locator(".reward-activate-button").click()
     card = page.locator(f'[data-member-reward-id="{reward_id}"]')
     expect(card).to_be_visible()
     expect(card.locator(".reward-activation-code")).to_be_visible()
     expect(card.locator(".jack-card-qr")).to_be_visible()
+    expect(card.locator("[data-reward-activation-countdown]")).to_contain_text(
+        "затем будет использована автоматически"
+    )
     assert "store=cards" in page.url
     assert page.url.endswith(f"#card-{reward_id}")
 
@@ -99,10 +108,11 @@ def test_hidden_reward_refreshes_into_my_cards_and_remains_usable(
             (catalog_id,),
         ).fetchone()
         member_reward = conn.execute(
-            "SELECT status,activated_at FROM vault_member_rewards WHERE id=?",
+            "SELECT status,activated_at,activation_expires_at FROM vault_member_rewards WHERE id=?",
             (reward_id,),
         ).fetchone()
         assert catalog_row is not None and int(catalog_row["is_active"]) == 0
         assert member_reward is not None
         assert member_reward["status"] == "active"
         assert member_reward["activated_at"] is not None
+        assert member_reward["activation_expires_at"] is not None
