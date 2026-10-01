@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET = ROOT / "app" / "static" / "js" / "jackside-error-review.js"
+ADMIN_ASSET = ROOT / "app" / "static" / "js" / "jackside-error-review-admin.js"
 STYLE = ROOT / "app" / "static" / "css" / "jackside-final-recovery.css"
 
 
@@ -59,3 +60,25 @@ def test_review_does_not_render_correct_questions_as_review_entries() -> None:
     # fallback that would add ordinary/correct questions to the review list.
     assert "reviewState?.questions || []" in source
     assert "state.questions" not in source
+
+
+def test_bulk_question_import_supports_explanations_with_bang_syntax() -> None:
+    source = ADMIN_ASSET.read_text(encoding="utf-8")
+
+    assert "function parseBulkComments(rawText)" in source
+    assert "trimmed.startsWith('!')" in source
+    assert "const comment = trimmed.slice(1).trim();" in source
+    assert "form.elements.bulk_text.value = parsed.cleanText;" in source
+    assert "await saveExplanation(created.id, item.explanation);" in source
+    assert "comments.join('\\n')" in source
+    assert "<code>!</code> — комментарий к правильному ответу" in source
+
+
+def test_bulk_explanations_are_main_round_only_and_restore_on_create_failure() -> None:
+    source = ADMIN_ASSET.read_text(encoding="utf-8")
+
+    assert "Комментарии через ! доступны только для вопросов основного раунда" in source
+    assert "event.stopImmediatePropagation();" in source
+    assert "form.elements.bulk_text.value = pending.originalText;" in source
+    assert "Вопросы созданы, но комментарии сохранены не полностью" in source
+    assert "knownIds: new Set((config?.questions || []).map((item) => Number(item.id)))" in source
