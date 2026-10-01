@@ -116,13 +116,18 @@ def redeem_reward(
     )
 
 
-def apply_vault_activation_policy(main_impl: ModuleType) -> None:
-    if getattr(main_impl, "_hj_irreversible_activation_policy", False):
-        return
-    main_impl.activate_vault_reward = activate_reward
-    main_impl.expire_vault_activations = expire_activations
-    main_impl.redeem_vault_reward = redeem_reward
-    main_impl._hj_irreversible_activation_policy = True
+def apply_vault_activation_policy(
+    main_impl: ModuleType,
+    admin_access_control: ModuleType | None = None,
+) -> None:
+    if not getattr(main_impl, "_hj_irreversible_activation_policy", False):
+        main_impl.activate_vault_reward = activate_reward
+        main_impl.expire_vault_activations = expire_activations
+        main_impl.redeem_vault_reward = redeem_reward
+        main_impl._hj_irreversible_activation_policy = True
+    if admin_access_control is not None:
+        admin_access_control.redeem_reward = redeem_reward
+        admin_access_control._hj_irreversible_activation_policy = True
 
 
 __all__ = [
