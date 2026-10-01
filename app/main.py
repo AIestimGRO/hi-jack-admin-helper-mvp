@@ -20,7 +20,6 @@ from app.vault_activation_policy import apply_vault_activation_policy
 apply_jackside_poker_story_cleanup()
 apply_referral_status_policy()
 apply_referral_tree_visibility_policy()
-apply_vault_activation_policy()
 
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
@@ -44,6 +43,7 @@ from app.jackside_rating_freshness import install_jackside_rating_freshness
 from app.jackside_winner_prize import install_jackside_winner_prize
 from app.legacy_jackside_copy import install_legacy_jackside_copy
 from app.legal_registration import install_legal_registration
+import app.main_impl as _main_impl_module  # noqa: E402
 from app.main_impl import *  # noqa: F403,E402
 from app.main_impl import app as _base_app  # noqa: E402
 from app.main_impl import create_app as _base_create_app  # noqa: E402
@@ -72,6 +72,8 @@ from app.telegram_safety_hotfix import install_telegram_safety_hotfix
 from app.telegram_scheduler import install_telegram_scheduler
 from app.telegram_transport import install_telegram_transport
 from app.vault_audit_ui import install_vault_audit_ui
+
+apply_vault_activation_policy(_main_impl_module)
 
 
 def _session_middleware_outermost(application):
