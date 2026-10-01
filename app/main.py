@@ -14,11 +14,13 @@ import app.jackside_reschedule_snapshot  # noqa: E402,F401
 from app.jackside_poker_story_cleanup import apply_jackside_poker_story_cleanup
 from app.referral_status_policy import apply_referral_status_policy
 from app.referral_tree_visibility import apply_referral_tree_visibility_policy
+from app.vault_activation_policy import apply_vault_activation_policy
 
 # main_impl imports these service functions by name; bind product policies first.
 apply_jackside_poker_story_cleanup()
 apply_referral_status_policy()
 apply_referral_tree_visibility_policy()
+apply_vault_activation_policy()
 
 from app.account_links_hotfix import install_account_links_hotfix
 from app.account_security import install_account_security
@@ -69,6 +71,7 @@ from app.telegram_notifications import install_telegram_notifications
 from app.telegram_safety_hotfix import install_telegram_safety_hotfix
 from app.telegram_scheduler import install_telegram_scheduler
 from app.telegram_transport import install_telegram_transport
+from app.vault_audit_ui import install_vault_audit_ui
 
 
 def _session_middleware_outermost(application):
@@ -138,6 +141,7 @@ def _install_extensions(application):
     application = install_staff_admin_entry(application)
     application = install_member_host_routing(application)
     application = install_admin_vault_scanner(application)
+    application = install_vault_audit_ui(application)
     return _session_middleware_outermost(application)
 
 
