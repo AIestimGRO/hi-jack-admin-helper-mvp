@@ -28,6 +28,7 @@ ACCESS_LABELS = {
 }
 _CLIENT_PAGE_RE = re.compile(r"^/clients/\d+$")
 _CLIENT_QR_RE = re.compile(r"^/api/clients/\d+/qr$")
+_CLIENT_VAULT_ISSUE_RE = re.compile(r"^/api/clients/\d+/vault/issue$")
 
 
 def ensure_admin_access_schema(conn: sqlite3.Connection) -> None:
@@ -129,6 +130,8 @@ def manager_path_allowed(path: str, method: str) -> bool:
         return True
     method = method.upper()
     if _is_shared_path(path):
+        return True
+    if method == "POST" and bool(_CLIENT_VAULT_ISSUE_RE.fullmatch(path)):
         return True
     if path == "/" and method == "GET":
         return True
