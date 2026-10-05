@@ -154,7 +154,13 @@ def test_master_creates_preference_and_standard_admin_has_no_master_access(tmp_p
         with transaction(settings.db_path) as conn:
             client_id, _ = upsert_client(conn, {"app_user_id": "20", "first_name": "Олег", "phone_raw": "9995556677"})
         detail = client.get(f"/clients/{client_id}")
-        assert "Бесплатный коктейль" in detail.text
+        assert detail.status_code == 200
+        assert "Бесплатный коктейль" not in detail.text
+        assert "<h2>Преференции</h2>" not in detail.text
+        with transaction(settings.db_path) as conn:
+            assert conn.execute(
+                "SELECT COUNT(*) FROM preference_types WHERE code='free_cocktail'"
+            ).fetchone()[0] == 1
 
         client.post("/logout", data={"csrf_token": token})
         login(client, username="masha", pin="1357")
