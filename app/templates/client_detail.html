@@ -16,7 +16,7 @@
     <div><small>Текущий баланс</small><strong>{{ jackcoin_balance }} JC</strong></div>
     <span class="muted">Реальный баланс JACKCOIN игрока</span>
   </div>
-  {% if access_role == 'master' %}
+  {% if access_role in ['master', 'quiz_manager'] %}
   <form class="jackcoin-credit-form" action="/api/clients/{{ client.id }}/jackcoin/credit" method="post" data-ajax-refresh=".jackcoin-admin-card">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="operation_token" value="{{ jackcoin_operation_token }}">
@@ -90,16 +90,18 @@
         <span>{{ {'active':'Активна','redeemed':'Списана','expired':'Истекла','cancelled':'Удалена'}.get(reward.status, reward.status) }} · {{ {'purchase':'Куплена','final_prize':'Приз','admin':'Выдана админом'}.get(reward.source_type, reward.source_type) }}</span>
         <small>{% if reward.valid_until %}до {{ display_datetime(reward.valid_until) }}{% else %}без срока{% endif %} · {{ reward.code }}</small>
       </div>
-      {% if reward.status == 'active' and access_role == 'master' %}
+      {% if reward.status == 'active' and access_role in ['master', 'quiz_manager'] %}
       <div class="vault-client-reward-actions">
         <form action="/api/clients/{{ client.id }}/vault/{{ reward.id }}/redeem" method="post" data-ajax-refresh=".vault-client-card" onsubmit="return confirm('Списать карту {{ reward.title }} как использованную?');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="button" type="submit">Списать</button>
         </form>
+        {% if access_role == 'master' %}
         <form action="/api/clients/{{ client.id }}/vault/{{ reward.id }}/cancel" method="post" data-ajax-refresh=".vault-client-card" onsubmit="return confirm('Удалить карту {{ reward.title }} из активных? Купленные за JC карты будут возвращены клиенту с возвратом JACKCOIN.');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="danger-outline" type="submit">Удалить</button>
         </form>
+        {% endif %}
       </div>
       {% endif %}
     </article>
