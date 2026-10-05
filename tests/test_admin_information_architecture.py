@@ -289,7 +289,7 @@ def test_master_can_credit_real_jackcoin_from_client_card_idempotently(
         assert "Текущий баланс" in page.text
         assert "+ Начислить JC" in page.text
         assert "Отзыв на Яндекс Картах" in page.text
-        assert "Они не меняют баланс JACKCOIN" in page.text
+        assert "<h2>Преференции</h2>" not in page.text
         assert ">777<" not in page.text
         assert f'action="/api/clients/{client_id}/jackcoin/credit"' in page.text
 
