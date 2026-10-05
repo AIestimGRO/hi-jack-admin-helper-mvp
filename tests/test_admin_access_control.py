@@ -75,6 +75,9 @@ def test_bartender_allowlist_is_operational_only() -> None:
         ("/admin/vault", "GET"),
         ("/api/vault/catalog/create", "POST"),
         ("/api/clients/123/vault/issue", "POST"),
+        ("/api/clients/123/jackcoin/credit", "POST"),
+        ("/api/clients/123/jackcoin/debit", "POST"),
+        ("/api/clients/123/vault/7/redeem", "POST"),
         ("/admin/quiz-results", "GET"),
         ("/staff/quizzes", "GET"),
         ("/staff-users", "GET"),
@@ -99,6 +102,9 @@ def test_quiz_manager_can_use_prod_content_workspaces_but_not_master_system() ->
         ("/clients", "GET"),
         ("/clients/42", "GET"),
         ("/api/clients/42/vault/issue", "POST"),
+        ("/api/clients/42/jackcoin/credit", "POST"),
+        ("/api/clients/42/jackcoin/debit", "POST"),
+        ("/api/clients/42/vault/7/redeem", "POST"),
         ("/admin/quiz-results", "GET"),
         ("/master/quiz-builder/7", "GET"),
         ("/api/master/quiz-campaigns/7/questions", "POST"),
@@ -127,9 +133,6 @@ def test_quiz_manager_can_use_prod_content_workspaces_but_not_master_system() ->
         ("/master/engagement-icons", "GET"),
         ("/clients/import", "GET"),
         ("/api/clients/42/comment", "POST"),
-        ("/api/clients/42/jackcoin/credit", "POST"),
-        ("/api/clients/42/jackcoin/debit", "POST"),
-        ("/api/clients/42/vault/7/redeem", "POST"),
         ("/api/clients/42/vault/7/cancel", "POST"),
         ("/api/clients/42/quiz/test/extra-attempt", "POST"),
         ("/api/master/admins", "POST"),
@@ -183,6 +186,10 @@ def test_quiz_manager_navigation_uses_prod_workspaces_without_master_only_sectio
     assert "access_role == 'quiz_manager'" in dashboard
     assert "{% if access_role == 'master' %}" in client
     assert "{% if access_role in ['master', 'quiz_manager'] %}" in client
+    assert 'formaction="/api/clients/{{ client.id }}/jackcoin/debit"' in client
+    assert 'action="/api/clients/{{ client.id }}/vault/{{ reward.id }}/redeem"' in client
+    assert "{% if access_role == 'master' %}" in client
+    assert 'action="/api/clients/{{ client.id }}/vault/{{ reward.id }}/cancel"' in client
     assert 'action="/api/clients/{{ client.id }}/vault/issue"' in client
     assert "<h2>Преференции</h2>" not in client
     assert 'formaction="/api/preferences/add"' not in client
