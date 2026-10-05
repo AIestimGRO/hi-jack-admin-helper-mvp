@@ -74,6 +74,7 @@ def test_bartender_allowlist_is_operational_only() -> None:
         ("/clients/123/comment", "POST"),
         ("/admin/vault", "GET"),
         ("/api/vault/catalog/create", "POST"),
+        ("/api/clients/123/vault/issue", "POST"),
         ("/admin/quiz-results", "GET"),
         ("/staff/quizzes", "GET"),
         ("/staff-users", "GET"),
@@ -97,6 +98,7 @@ def test_quiz_manager_can_use_prod_content_workspaces_but_not_master_system() ->
         ("/api/master/qr/resolve", "POST"),
         ("/clients", "GET"),
         ("/clients/42", "GET"),
+        ("/api/clients/42/vault/issue", "POST"),
         ("/admin/quiz-results", "GET"),
         ("/master/quiz-builder/7", "GET"),
         ("/api/master/quiz-campaigns/7/questions", "POST"),
@@ -127,7 +129,6 @@ def test_quiz_manager_can_use_prod_content_workspaces_but_not_master_system() ->
         ("/api/clients/42/comment", "POST"),
         ("/api/clients/42/jackcoin/credit", "POST"),
         ("/api/clients/42/jackcoin/debit", "POST"),
-        ("/api/clients/42/vault/issue", "POST"),
         ("/api/clients/42/vault/7/redeem", "POST"),
         ("/api/clients/42/vault/7/cancel", "POST"),
         ("/api/clients/42/quiz/test/extra-attempt", "POST"),
@@ -181,3 +182,8 @@ def test_quiz_manager_navigation_uses_prod_workspaces_without_master_only_sectio
     assert "href=\"/staff-access\"" in base
     assert "access_role == 'quiz_manager'" in dashboard
     assert "{% if access_role == 'master' %}" in client
+    assert "{% if access_role in ['master', 'quiz_manager'] %}" in client
+    assert 'action="/api/clients/{{ client.id }}/vault/issue"' in client
+    assert "<h2>Преференции</h2>" not in client
+    assert 'formaction="/api/preferences/add"' not in client
+    assert "<h2>История операций</h2>" not in client
